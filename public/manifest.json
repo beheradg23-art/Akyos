@@ -1,0 +1,16 @@
+{
+  "name": "JEE Command Center",
+  "short_name": "JEE OS",
+  "description": "Drop year operational dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2991/2991108.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
