@@ -38,13 +38,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const activities = await activitiesResponse.json();
 
+    // Package up the tokens too, not just the activities snapshot.
+    // Without this, the app has no way to ever fetch new data again
+    // without forcing the user to re-authorize from scratch.
+    const tokens = {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: tokenData.expires_at, // unix seconds
+    };
+
     // Send data back to frontend window and close popup safely
     res.setHeader('Content-Type', 'text/html');
     return res.status(200).send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage({ type: 'STRAVA_DATA', data: ${JSON.stringify(activities)} }, '*');
+            window.opener.postMessage({
+              type: 'STRAVA_DATA',
+              data: ${JSON.stringify(activities)},
+              tokens: ${JSON.stringify(tokens)}
+            }, '*');
             window.close();
           </script>
           <p>Sync complete! You can close this window now.</p>

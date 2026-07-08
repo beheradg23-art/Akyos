@@ -1423,29 +1423,100 @@ function IntroLoader({ onFinish }) {
 export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
   // --- Strava Sync Engine States ---
-  const [stravaActivities, setStravaActivities] = useState([]);
+  // This reads cached workouts from the browser disk immediately on page load
+  const [stravaActivities, setStravaActivities] = useState<any[]>(() => {
+    const savedActivities = localStorage.getItem('strava_activities');
+    return savedActivities ? JSON.parse(savedActivities) : [];
+  });
+  
   const [isStravaLoading, setIsStravaLoading] = useState(false);
+  const [isStravaSyncing, setIsStravaSyncing] = useState(false);
+  const [stravaLastSynced, setStravaLastSynced] = useState<number | null>(null);
+
+  // This new state tracks whether the user is connected to hide/show buttons
+  const [isStravaConnected, setIsStravaConnected] = useState(() => {
+    return localStorage.getItem('strava_connected') === 'true';
+  });
+
+  // The actual OAuth tokens — without these persisted, "connected" is just
+  // a flag with nothing behind it, and the app can never pull fresh data
+  // without forcing a full reconnect.
+  const [stravaTokens, setStravaTokens] = useState<{ access_token: string; refresh_token: string; expires_at: number } | null>(() => {
+    try {
+      const saved = localStorage.getItem('strava_tokens');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const persistStravaTokens = (tokens: { access_token: string; refresh_token: string; expires_at: number }) => {
+    setStravaTokens(tokens);
+    localStorage.setItem('strava_tokens', JSON.stringify(tokens));
+  };
+
+  // Pulls fresh activities using only the stored refresh_token — no popup,
+  // no reconnect. Safe to call on a timer or whenever the tab regains focus.
+  const syncStravaActivities = async (refreshToken?: string) => {
+    const tokenToUse = refreshToken ?? stravaTokens?.refresh_token;
+    if (!tokenToUse) return;
+
+    setIsStravaSyncing(true);
+    try {
+      const response = await fetch('/api/strava-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: tokenToUse }),
+      });
+
+      if (response.status === 401) {
+        // Refresh token was rejected — Strava access was revoked elsewhere.
+        // Reflect that honestly instead of pretending we're still connected.
+        handleStravaDisconnect();
+        return;
+      }
+
+      if (!response.ok) return;
+
+      const result = await response.json();
+      setStravaActivities(result.activities);
+      localStorage.setItem('strava_activities', JSON.stringify(result.activities));
+      persistStravaTokens(result.tokens);
+      setStravaLastSynced(Date.now());
+    } catch {
+      // Network hiccup — leave existing cached data in place and try again
+      // on the next scheduled sync rather than disconnecting the user.
+    } finally {
+      setIsStravaSyncing(false);
+    }
+  };
 
   useEffect(() => {
-    const handleStravaMessage = (event: MessageEvent) => {
-      // 1. Debug log to verify if the message is actually hitting your app window
-      console.log("Received a window message from origin:", event.origin, event.data);
-
-      // 2. Accept data from your local test environments or your live production domain
+    const handleStravaMessage = (event: any) => {
+      // Accept data from local environments or your live production domain
       const isTrustedOrigin = 
         event.origin === window.location.origin || 
         event.origin.includes('vercel.app') || 
         event.origin.includes('webcontainer.io');
 
-      if (!isTrustedOrigin) {
-        console.warn("Message dropped: Unauthorized origin");
-        return;
-      }
+      if (!isTrustedOrigin) return;
 
-      // 3. Process the data
       if (event.data && event.data.type === 'STRAVA_DATA') {
-        console.log("Successfully matching STRAVA_DATA payload:", event.data.data);
-        setStravaActivities(event.data.data);
+        const activities = event.data.data;
+        const tokens = event.data.tokens;
+        
+        // 1. Update the React interface states
+        setStravaActivities(activities);
+        setIsStravaConnected(true);
+        setStravaLastSynced(Date.now());
+        
+        // 2. Lock the data into the browser disk memory
+        localStorage.setItem('strava_activities', JSON.stringify(activities));
+        localStorage.setItem('strava_connected', 'true');
+        if (tokens) {
+          persistStravaTokens(tokens);
+        }
+        
         setIsStravaLoading(false);
       }
     };
@@ -1454,6 +1525,40 @@ export default function JEEDashboard() {
     return () => window.removeEventListener('message', handleStravaMessage);
   }, []);
 
+  // Keep data fresh without any user action: sync once on load, then every
+  // 5 minutes while connected, and again whenever the tab regains focus.
+  useEffect(() => {
+    if (!isStravaConnected || !stravaTokens?.refresh_token) return;
+
+    syncStravaActivities();
+
+    const intervalId = setInterval(() => syncStravaActivities(), 5 * 60 * 1000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncStravaActivities();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStravaConnected]);
+
+  const handleStravaDisconnect = () => {
+    // 1. Clear out the live React application states
+    setStravaActivities([]);
+    setIsStravaConnected(false);
+    setStravaTokens(null);
+    setStravaLastSynced(null);
+    
+    // 2. Erase the cached entries from the browser disk storage
+    localStorage.removeItem('strava_activities');
+    localStorage.removeItem('strava_connected');
+    localStorage.removeItem('strava_tokens');
+  };
+  
   const handleStravaConnect = () => {
     setIsStravaLoading(true);
     
@@ -1543,6 +1648,11 @@ export default function JEEDashboard() {
             stravaActivities={stravaActivities} 
             isStravaLoading={isStravaLoading} 
             handleStravaConnect={handleStravaConnect} 
+            isStravaConnected={isStravaConnected}
+            handleStravaDisconnect={handleStravaDisconnect}
+            isStravaSyncing={isStravaSyncing}
+            stravaLastSynced={stravaLastSynced}
+            onManualSync={() => syncStravaActivities()}
           />
         );
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setModal={setModal} />;
@@ -1662,10 +1772,28 @@ interface StravaTabProps {
   stravaActivities: any[];
   isStravaLoading: boolean;
   handleStravaConnect: () => void;
+  isStravaConnected: boolean;
+  handleStravaDisconnect: () => void;
+  isStravaSyncing: boolean;
+  stravaLastSynced: number | null;
+  onManualSync: () => void;
 }
 
 // ---------- Tab Subcomponent: Strava Feed ----------
-function StravaTab({ stravaActivities, isStravaLoading, handleStravaConnect }: StravaTabProps) {
+function StravaTab({
+  stravaActivities,
+  isStravaLoading,
+  handleStravaConnect,
+  isStravaConnected,
+  handleStravaDisconnect,
+  isStravaSyncing,
+  stravaLastSynced,
+  onManualSync,
+}: StravaTabProps) {
+  const lastSyncedLabel = stravaLastSynced
+    ? new Date(stravaLastSynced).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : null;
+
   return (
     <div className="space-y-5 animate-fadeIn">
       <div className="border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950/40 rounded-2xl p-6 shadow-xl">
@@ -1675,16 +1803,41 @@ function StravaTab({ stravaActivities, isStravaLoading, handleStravaConnect }: S
               <span>🎛️ Telemetry Engine</span>
             </div>
             <h3 className="text-lg font-bold text-neutral-200 mt-1">Strava Integration Panel</h3>
-            <p className="text-xs text-neutral-500">Secure real-time athletic activity telemetry synchronization</p>
+            <p className="text-xs text-neutral-500">
+              {isStravaConnected
+                ? isStravaSyncing
+                  ? 'Syncing latest activity data…'
+                  : lastSyncedLabel
+                    ? `Connected · last synced ${lastSyncedLabel}`
+                    : 'Connected to Strava'
+                : 'Secure real-time athletic activity telemetry synchronization'}
+            </p>
           </div>
-          
-          <button
-            onClick={handleStravaConnect}
-            disabled={isStravaLoading}
-            className="cursor-target flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 disabled:from-neutral-800 disabled:to-neutral-800 text-neutral-950 font-bold text-xs uppercase tracking-wider rounded-xl transition duration-150 shadow-lg shadow-orange-950/10 active:scale-95"
-          >
-            {isStravaLoading ? 'Syncing System...' : 'Connect Strava Account'}
-          </button>
+
+          <div className="w-full sm:w-auto flex items-center gap-2">
+            {isStravaConnected && (
+              <button
+                onClick={onManualSync}
+                disabled={isStravaSyncing}
+                className="px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 font-semibold rounded-xl transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"
+                title="Sync now"
+              >
+                <Activity className={`w-3.5 h-3.5 ${isStravaSyncing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+
+            <button
+              onClick={isStravaConnected ? handleStravaDisconnect : handleStravaConnect}
+              className={
+                isStravaConnected
+                  ? "w-full sm:w-auto px-5 py-2.5 bg-neutral-900 hover:bg-red-950/40 border border-neutral-700 hover:border-red-800 text-neutral-300 hover:text-red-400 font-bold rounded-xl transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-2 group cursor-target active:scale-98"
+                  : "w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-neutral-950 font-bold rounded-xl shadow-lg shadow-orange-500/10 transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-2 group cursor-target active:scale-98"
+              }
+            >
+              <Activity className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+              {isStravaConnected ? 'DISCONNECT STRAVA' : 'CONNECT STRAVA ACCOUNT'}
+            </button>
+          </div>
         </div>
 
         {stravaActivities.length > 0 ? (
