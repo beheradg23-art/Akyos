@@ -1441,7 +1441,7 @@ export default function JEEDashboard() {
     setIsStravaLoading(true);
     // Grab your Client ID from Vite environment metadata securely
     const clientId = import.meta.env.VITE_STRAVA_CLIENT_ID || "";
-    const redirectUri = encodeURIComponent("http://localhost:3000/api/strava-callback");
+    const redirectUri = encodeURIComponent("http://localhost:5173/api/strava-callback");
     const scope = "activity:read_all";
     const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
     window.open(stravaAuthUrl, 'Connect with Strava', 'width=600,height=800');
