@@ -141,13 +141,13 @@ const GROOMING = [
 
 const TRACKER_ITEMS = [
   { id: 't1', label: '5 AM Wake-Up' },
-  { id: 't2', label: 'Math Block Executed' },
-  { id: 't3', label: 'Physics Block Executed' },
-  { id: 't4', label: 'Chemistry Blocks Executed' },
-  { id: 't5', label: '11:30 AM Gym Executed' },
+  { id: 't2', label: 'Math Block' },
+  { id: 't3', label: 'Physics Block' },
+  { id: 't4', label: 'Chemistry Block' },
+  { id: 't5', label: '11:30 AM Gym' },
   { id: 't6', label: 'All 6 Meals Hit' },
-  { id: 't7', label: 'Supplements Taken (D3 / Omega-3 / Magnesium)' },
-  { id: 't8', label: 'Grooming Routine Done' },
+  { id: 't7', label: 'Supplements' },
+  { id: 't8', label: 'Grooming Routine' },
   { id: 't9', label: '4L+ Water Hit' },
   { id: 't10', label: '11 PM Sleep Lock' },
 ];
@@ -198,7 +198,6 @@ function GlobalDetailModal({ modalData, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="w-full max-w-lg overflow-hidden border border-neutral-800 bg-neutral-900 rounded-2xl shadow-2xl">
-        {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-neutral-800 p-4">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300">
@@ -214,7 +213,6 @@ function GlobalDetailModal({ modalData, onClose }) {
           </button>
         </div>
 
-        {/* Modal Core Content */}
         <div className="p-5 max-h-[70vh] overflow-y-auto space-y-4">
           {modalData.textBody && (
             <p className="text-sm text-neutral-400 leading-relaxed bg-neutral-950/40 border border-neutral-800/60 p-3 rounded-xl">{modalData.textBody}</p>
@@ -289,7 +287,7 @@ function Card({ children, className = '', onClick }) {
   );
 }
 
-function StatPill ({ icon: Icon, label, value, accent = 'neutral' }) {
+function StatPill({ icon: Icon, label, value, accent = 'neutral' }) {
   const accents = {
     neutral: 'text-neutral-300',
     blue: 'text-sky-400',
@@ -311,7 +309,6 @@ function StatPill ({ icon: Icon, label, value, accent = 'neutral' }) {
 // ---------- Dynamic Engine: Countdown Matrix Widget ----------
 
 function CountdownMatrix() {
-  // Configured Target Benchmarks: Nov 1 (Mocks) & Jan 22 (JEE Main Phase 1)
   const daysToMocks = useMemo(() => getDeadlineCountdown('2026-11-01'), []);
   const daysToJEE = useMemo(() => getDeadlineCountdown('2027-01-22'), []);
 
@@ -351,9 +348,30 @@ function CountdownMatrix() {
   );
 }
 
-// ---------- Daily Execution Tracker Sidebar ----------
+// ---------- Bento Box Daily Execution Tracker Sidebar ----------
 
 function DailyTracker({ currentDayStr, checked, onToggle }) {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  // Live midnight countdown logic
+  useEffect(() => {
+    const updateTimer = () => {
+      const now = new Date();
+      const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      const diff = tomorrow.getTime() - now.getTime();
+
+      const h = String(Math.floor((diff / (1000 * 60 * 60)) % 24)).padStart(2, '0');
+      const m = String(Math.floor((diff / 1000 / 60) % 60)).padStart(2, '0');
+      const s = String(Math.floor((diff / 1000) % 60)).padStart(2, '0');
+
+      setTimeLeft(`${h}:${m}:${s}`);
+    };
+
+    updateTimer(); 
+    const timerId = setInterval(updateTimer, 1000);
+    return () => clearInterval(timerId);
+  }, []);
+
   const total = TRACKER_ITEMS.length;
   const done = TRACKER_ITEMS.filter((i) => checked[i.id]).length;
   const pct = Math.round((done / total) * 100);
@@ -361,18 +379,31 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
 
   return (
     <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm p-5 lg:sticky lg:top-6">
-      <div className="flex items-center justify-between mb-1">
-        <h3 className="text-[13px] font-semibold tracking-tight text-neutral-100">Daily Tracker</h3>
-        <span className="text-[12px] font-medium text-neutral-500">{done}/{total}</span>
-      </div>
-      <div className="flex justify-between items-center mb-4">
-        <p className="text-[12px] text-neutral-400 font-medium bg-neutral-800/60 border border-neutral-700/50 px-2 py-0.5 rounded-md">
-          {formattedDay}
-        </p>
-        <p className="text-[11px] text-neutral-500 font-mono">{currentDayStr}</p>
+      
+      {/* Bento Header & Timer */}
+      <div className="flex flex-col gap-3 mb-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[13px] font-semibold tracking-tight text-neutral-100">Daily Matrix</h3>
+          <span className="text-[12px] font-medium text-neutral-500">{done}/{total}</span>
+        </div>
+        
+        <div className="flex justify-between items-center bg-neutral-950/40 border border-neutral-800/60 rounded-lg p-2">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Current Cycle</span>
+            <span className="text-[12px] text-neutral-300 font-medium">{formattedDay}</span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Day Ending In</span>
+            <div className="flex items-center gap-1.5 text-emerald-400/90 font-mono text-[13px] font-semibold tracking-tight">
+              <Timer className="h-3.5 w-3.5" />
+              {timeLeft}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="mb-5">
+      {/* Progress Bar */}
+      <div className="mb-6">
         <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
           <div
             className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 ease-out"
@@ -387,21 +418,28 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
         </div>
       </div>
 
-      <div className="space-y-1">
+      {/* Bento Grid layout */}
+      <div className="grid grid-cols-2 gap-2.5">
         {TRACKER_ITEMS.map((item) => {
           const isChecked = !!checked[item.id];
           return (
             <button
               key={item.id}
               onClick={() => onToggle(item.id)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-neutral-800/60 group"
+              className={`relative flex flex-col items-start justify-between p-3.5 rounded-xl border text-left transition-all duration-200 group ${
+                isChecked
+                  ? 'bg-emerald-500/[0.08] border-emerald-500/30 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]'
+                  : 'bg-neutral-900/40 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
+              }`}
             >
-              {isChecked ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" strokeWidth={1.75} />
-              ) : (
-                <Circle className="h-4 w-4 shrink-0 text-neutral-600 group-hover:text-neutral-500" strokeWidth={1.75} />
-              )}
-              <span className={`text-[12.5px] leading-tight transition-colors duration-150 ${isChecked ? 'text-neutral-500 line-through decoration-neutral-700' : 'text-neutral-300'}`}>
+              <div className="flex w-full justify-between items-start mb-2.5">
+                {isChecked ? (
+                  <CheckCircle2 className="h-4.5 w-4.5 text-emerald-400 shrink-0" strokeWidth={2} />
+                ) : (
+                  <Circle className="h-4.5 w-4.5 text-neutral-600 group-hover:text-neutral-400 shrink-0 transition-colors" strokeWidth={1.75} />
+                )}
+              </div>
+              <span className={`text-[11.5px] font-medium leading-snug transition-colors ${isChecked ? 'text-emerald-200/90' : 'text-neutral-300 group-hover:text-neutral-200'}`}>
                 {item.label}
               </span>
             </button>
@@ -538,7 +576,6 @@ function PerformanceCalendar({ globalHistory, setModal }) {
 function OverviewTab({ setModal }) {
   return (
     <div className="space-y-5 animate-fadeIn">
-      {/* Dynamic Countdown Telemetry Block Row */}
       <CountdownMatrix />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
