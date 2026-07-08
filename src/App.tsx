@@ -5,7 +5,8 @@ import {
   Droplets, Sunrise, Sun, Moon, Utensils, Flame,
   AlertTriangle, ChevronRight, Eye, Smile, Scissors, Wind,
   TrendingUp, Activity, Timer, Calendar, X, ArrowUpRight, FlameKindling,
-  ChevronLeft, Lock
+  ChevronLeft, Lock, Music2, Play, Pause, SkipBack, SkipForward,
+  Volume2, Volume1, VolumeX, Search, Disc3, ListMusic
 } from 'lucide-react';
 
 // ---------- Deep Interactive Knowledge Matrix ----------
@@ -158,6 +159,7 @@ const TABS = [
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
   { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
   { id: 'grooming', label: 'Clinical Grooming', icon: Sparkles },
+  { id: 'spotify', label: 'Spotify Player', icon: Music2 },
   { id: 'strava', label: 'Strava Sync', icon: Activity },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
 ];
@@ -1578,6 +1580,176 @@ export default function JEEDashboard() {
     
     window.open(stravaAuthUrl, 'Connect with Strava', 'width=600,height=800');
   };
+
+  // --- Spotify Sync Engine States ---
+  // Mirrors the Strava engine exactly: refresh_token persisted to disk means
+  // the session survives a hard refresh, a closed tab, or a new day — no
+  // re-authorization popup required unless the user explicitly disconnects
+  // or revokes access from Spotify's own account settings.
+  const [spotifyTokens, setSpotifyTokens] = useState<{ access_token: string; refresh_token: string; expires_at: number } | null>(() => {
+    try {
+      const saved = localStorage.getItem('spotify_tokens');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isSpotifyConnected, setIsSpotifyConnected] = useState(() => {
+    return localStorage.getItem('spotify_connected') === 'true';
+  });
+
+  const [isSpotifyLoading, setIsSpotifyLoading] = useState(false);
+  const [isSpotifySyncing, setIsSpotifySyncing] = useState(false);
+  const [spotifyLastSynced, setSpotifyLastSynced] = useState<number | null>(null);
+
+  const [spotifyProfile, setSpotifyProfile] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('spotify_profile');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [spotifyRecentlyPlayed, setSpotifyRecentlyPlayed] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('spotify_recent');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const persistSpotifyTokens = (tokens: { access_token: string; refresh_token: string; expires_at: number }) => {
+    setSpotifyTokens(tokens);
+    localStorage.setItem('spotify_tokens', JSON.stringify(tokens));
+  };
+
+  // Pulls a fresh access_token + profile + recently-played using only the
+  // stored refresh_token. Safe to call on a timer or on tab focus — this is
+  // what keeps the "connected" state alive across refreshes indefinitely.
+  const syncSpotifyData = async (refreshToken?: string) => {
+    const tokenToUse = refreshToken ?? spotifyTokens?.refresh_token;
+    if (!tokenToUse) return;
+
+    setIsSpotifySyncing(true);
+    try {
+      const response = await fetch('/api/spotify-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: tokenToUse }),
+      });
+
+      if (response.status === 401) {
+        // Refresh token rejected — access was revoked on Spotify's side.
+        handleSpotifyDisconnect();
+        return;
+      }
+
+      if (!response.ok) return;
+
+      const result = await response.json();
+      setSpotifyProfile(result.profile);
+      setSpotifyRecentlyPlayed(result.recentlyPlayed || []);
+      localStorage.setItem('spotify_profile', JSON.stringify(result.profile));
+      localStorage.setItem('spotify_recent', JSON.stringify(result.recentlyPlayed || []));
+      persistSpotifyTokens(result.tokens);
+      setSpotifyLastSynced(Date.now());
+    } catch {
+      // Network hiccup — keep cached data, retry on next scheduled sync.
+    } finally {
+      setIsSpotifySyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleSpotifyMessage = (event: any) => {
+      const isTrustedOrigin =
+        event.origin === window.location.origin ||
+        event.origin.includes('vercel.app') ||
+        event.origin.includes('webcontainer.io');
+
+      if (!isTrustedOrigin) return;
+
+      if (event.data && event.data.type === 'SPOTIFY_DATA') {
+        const { profile, recentlyPlayed, tokens } = event.data;
+
+        setSpotifyProfile(profile);
+        setSpotifyRecentlyPlayed(recentlyPlayed || []);
+        setIsSpotifyConnected(true);
+        setSpotifyLastSynced(Date.now());
+
+        localStorage.setItem('spotify_profile', JSON.stringify(profile));
+        localStorage.setItem('spotify_recent', JSON.stringify(recentlyPlayed || []));
+        localStorage.setItem('spotify_connected', 'true');
+        if (tokens) persistSpotifyTokens(tokens);
+
+        setIsSpotifyLoading(false);
+      }
+    };
+
+    window.addEventListener('message', handleSpotifyMessage);
+    return () => window.removeEventListener('message', handleSpotifyMessage);
+  }, []);
+
+  // Keep the account data fresh automatically: once on load, every 5 minutes
+  // while connected, and again the instant the tab regains focus — same
+  // real-time-feeling cadence as the Strava engine.
+  useEffect(() => {
+    if (!isSpotifyConnected || !spotifyTokens?.refresh_token) return;
+
+    syncSpotifyData();
+
+    const intervalId = setInterval(() => syncSpotifyData(), 5 * 60 * 1000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncSpotifyData();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpotifyConnected]);
+
+  const handleSpotifyDisconnect = () => {
+    setSpotifyProfile(null);
+    setSpotifyRecentlyPlayed([]);
+    setIsSpotifyConnected(false);
+    setSpotifyTokens(null);
+    setSpotifyLastSynced(null);
+
+    localStorage.removeItem('spotify_profile');
+    localStorage.removeItem('spotify_recent');
+    localStorage.removeItem('spotify_connected');
+    localStorage.removeItem('spotify_tokens');
+  };
+
+  const handleSpotifyConnect = () => {
+    setIsSpotifyLoading(true);
+
+    // Replace with your own Spotify Developer Dashboard Client ID —
+    // the same way the Strava client_id above is wired up.
+    const clientId = '2f4cd23001604c63936002f1d7a52660D';
+
+    const isLive = window.location.hostname.includes('vercel.app');
+    const targetOrigin = isLive
+      ? 'https://ashutoshbehera.vercel.app'
+      : window.location.origin;
+
+    const redirectUri = encodeURIComponent(`${targetOrigin}/api/spotify-callback`);
+    const scope = encodeURIComponent(
+      'streaming user-read-email user-read-private user-read-playback-state user-modify-playback-state user-read-currently-playing user-read-recently-played user-top-read'
+    );
+
+    const spotifyAuthUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}`;
+
+    window.open(spotifyAuthUrl, 'Connect with Spotify', 'width=600,height=800');
+  };
+
   const [introDone, setIntroDone] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [modal, setModal] = useState(null);
@@ -1642,6 +1814,22 @@ export default function JEEDashboard() {
       case 'training': return <TrainingFuelTab setModal={setModal} />;
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
       case 'grooming': return <GroomingTab setModal={setModal} />;
+      case 'spotify':
+        return (
+          <SpotifyTab
+            spotifyTokens={spotifyTokens}
+            isSpotifyConnected={isSpotifyConnected}
+            isSpotifyLoading={isSpotifyLoading}
+            handleSpotifyConnect={handleSpotifyConnect}
+            handleSpotifyDisconnect={handleSpotifyDisconnect}
+            spotifyProfile={spotifyProfile}
+            spotifyRecentlyPlayed={spotifyRecentlyPlayed}
+            isSpotifySyncing={isSpotifySyncing}
+            spotifyLastSynced={spotifyLastSynced}
+            onManualSync={() => syncSpotifyData()}
+            persistSpotifyTokens={persistSpotifyTokens}
+          />
+        );
       case 'strava': 
         return (
           <StravaTab 
@@ -1758,6 +1946,29 @@ export default function JEEDashboard() {
           80% { transform: translateX(6px); }
         }
         .animate-shake { animation: shake 400ms ease-in-out; }
+        @keyframes discSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-discSpin { animation: discSpin 6s linear infinite; }
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 0.35; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.06); }
+        }
+        .animate-pulseGlow { animation: pulseGlow 2.6s ease-in-out infinite; }
+        @keyframes eqBar {
+          0%, 100% { transform: scaleY(0.25); }
+          50% { transform: scaleY(1); }
+        }
+        .animate-eqBar1 { animation: eqBar 0.85s ease-in-out infinite; animation-delay: -0.6s; transform-origin: bottom; }
+        .animate-eqBar2 { animation: eqBar 0.7s ease-in-out infinite; animation-delay: -0.2s; transform-origin: bottom; }
+        .animate-eqBar3 { animation: eqBar 0.95s ease-in-out infinite; animation-delay: -0.9s; transform-origin: bottom; }
+        .animate-eqBar4 { animation: eqBar 0.65s ease-in-out infinite; animation-delay: -0.35s; transform-origin: bottom; }
+        @keyframes slideInFade {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideInFade { animation: slideInFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
         @media (pointer: fine) {
           * { cursor: none !important; }
         }
@@ -1877,6 +2088,461 @@ function StravaTab({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------- Tab Subcomponent: Spotify Live Player ----------
+
+interface SpotifyTabProps {
+  spotifyTokens: { access_token: string; refresh_token: string; expires_at: number } | null;
+  isSpotifyConnected: boolean;
+  isSpotifyLoading: boolean;
+  handleSpotifyConnect: () => void;
+  handleSpotifyDisconnect: () => void;
+  spotifyProfile: any;
+  spotifyRecentlyPlayed: any[];
+  isSpotifySyncing: boolean;
+  spotifyLastSynced: number | null;
+  onManualSync: () => void;
+  persistSpotifyTokens: (tokens: { access_token: string; refresh_token: string; expires_at: number }) => void;
+}
+
+function formatMs(ms: number) {
+  if (!ms || ms < 0) return '0:00';
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, '0')}`;
+}
+
+function SpotifyTab({
+  spotifyTokens,
+  isSpotifyConnected,
+  isSpotifyLoading,
+  handleSpotifyConnect,
+  handleSpotifyDisconnect,
+  spotifyProfile,
+  spotifyRecentlyPlayed,
+  isSpotifySyncing,
+  spotifyLastSynced,
+  onManualSync,
+  persistSpotifyTokens,
+}: SpotifyTabProps) {
+  const [player, setPlayer] = useState<any>(null);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [playerStatus, setPlayerStatus] = useState<'idle' | 'connecting' | 'ready' | 'error'>('idle');
+  const [playerError, setPlayerError] = useState<string | null>(null);
+  const [playbackState, setPlaybackState] = useState<any>(null);
+  const [localPosition, setLocalPosition] = useState(0);
+  const [volume, setVolume] = useState(0.5);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  const accessTokenRef = useRef<string | undefined>(spotifyTokens?.access_token);
+  const positionTickRef = useRef<any>(null);
+  const searchDebounceRef = useRef<any>(null);
+
+  useEffect(() => {
+    accessTokenRef.current = spotifyTokens?.access_token;
+  }, [spotifyTokens?.access_token]);
+
+  const lastSyncedLabel = spotifyLastSynced
+    ? new Date(spotifyLastSynced).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  // ----- Load the Web Playback SDK once we have a live session -----
+  useEffect(() => {
+    if (!isSpotifyConnected || !spotifyTokens?.access_token) return;
+
+    const initPlayer = () => {
+      const w = window as any;
+      if (!w.Spotify) return;
+
+      setPlayerStatus('connecting');
+
+      const spotifyPlayer = new w.Spotify.Player({
+        name: 'Command Center Player',
+        getOAuthToken: (cb: (token: string) => void) => cb(accessTokenRef.current || ''),
+        volume: 0.5,
+      });
+
+      spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
+        setDeviceId(device_id);
+        setPlayerStatus('ready');
+        setPlayerError(null);
+        // Transfer playback to this browser tab so it becomes the active device.
+        fetch('https://api.spotify.com/v1/me/player', {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessTokenRef.current}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ device_ids: [device_id], play: false }),
+        }).catch(() => {});
+      });
+
+      spotifyPlayer.addListener('not_ready', () => setPlayerStatus('idle'));
+
+      spotifyPlayer.addListener('initialization_error', () => {
+        setPlayerStatus('error');
+        setPlayerError('This browser could not initialize the player.');
+      });
+      spotifyPlayer.addListener('authentication_error', () => {
+        setPlayerStatus('error');
+        setPlayerError('Session expired — reconnect your account.');
+      });
+      spotifyPlayer.addListener('account_error', () => {
+        setPlayerStatus('error');
+        setPlayerError('Spotify Premium is required for in-browser playback.');
+      });
+
+      spotifyPlayer.addListener('player_state_changed', (state: any) => {
+        if (!state) return;
+        setPlaybackState(state);
+        setLocalPosition(state.position);
+      });
+
+      spotifyPlayer.connect();
+      setPlayer(spotifyPlayer);
+    };
+
+    const w = window as any;
+    if (w.Spotify) {
+      initPlayer();
+    } else if (!document.getElementById('spotify-player-sdk')) {
+      const script = document.createElement('script');
+      script.id = 'spotify-player-sdk';
+      script.src = 'https://sdk.scdn.co/spotify-player.js';
+      script.async = true;
+      document.body.appendChild(script);
+      w.onSpotifyWebPlaybackSDKReady = initPlayer;
+    }
+
+    return () => {
+      player?.disconnect?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpotifyConnected]);
+
+  // ----- Local ticking progress bar between state_changed events -----
+  useEffect(() => {
+    if (positionTickRef.current) clearInterval(positionTickRef.current);
+    if (playbackState && !playbackState.paused) {
+      positionTickRef.current = setInterval(() => {
+        setLocalPosition((p) => Math.min(p + 1000, playbackState.duration || p + 1000));
+      }, 1000);
+    }
+    return () => clearInterval(positionTickRef.current);
+  }, [playbackState?.paused, playbackState?.track_window?.current_track?.id]);
+
+  // ----- Track search against Spotify's catalog (debounced) -----
+  useEffect(() => {
+    if (!searchQuery.trim() || !spotifyTokens?.access_token) {
+      setSearchResults([]);
+      return;
+    }
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(
+          `https://api.spotify.com/v1/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=8`,
+          { headers: { Authorization: `Bearer ${accessTokenRef.current}` } }
+        );
+        const data = await res.json();
+        setSearchResults(data?.tracks?.items || []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(searchDebounceRef.current);
+  }, [searchQuery, spotifyTokens?.access_token]);
+
+  const playUri = async (uri: string) => {
+    if (!deviceId || !accessTokenRef.current) return;
+    await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessTokenRef.current}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ uris: [uri] }),
+    }).catch(() => {});
+  };
+
+  const togglePlay = () => player?.togglePlay?.();
+  const skipNext = () => player?.nextTrack?.();
+  const skipPrev = () => player?.previousTrack?.();
+
+  const handleVolumeChange = (v: number) => {
+    setVolume(v);
+    player?.setVolume?.(v);
+  };
+
+  const currentTrack = playbackState?.track_window?.current_track;
+  const isPlaying = playbackState && !playbackState.paused;
+  const duration = playbackState?.duration || currentTrack?.duration_ms || 0;
+  const progressPct = duration ? Math.min(100, (localPosition / duration) * 100) : 0;
+
+  return (
+    <div className="space-y-5 animate-fadeIn">
+      {/* Header / Connect Panel */}
+      <div className="border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950/40 rounded-2xl p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-neutral-800 pb-4 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 shadow-lg shadow-emerald-500/20">
+              {isSpotifyConnected && isPlaying && (
+                <span className="absolute inset-0 rounded-xl bg-emerald-400 animate-pulseGlow" />
+              )}
+              <Music2 className="h-5.5 w-5.5 text-neutral-950 relative" strokeWidth={2} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-neutral-200 leading-tight">Spotify Live Player</h3>
+              <p className="text-[12px] text-neutral-500 mt-0.5">
+                {isSpotifyConnected
+                  ? spotifyProfile?.display_name
+                    ? `Connected as ${spotifyProfile.display_name}${lastSyncedLabel ? ` · synced ${lastSyncedLabel}` : ''}`
+                    : isSpotifySyncing
+                      ? 'Syncing account…'
+                      : 'Connected to Spotify'
+                  : 'Stream and control your music directly from this dashboard'}
+              </p>
+            </div>
+          </div>
+
+          <div className="w-full sm:w-auto flex items-center gap-2">
+            {isSpotifyConnected && (
+              <button
+                onClick={onManualSync}
+                disabled={isSpotifySyncing}
+                className="px-3 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 font-semibold rounded-xl transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-1.5 disabled:opacity-50"
+                title="Sync now"
+              >
+                <Activity className={`w-3.5 h-3.5 ${isSpotifySyncing ? 'animate-spin' : ''}`} />
+              </button>
+            )}
+
+            <button
+              onClick={isSpotifyConnected ? handleSpotifyDisconnect : handleSpotifyConnect}
+              disabled={isSpotifyLoading}
+              className={
+                isSpotifyConnected
+                  ? "w-full sm:w-auto px-5 py-2.5 bg-neutral-900 hover:bg-red-950/40 border border-neutral-700 hover:border-red-800 text-neutral-300 hover:text-red-400 font-bold rounded-xl transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-2 group cursor-target active:scale-98"
+                  : "w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-neutral-950 font-bold rounded-xl shadow-lg shadow-emerald-500/10 transition-all duration-200 text-xs tracking-wider flex items-center justify-center gap-2 group cursor-target active:scale-98 disabled:opacity-60"
+              }
+            >
+              <Music2 className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+              {isSpotifyLoading ? 'CONNECTING…' : isSpotifyConnected ? 'DISCONNECT SPOTIFY' : 'CONNECT SPOTIFY ACCOUNT'}
+            </button>
+          </div>
+        </div>
+
+        {!isSpotifyConnected && (
+          <div className="flex flex-col items-center justify-center py-12 text-center bg-neutral-950/20 rounded-xl border border-dashed border-neutral-800">
+            <Disc3 className="w-8 h-8 text-neutral-700 mb-2" />
+            <p className="text-xs text-neutral-400 font-medium mb-1">No Spotify account linked yet.</p>
+            <p className="text-[11px] text-neutral-500 max-w-sm">
+              Link your account once — the session stays connected across refreshes automatically, no repeated logins. Requires Spotify Premium for direct in-browser playback.
+            </p>
+          </div>
+        )}
+
+        {isSpotifyConnected && playerStatus === 'error' && (
+          <div className="flex items-center gap-2 py-3 px-4 bg-red-950/20 border border-red-900/40 rounded-xl text-[11.5px] text-red-400">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            {playerError}
+          </div>
+        )}
+      </div>
+
+      {isSpotifyConnected && (
+        <>
+          {/* Now Playing / Player Card */}
+          <div className="relative overflow-hidden border border-emerald-900/30 bg-gradient-to-br from-emerald-950/20 via-neutral-900 to-neutral-950 rounded-2xl p-6 shadow-xl">
+            {isPlaying && (
+              <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-emerald-500/10 blur-3xl animate-pulseGlow" />
+            )}
+
+            <div className="relative flex flex-col sm:flex-row items-center gap-5">
+              {/* Album Art */}
+              <div className="relative shrink-0">
+                <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-neutral-800 shadow-lg ${isPlaying ? 'animate-discSpin' : ''}`}>
+                  {currentTrack?.album?.images?.[0]?.url ? (
+                    <img src={currentTrack.album.images[0].url} alt={currentTrack.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-neutral-800 flex items-center justify-center">
+                      <Disc3 className="w-8 h-8 text-neutral-600" />
+                    </div>
+                  )}
+                </div>
+                <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/40 pointer-events-none" />
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-neutral-950 border-2 border-neutral-800" />
+              </div>
+
+              {/* Track Info + Progress */}
+              <div className="flex-1 w-full min-w-0 text-center sm:text-left">
+                <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
+                  <p className="text-sm font-bold text-neutral-100 truncate max-w-[260px]">
+                    {currentTrack?.name || (playerStatus === 'ready' ? 'Nothing playing yet' : 'Waking up the player…')}
+                  </p>
+                  {isPlaying && (
+                    <span className="flex items-end gap-[2px] h-3">
+                      <span className="w-[3px] bg-emerald-400 rounded-full animate-eqBar1 h-full" />
+                      <span className="w-[3px] bg-emerald-400 rounded-full animate-eqBar2 h-full" />
+                      <span className="w-[3px] bg-emerald-400 rounded-full animate-eqBar3 h-full" />
+                      <span className="w-[3px] bg-emerald-400 rounded-full animate-eqBar4 h-full" />
+                    </span>
+                  )}
+                </div>
+                <p className="text-[12px] text-neutral-500 mb-3 truncate">
+                  {currentTrack?.artists?.map((a: any) => a.name).join(', ') || 'Search a track below to start streaming'}
+                </p>
+
+                <div className="w-full h-1.5 bg-neutral-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-green-500 rounded-full transition-all duration-1000 ease-linear"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1 text-[10.5px] text-neutral-600 font-mono tabular-nums">
+                  <span>{formatMs(localPosition)}</span>
+                  <span>{formatMs(duration)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Controls */}
+            <div className="relative flex items-center justify-center gap-4 mt-6">
+              <button
+                onClick={skipPrev}
+                disabled={playerStatus !== 'ready'}
+                className="cursor-target p-2.5 text-neutral-400 hover:text-neutral-100 transition-colors disabled:opacity-30 active:scale-90"
+              >
+                <SkipBack className="w-5 h-5" fill="currentColor" />
+              </button>
+              <button
+                onClick={togglePlay}
+                disabled={playerStatus !== 'ready'}
+                className="cursor-target w-12 h-12 flex items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-green-600 text-neutral-950 shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-transform disabled:opacity-40"
+              >
+                {isPlaying ? <Pause className="w-5 h-5" fill="currentColor" /> : <Play className="w-5 h-5 ml-0.5" fill="currentColor" />}
+              </button>
+              <button
+                onClick={skipNext}
+                disabled={playerStatus !== 'ready'}
+                className="cursor-target p-2.5 text-neutral-400 hover:text-neutral-100 transition-colors disabled:opacity-30 active:scale-90"
+              >
+                <SkipForward className="w-5 h-5" fill="currentColor" />
+              </button>
+
+              <div className="hidden sm:flex items-center gap-2 ml-4">
+                {volume === 0 ? <VolumeX className="w-4 h-4 text-neutral-500" /> : volume < 0.5 ? <Volume1 className="w-4 h-4 text-neutral-500" /> : <Volume2 className="w-4 h-4 text-neutral-500" />}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-24 accent-emerald-400"
+                />
+              </div>
+            </div>
+
+            {playerStatus === 'connecting' && (
+              <p className="relative text-center text-[10.5px] text-neutral-600 mt-4">Initializing browser playback device…</p>
+            )}
+          </div>
+
+          {/* Search */}
+          <div className="border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950/40 rounded-2xl p-5 shadow-xl">
+            <div className="flex items-center gap-2 mb-3">
+              <Search className="w-4 h-4 text-neutral-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                onFocus={() => setSearchOpen(true)}
+                placeholder="Search any song, artist, or album…"
+                className="flex-1 bg-transparent text-sm text-neutral-200 placeholder-neutral-600 outline-none"
+              />
+              {isSearching && <span className="text-[10.5px] text-neutral-600">searching…</span>}
+            </div>
+
+            {searchOpen && searchQuery.trim() && (
+              <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                {searchResults.length === 0 && !isSearching && (
+                  <p className="text-[11.5px] text-neutral-600 py-4 text-center">No matches found.</p>
+                )}
+                {searchResults.map((track: any) => (
+                  <button
+                    key={track.id}
+                    onClick={() => playUri(track.uri)}
+                    disabled={playerStatus !== 'ready'}
+                    className="cursor-target w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-neutral-800/60 transition-all text-left disabled:opacity-40 animate-slideInFade group"
+                  >
+                    <img
+                      src={track.album?.images?.[track.album.images.length - 1]?.url}
+                      alt={track.name}
+                      className="w-10 h-10 rounded-md object-cover shrink-0 bg-neutral-800"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-neutral-200 truncate">{track.name}</p>
+                      <p className="text-[11px] text-neutral-500 truncate">{track.artists?.map((a: any) => a.name).join(', ')}</p>
+                    </div>
+                    <Play className="w-4 h-4 text-neutral-600 group-hover:text-emerald-400 transition-colors shrink-0" fill="currentColor" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recently Played */}
+          <div className="border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950/40 rounded-2xl p-6 shadow-xl">
+            <div className="flex items-center gap-2 mb-4">
+              <ListMusic className="w-4 h-4 text-neutral-500" />
+              <h4 className="text-sm font-bold text-neutral-300">Recently Played</h4>
+            </div>
+
+            {spotifyRecentlyPlayed.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[40vh] overflow-y-auto pr-1">
+                {spotifyRecentlyPlayed.map((item: any, idx: number) => {
+                  const track = item.track || item;
+                  return (
+                    <button
+                      key={`${track.id}-${idx}`}
+                      onClick={() => playUri(track.uri)}
+                      disabled={playerStatus !== 'ready'}
+                      className="cursor-target flex items-center gap-3 p-3 bg-neutral-950/40 border border-neutral-800 rounded-xl hover:border-emerald-800/50 hover:bg-emerald-950/10 transition-all text-left disabled:opacity-50 group"
+                    >
+                      <img
+                        src={track.album?.images?.[track.album.images.length - 1]?.url}
+                        alt={track.name}
+                        className="w-10 h-10 rounded-md object-cover shrink-0 bg-neutral-800"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold text-neutral-200 truncate">{track.name}</p>
+                        <span className="text-[11px] text-neutral-500 truncate block">{track.artists?.map((a: any) => a.name).join(', ')}</span>
+                      </div>
+                      <Play className="w-3.5 h-3.5 text-neutral-700 group-hover:text-emerald-400 transition-colors shrink-0" fill="currentColor" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center bg-neutral-950/20 rounded-xl border border-dashed border-neutral-800">
+                <p className="text-xs text-neutral-400 font-medium mb-1">No listening history synced yet.</p>
+                <p className="text-[11px] text-neutral-500">Play a track above or on any device — it'll show up here on the next sync.</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
