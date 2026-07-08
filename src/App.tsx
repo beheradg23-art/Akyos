@@ -6,7 +6,8 @@ import {
   AlertTriangle, ChevronRight, Eye, Smile, Scissors, Wind,
   TrendingUp, Activity, Timer, Calendar, X, ArrowUpRight, FlameKindling,
   ChevronLeft, Lock, Music2, Play, Pause, SkipBack, SkipForward,
-  Volume2, Volume1, VolumeX, Search, Disc3, ListMusic
+  Volume2, Volume1, VolumeX, Search, Disc3, ListMusic, RotateCcw,
+  Crown, Swords
 } from 'lucide-react';
 
 // ---------- Deep Interactive Knowledge Matrix ----------
@@ -158,6 +159,7 @@ const TABS = [
   { id: 'timeline', label: 'Master Timeline', icon: Clock3 },
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
   { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
+  { id: 'ashclock', label: "Ash's Clock", icon: Timer },
   { id: 'grooming', label: 'Clinical Grooming', icon: Sparkles },
   { id: 'spotify', label: 'Spotify Player', icon: Music2 },
   { id: 'strava', label: 'Strava Sync', icon: Activity },
@@ -1733,7 +1735,7 @@ export default function JEEDashboard() {
 
     // Replace with your own Spotify Developer Dashboard Client ID —
     // the same way the Strava client_id above is wired up.
-    const clientId = '2f4cd23001604c63936002f1d7a52660';
+    const clientId = 'YOUR_SPOTIFY_CLIENT_ID';
 
     const isLive = window.location.hostname.includes('vercel.app');
     const targetOrigin = isLive
@@ -1813,6 +1815,7 @@ export default function JEEDashboard() {
       case 'timeline': return <TimelineTab setModal={setModal} />;
       case 'training': return <TrainingFuelTab setModal={setModal} />;
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
+      case 'ashclock': return <AshClockTab />;
       case 'grooming': return <GroomingTab setModal={setModal} />;
       case 'spotify':
         return (
@@ -1969,6 +1972,54 @@ export default function JEEDashboard() {
           to { opacity: 1; transform: translateY(0); }
         }
         .animate-slideInFade { animation: slideInFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+        /* ---- Ash's Clock: vertical fade/slide digit mechanics ---- */
+        .fade-unit {
+          position: relative;
+          width: calc(var(--fade-h) * 0.72);
+          height: var(--fade-h);
+          border-radius: 10px;
+          overflow: hidden;
+          background: linear-gradient(180deg, #2d1a4d 0%, #1a0f2e 100%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(147,51,234,0.16);
+        }
+        .fade-num {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: calc(var(--fade-h) * 0.52);
+          font-weight: 800;
+          font-family: 'Courier New', monospace;
+          color: #f3e8ff;
+          font-variant-numeric: tabular-nums;
+        }
+        @keyframes fadeNumInUp {
+          from { opacity: 0; transform: translateY(38%); filter: blur(2px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        @keyframes fadeNumOutUp {
+          from { opacity: 1; transform: translateY(0); filter: blur(0); }
+          to { opacity: 0; transform: translateY(-38%); filter: blur(2px); }
+        }
+        @keyframes fadeNumInDown {
+          from { opacity: 0; transform: translateY(-38%); filter: blur(2px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        @keyframes fadeNumOutDown {
+          from { opacity: 1; transform: translateY(0); filter: blur(0); }
+          to { opacity: 0; transform: translateY(38%); filter: blur(2px); }
+        }
+        .fade-num-in-up { animation: fadeNumInUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-out-up { animation: fadeNumOutUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-in-down { animation: fadeNumInDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-out-down { animation: fadeNumOutDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes dotBreathe {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+        .animate-dotBreathe { animation: dotBreathe 1.6s ease-in-out infinite; }
         @media (pointer: fine) {
           * { cursor: none !important; }
         }
@@ -2543,6 +2594,446 @@ function SpotifyTab({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+
+// ---------- Tab Subcomponent: Ash's Clock (Fade-Digit Clock + Pomodoro) ----------
+
+const DEFAULT_FOCUS_MIN = 50;
+const DEFAULT_BREAK_MIN = 10;
+
+// Small ripple-enabled button, reusing the same click-ripple language as the
+// bento grid Cards elsewhere in the app (see useRipple above).
+function RippleButton({
+  children, onClick, className = '', disabled = false, title,
+}: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean; title?: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [spawnRipple, rippleNodes] = useRipple();
+
+  const handleDown = (e: any) => {
+    if (disabled) return;
+    spawnRipple(e, ref.current);
+  };
+
+  return (
+    <button
+      ref={ref}
+      onClick={disabled ? undefined : onClick}
+      onMouseDown={handleDown}
+      onTouchStart={handleDown}
+      disabled={disabled}
+      title={title}
+      className={`relative overflow-hidden ${className}`}
+    >
+      {children}
+      {rippleNodes}
+    </button>
+  );
+}
+
+// Single digit that fades + slides out one direction and fades + slides in
+// from the opposite side — upward when the value the digit belongs to is
+// increasing (the live clock), downward when it's decreasing (the pomodoro
+// countdown). This replaces the earlier 3D flip mechanic with something
+// quieter and closer to an odometer roll.
+function FadeDigit({ char, size = 84, direction = 'up' }: { char: string; size?: number; direction?: 'up' | 'down' }) {
+  const [current, setCurrent] = useState(char);
+  const [outgoing, setOutgoing] = useState<string | null>(null);
+  const timeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (char !== current) {
+      setOutgoing(current);
+      setCurrent(char);
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setOutgoing(null), 420);
+    }
+    return () => clearTimeout(timeoutRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [char]);
+
+  const styleVar = { ['--fade-h' as any]: `${size}px` };
+  const inClass = direction === 'up' ? 'fade-num-in-up' : 'fade-num-in-down';
+  const outClass = direction === 'up' ? 'fade-num-out-up' : 'fade-num-out-down';
+
+  return (
+    <div className="fade-unit" style={styleVar}>
+      {outgoing !== null && (
+        <span key={`out-${outgoing}`} className={`fade-num ${outClass}`}>{outgoing}</span>
+      )}
+      <span key={`in-${current}`} className={`fade-num ${inClass}`}>{current}</span>
+    </div>
+  );
+}
+
+function FadePair({ value, size = 84, direction = 'up' }: { value: string; size?: number; direction?: 'up' | 'down' }) {
+  const chars = value.padStart(2, '0').split('');
+  return (
+    <div className="flex gap-1">
+      <FadeDigit char={chars[0]} size={size} direction={direction} />
+      <FadeDigit char={chars[1]} size={size} direction={direction} />
+    </div>
+  );
+}
+
+function FadeColon({ size = 84 }: { size?: number }) {
+  const dot = Math.max(5, size * 0.09);
+  return (
+    <div className="flex flex-col items-center justify-center gap-2" style={{ height: size }}>
+      <span
+        className="block rounded-full bg-purple-400/80 animate-dotBreathe"
+        style={{ width: dot, height: dot, boxShadow: '0 0 8px rgba(192,132,252,0.8)' }}
+      />
+      <span
+        className="block rounded-full bg-purple-400/80 animate-dotBreathe"
+        style={{ width: dot, height: dot, boxShadow: '0 0 8px rgba(192,132,252,0.8)', animationDelay: '0.3s' }}
+      />
+    </div>
+  );
+}
+
+function LiveClockView() {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hours24 = now.getHours();
+  const isPM = hours24 >= 12;
+  let hours12 = hours24 % 12;
+  if (hours12 === 0) hours12 = 12;
+  const hh = hours12.toString().padStart(2, '0');
+  const mm = now.getMinutes().toString().padStart(2, '0');
+  const ss = now.getSeconds().toString().padStart(2, '0');
+
+  const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+  return (
+    <div className="flex flex-col items-center py-6">
+      <div className="flex items-end gap-2 sm:gap-3">
+        <FadePair value={hh} size={64} direction="up" />
+        <FadeColon size={64} />
+        <FadePair value={mm} size={64} direction="up" />
+        <FadeColon size={64} />
+        <FadePair value={ss} size={64} direction="up" />
+        <span className="ml-2 mb-2 text-xs font-bold text-purple-300/80 tracking-widest">{isPM ? 'PM' : 'AM'}</span>
+      </div>
+      <p className="mt-6 text-[12.5px] text-neutral-500 tracking-wide">{dateLabel}</p>
+      <p className="mt-1 text-[10px] text-purple-400/50 tracking-[0.2em] uppercase">Hunter's Association Standard Time</p>
+    </div>
+  );
+}
+
+function PomodoroView() {
+  const [focusMinutes, setFocusMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('ash_clock_focus_min');
+    return saved ? parseInt(saved, 10) : DEFAULT_FOCUS_MIN;
+  });
+  const [breakMinutes, setBreakMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('ash_clock_break_min');
+    return saved ? parseInt(saved, 10) : DEFAULT_BREAK_MIN;
+  });
+
+  const [sessionType, setSessionType] = useState<'focus' | 'break'>('focus');
+  const [secondsLeft, setSecondsLeft] = useState(() => focusMinutes * 60);
+  const [isRunning, setIsRunning] = useState(false);
+
+  const [hunterLevel, setHunterLevel] = useState<number>(() => {
+    const saved = localStorage.getItem('ash_clock_hunter_level');
+    return saved ? parseInt(saved, 10) : 1;
+  });
+  const [questsCleared, setQuestsCleared] = useState<number>(() => {
+    const saved = localStorage.getItem('ash_clock_quests_cleared');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  const [systemMessage, setSystemMessage] = useState<string>(
+    "[The Gate is sealed. Awaiting the Hunter's command to begin the Focus Quest.]"
+  );
+
+  const intervalRef = useRef<any>(null);
+
+  useEffect(() => { localStorage.setItem('ash_clock_focus_min', String(focusMinutes)); }, [focusMinutes]);
+  useEffect(() => { localStorage.setItem('ash_clock_break_min', String(breakMinutes)); }, [breakMinutes]);
+  useEffect(() => { localStorage.setItem('ash_clock_hunter_level', String(hunterLevel)); }, [hunterLevel]);
+  useEffect(() => { localStorage.setItem('ash_clock_quests_cleared', String(questsCleared)); }, [questsCleared]);
+
+  // If duration settings change while idle, keep the countdown in sync
+  useEffect(() => {
+    if (!isRunning) {
+      setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMinutes, breakMinutes]);
+
+  const playChime = () => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new Ctx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 660;
+      gain.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.9);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.9);
+    } catch {
+      // Silent environments (or browsers blocking autoplay) just skip the chime.
+    }
+  };
+
+  const handleSessionComplete = () => {
+    playChime();
+    if (sessionType === 'focus') {
+      const nextQuests = questsCleared + 1;
+      setQuestsCleared(nextQuests);
+      if (nextQuests % 4 === 0) {
+        const nextLevel = hunterLevel + 1;
+        setHunterLevel(nextLevel);
+        setSystemMessage(`[Quest Clear!] EXP acquired. Hunter Level Up -> Lv. ${nextLevel}. Rest Zone unlocked.`);
+      } else {
+        setSystemMessage('[Quest Clear!] EXP acquired. Entering the Rest Zone — mana regenerating.');
+      }
+      setSessionType('break');
+      setSecondsLeft(breakMinutes * 60);
+    } else {
+      setSystemMessage('[Rest complete.] A new Gate has appeared. Arise, Hunter.');
+      setSessionType('focus');
+      setSecondsLeft(focusMinutes * 60);
+    }
+    setIsRunning(false);
+  };
+
+  useEffect(() => {
+    if (isRunning) {
+      intervalRef.current = setInterval(() => {
+        setSecondsLeft((s) => {
+          if (s <= 1) {
+            clearInterval(intervalRef.current);
+            handleSessionComplete();
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(intervalRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning]);
+
+  const totalSeconds = (sessionType === 'focus' ? focusMinutes : breakMinutes) * 60;
+  const progressPct = totalSeconds ? ((totalSeconds - secondsLeft) / totalSeconds) * 100 : 0;
+
+  const mm = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+  const ss = (secondsLeft % 60).toString().padStart(2, '0');
+
+  const handleStartPause = () => {
+    if (!isRunning) {
+      if (secondsLeft === 0) {
+        setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
+      }
+      setSystemMessage(
+        sessionType === 'focus'
+          ? '[Quest Alert] A Focus Gate has opened. Clear it before the timer expires.'
+          : '[Rest Zone] Recovering mana. The next Gate awaits.'
+      );
+    }
+    setIsRunning((r) => !r);
+  };
+
+  const handleReset = () => {
+    setIsRunning(false);
+    setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
+    setSystemMessage("[Timer reset.] Awaiting the Hunter's command.");
+  };
+
+  const handleSkip = () => {
+    setIsRunning(false);
+    handleSessionComplete();
+  };
+
+  const adjustMinutes = (which: 'focus' | 'break', delta: number) => {
+    if (isRunning) return;
+    if (which === 'focus') {
+      setFocusMinutes((m) => Math.max(5, Math.min(180, m + delta)));
+    } else {
+      setBreakMinutes((m) => Math.max(1, Math.min(60, m + delta)));
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center py-4">
+      {/* Hunter Rank strip */}
+      <div className="flex items-center gap-3 mb-5 text-[11px] font-semibold tracking-wide">
+        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/50 border border-purple-800/40 text-purple-300">
+          <Crown className="w-3.5 h-3.5" /> Hunter Lv. {hunterLevel}
+        </span>
+        <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-fuchsia-950/40 border border-fuchsia-800/30 text-fuchsia-300">
+          <Swords className="w-3.5 h-3.5" /> {questsCleared} Quests Cleared
+        </span>
+      </div>
+
+      {/* Session badge */}
+      <div
+        className={`mb-4 px-4 py-1.5 rounded-full text-[11px] font-bold tracking-[0.15em] uppercase border ${
+          sessionType === 'focus'
+            ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+            : 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30'
+        }`}
+      >
+        {sessionType === 'focus' ? 'Focus Gate' : 'Rest Zone'}
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3">
+        <FadePair value={mm} size={88} direction="down" />
+        <FadeColon size={88} />
+        <FadePair value={ss} size={88} direction="down" />
+      </div>
+
+      {/* Progress bar */}
+      <div className="w-full max-w-xs h-1.5 bg-neutral-800 rounded-full overflow-hidden mt-5">
+        <div
+          className={`h-full rounded-full transition-all duration-1000 ease-linear ${
+            sessionType === 'focus'
+              ? 'bg-gradient-to-r from-purple-500 to-fuchsia-500'
+              : 'bg-gradient-to-r from-fuchsia-400 to-pink-400'
+          }`}
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-4 mt-6">
+        <RippleButton
+          onClick={handleReset}
+          className="cursor-target rounded-full p-2.5 text-neutral-500 hover:text-purple-300 transition-colors active:scale-90"
+          title="Reset"
+        >
+          <RotateCcw className="w-5 h-5" />
+        </RippleButton>
+        <RippleButton
+          onClick={handleStartPause}
+          className="cursor-target rounded-full w-14 h-14 flex items-center justify-center bg-gradient-to-br from-purple-500 to-fuchsia-600 text-neutral-950 shadow-lg shadow-purple-500/30 hover:scale-105 active:scale-95 transition-transform"
+          title={isRunning ? 'Pause' : 'Arise'}
+        >
+          {isRunning ? <Pause className="w-6 h-6" fill="currentColor" /> : <Play className="w-6 h-6 ml-0.5" fill="currentColor" />}
+        </RippleButton>
+        <RippleButton
+          onClick={handleSkip}
+          className="cursor-target rounded-full p-2.5 text-neutral-500 hover:text-purple-300 transition-colors active:scale-90"
+          title="Skip to next session"
+        >
+          <SkipForward className="w-5 h-5" fill="currentColor" />
+        </RippleButton>
+      </div>
+
+      {/* System message banner */}
+      <div className="mt-6 w-full max-w-md text-center px-4 py-2.5 rounded-xl bg-purple-950/30 border border-purple-800/30">
+        <p className="text-[11px] font-mono text-purple-300/80 leading-relaxed">{systemMessage}</p>
+      </div>
+
+      {/* Duration settings */}
+      <div className="flex flex-col sm:flex-row gap-3 mt-6 w-full max-w-md">
+        <div className="flex-1 flex items-center justify-between bg-neutral-950/40 border border-neutral-800 rounded-xl px-4 py-3">
+          <span className="text-[11px] font-semibold text-neutral-400">Focus (min)</span>
+          <div className="flex items-center gap-2">
+            <RippleButton
+              onClick={() => adjustMinutes('focus', -5)}
+              disabled={isRunning}
+              className="cursor-target rounded-md w-6 h-6 flex items-center justify-center bg-neutral-800 text-neutral-300 disabled:opacity-30 hover:bg-neutral-700"
+            >
+              −
+            </RippleButton>
+            <span className="text-sm font-bold text-purple-300 w-8 text-center tabular-nums">{focusMinutes}</span>
+            <RippleButton
+              onClick={() => adjustMinutes('focus', 5)}
+              disabled={isRunning}
+              className="cursor-target rounded-md w-6 h-6 flex items-center justify-center bg-neutral-800 text-neutral-300 disabled:opacity-30 hover:bg-neutral-700"
+            >
+              +
+            </RippleButton>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-between bg-neutral-950/40 border border-neutral-800 rounded-xl px-4 py-3">
+          <span className="text-[11px] font-semibold text-neutral-400">Break (min)</span>
+          <div className="flex items-center gap-2">
+            <RippleButton
+              onClick={() => adjustMinutes('break', -1)}
+              disabled={isRunning}
+              className="cursor-target rounded-md w-6 h-6 flex items-center justify-center bg-neutral-800 text-neutral-300 disabled:opacity-30 hover:bg-neutral-700"
+            >
+              −
+            </RippleButton>
+            <span className="text-sm font-bold text-fuchsia-300 w-8 text-center tabular-nums">{breakMinutes}</span>
+            <RippleButton
+              onClick={() => adjustMinutes('break', 1)}
+              disabled={isRunning}
+              className="cursor-target rounded-md w-6 h-6 flex items-center justify-center bg-neutral-800 text-neutral-300 disabled:opacity-30 hover:bg-neutral-700"
+            >
+              +
+            </RippleButton>
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-5 text-[10px] text-purple-400/40 tracking-[0.15em] uppercase text-center">
+        Sung Jinwoo trained relentlessly to become the strongest — this is your Gate.
+      </p>
+    </div>
+  );
+}
+
+function AshClockTab() {
+  const [mode, setMode] = useState<'clock' | 'pomodoro'>('clock');
+
+  return (
+    <div className="space-y-5 animate-fadeIn">
+      <div className="relative overflow-hidden border border-purple-900/30 bg-gradient-to-br from-[#1a0f2e] via-neutral-950 to-[#150a26] rounded-2xl p-6 shadow-xl">
+        <div className="absolute -top-32 -left-20 w-72 h-72 rounded-full bg-purple-600/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -right-20 w-72 h-72 rounded-full bg-fuchsia-600/10 blur-3xl pointer-events-none" />
+
+        <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-700 shadow-lg shadow-purple-500/20">
+              <Timer className="h-5.5 w-5.5 text-neutral-50" strokeWidth={2} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-neutral-100 leading-tight">Ash's Clock</h3>
+              <p className="text-[12px] text-purple-300/60 mt-0.5 italic">"Even the Shadow Monarch answers to time."</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1 rounded-full border border-purple-800/40 bg-purple-950/30 p-1">
+            <RippleButton
+              onClick={() => setMode('clock')}
+              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+                mode === 'clock' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
+              }`}
+            >
+              CLOCK
+            </RippleButton>
+            <RippleButton
+              onClick={() => setMode('pomodoro')}
+              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+                mode === 'pomodoro' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
+              }`}
+            >
+              POMODORO
+            </RippleButton>
+          </div>
+        </div>
+
+        <div className="relative">
+          {mode === 'clock' ? <LiveClockView /> : <PomodoroView />}
+        </div>
+      </div>
     </div>
   );
 }
