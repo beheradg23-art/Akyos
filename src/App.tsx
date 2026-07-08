@@ -1427,12 +1427,29 @@ export default function JEEDashboard() {
   const [isStravaLoading, setIsStravaLoading] = useState(false);
 
   useEffect(() => {
-    const handleStravaMessage = (event: any) => {
+    const handleStravaMessage = (event: MessageEvent) => {
+      // 1. Debug log to verify if the message is actually hitting your app window
+      console.log("Received a window message from origin:", event.origin, event.data);
+
+      // 2. Accept data from your local test environments or your live production domain
+      const isTrustedOrigin = 
+        event.origin === window.location.origin || 
+        event.origin.includes('vercel.app') || 
+        event.origin.includes('webcontainer.io');
+
+      if (!isTrustedOrigin) {
+        console.warn("Message dropped: Unauthorized origin");
+        return;
+      }
+
+      // 3. Process the data
       if (event.data && event.data.type === 'STRAVA_DATA') {
+        console.log("Successfully matching STRAVA_DATA payload:", event.data.data);
         setStravaActivities(event.data.data);
         setIsStravaLoading(false);
       }
     };
+
     window.addEventListener('message', handleStravaMessage);
     return () => window.removeEventListener('message', handleStravaMessage);
   }, []);
