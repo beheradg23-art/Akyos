@@ -154,6 +154,52 @@ const TRACKER_ITEMS = [
   { id: 't10', label: '11 PM Sleep Lock' },
 ];
 
+// ---------- Hunter Rank Progression (Solo Leveling-flavored meta layer) ----------
+// Rank climbs permanently based on total lifetime days where every single
+// Daily Matrix objective was hit — a slow-burn reward tied to real consistency,
+// not just today's percentage.
+const HUNTER_RANKS = [
+  { rank: 'E', threshold: 0, label: 'E-Rank Hunter', color: '#94a3b8' },
+  { rank: 'D', threshold: 5, label: 'D-Rank Hunter', color: '#38bdf8' },
+  { rank: 'C', threshold: 15, label: 'C-Rank Hunter', color: '#34d399' },
+  { rank: 'B', threshold: 30, label: 'B-Rank Hunter', color: '#a78bfa' },
+  { rank: 'A', threshold: 60, label: 'A-Rank Hunter', color: '#fbbf24' },
+  { rank: 'S', threshold: 100, label: 'S-Rank — Shadow Monarch', color: '#f472b6' },
+];
+
+function getHunterRank(clearedDays) {
+  let current = HUNTER_RANKS[0];
+  for (const r of HUNTER_RANKS) {
+    if (clearedDays >= r.threshold) current = r;
+  }
+  return current;
+}
+
+// Counts consecutive fully-cleared days leading up to today. If today isn't
+// finished yet, it doesn't break the streak — it just isn't counted yet,
+// so the flame doesn't die mid-afternoon just because the day is in progress.
+function computeCurrentStreak(globalHistory, todayStr) {
+  const isDayComplete = (dateStr) => {
+    const dayObj = globalHistory[dateStr];
+    return !!dayObj && TRACKER_ITEMS.every((item) => dayObj[item.id]);
+  };
+
+  let streak = 0;
+  const cursor = new Date(todayStr + 'T00:00:00');
+  if (!isDayComplete(todayStr)) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  while (true) {
+    const dStr = getLocalDateString(cursor);
+    if (!isDayComplete(dStr)) break;
+    streak += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return streak;
+}
+
 const TABS = [
   { id: 'overview', label: 'Dashboard Overview', icon: LayoutGrid },
   { id: 'timeline', label: 'Master Timeline', icon: Clock3 },
@@ -359,6 +405,181 @@ function GlobalDetailModal({ modalData, onClose }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- "System" Quest-Clear Notification ----------
+// A small Solo Leveling homage: the moment the Daily Matrix hits 100%,
+// the game's iconic glowing blue system window drops in to acknowledge it.
+// Fires once per day, and calls out a Hunter Rank-up when the lifetime
+// streak of fully-cleared days crosses a new threshold.
+
+function TypewriterText({ text }) {
+  const [shown, setShown] = useState('');
+  useEffect(() => {
+    setShown('');
+    let i = 0;
+    const id = setInterval(() => {
+      i += 1;
+      setShown(text.slice(0, i));
+      if (i >= text.length) clearInterval(id);
+    }, 26);
+    return () => clearInterval(id);
+  }, [text]);
+
+  return (
+    <span>
+      {shown}
+      <span className="inline-block w-[2px] h-[0.95em] bg-sky-300/80 ml-0.5 align-middle animate-questCursorBlink" />
+    </span>
+  );
+}
+
+function QuestClearNotification({ data, onDismiss }) {
+  const [phase, setPhase] = useState('in'); // 'in' | 'out'
+  const sparkles = useMemo(
+    () =>
+      Array.from({ length: 16 }, (_, i) => ({
+        id: i,
+        left: 6 + Math.random() * 88,
+        delay: Math.random() * 1.3,
+        duration: 1.8 + Math.random() * 1.6,
+        size: 2 + Math.random() * 3,
+      })),
+    [data]
+  );
+
+  useEffect(() => {
+    if (!data) return;
+    setPhase('in');
+    const outTimer = setTimeout(() => setPhase('out'), 4300);
+    const closeTimer = setTimeout(() => onDismiss(), 4800);
+    return () => {
+      clearTimeout(outTimer);
+      clearTimeout(closeTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  if (!data) return null;
+
+  return (
+    <div
+      className={`fixed inset-0 z-[70] flex items-start justify-center pt-24 sm:pt-28 px-4 pointer-events-none ${
+        phase === 'out' ? 'animate-questOut' : 'animate-questIn'
+      }`}
+    >
+      <div className="relative w-full max-w-md pointer-events-auto">
+        <div className="absolute -inset-6 bg-sky-500/20 blur-3xl rounded-3xl animate-pulseGlow" />
+
+        <div className="absolute inset-0 overflow-hidden rounded-2xl">
+          {sparkles.map((s) => (
+            <span
+              key={s.id}
+              className="absolute bottom-0 rounded-full bg-sky-300 animate-questSparkle"
+              style={{
+                left: `${s.left}%`,
+                width: s.size,
+                height: s.size,
+                animationDelay: `${s.delay}s`,
+                animationDuration: `${s.duration}s`,
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="relative rounded-2xl border border-sky-400/40 bg-gradient-to-b from-[#04101f]/95 to-[#010a16]/95 backdrop-blur-xl shadow-[0_0_50px_-8px_rgba(56,189,248,0.45)] overflow-hidden">
+          <span className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-sky-300/80" />
+          <span className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-sky-300/80" />
+          <span className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-sky-300/80" />
+          <span className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-sky-300/80" />
+
+          <div className="absolute inset-0 animate-questSweep bg-gradient-to-r from-transparent via-sky-300/10 to-transparent" />
+
+          <div className="relative px-6 py-6 text-center">
+            <p className="text-[10px] tracking-[0.4em] uppercase text-sky-400/70 font-semibold mb-2">— System —</p>
+            <h3 className="text-lg font-bold text-sky-50 tracking-wide mb-1 min-h-[1.5em]">
+              <TypewriterText text="Daily Quest Cleared!" />
+            </h3>
+            <p className="text-[12px] text-sky-200/60 mb-4">All {TRACKER_ITEMS.length} objectives completed for today.</p>
+
+            {data.isNewRank && (
+              <div className="mb-4 animate-fadeInUp" style={{ animationDelay: '1.3s' }}>
+                <div className="text-[10px] uppercase tracking-[0.3em] text-amber-300/70 font-semibold mb-1">Rank Up</div>
+                <div className="text-2xl font-black tracking-tight" style={{ color: data.rank.color }}>
+                  {data.rank.label}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 text-[11px] text-sky-300/50">
+              <span className="h-1 w-1 rounded-full bg-sky-400 animate-dotBreathe" />
+              Return to the grind, Hunter.
+              <span className="h-1 w-1 rounded-full bg-sky-400 animate-dotBreathe" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Streak Flame ----------
+// A small "on fire" indicator for consecutive fully-cleared days — grows from
+// a single spark to a full blaze as the streak climbs, with drifting embers
+// and a flickering core. Purely decorative, purely earned.
+
+function StreakFlame({ streak }) {
+  const tier = streak >= 30 ? 'inferno' : streak >= 14 ? 'blaze' : streak >= 5 ? 'ember' : 'spark';
+
+  const emberCount = tier === 'inferno' ? 7 : tier === 'blaze' ? 5 : tier === 'ember' ? 3 : 2;
+  const embers = useMemo(
+    () =>
+      Array.from({ length: emberCount }, (_, i) => ({
+        id: i,
+        left: 20 + Math.random() * 60,
+        delay: Math.random() * 1.6,
+        duration: 1.3 + Math.random() * 1.1,
+        size: 1.5 + Math.random() * 2,
+      })),
+    [emberCount, streak]
+  );
+
+  const coreColor = tier === 'inferno' ? '#fef9c3' : tier === 'blaze' ? '#fb923c' : tier === 'ember' ? '#f97316' : '#f59e0b';
+  const glowColor = tier === 'inferno' ? 'bg-yellow-300/50' : tier === 'blaze' ? 'bg-orange-500/40' : 'bg-orange-500/30';
+
+  if (streak <= 0) return null;
+
+  return (
+    <div className="hidden sm:flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/[0.06] px-3.5 py-1.5">
+      <div className="relative w-4 h-4 flex items-center justify-center overflow-visible">
+        <span className={`absolute inset-0 rounded-full blur-md animate-flameGlow ${glowColor}`} />
+        {embers.map((e) => (
+          <span
+            key={e.id}
+            className="absolute bottom-0 rounded-full animate-emberRise"
+            style={{
+              left: `${e.left}%`,
+              width: e.size,
+              height: e.size,
+              background: 'radial-gradient(circle, #fef3c7, #f97316)',
+              animationDelay: `${e.delay}s`,
+              animationDuration: `${e.duration}s`,
+            }}
+          />
+        ))}
+        <Flame
+          className="relative h-3.5 w-3.5 animate-flameFlicker"
+          style={{ color: coreColor }}
+          strokeWidth={2.2}
+          fill={coreColor}
+          fillOpacity={0.28}
+        />
+      </div>
+      <span className="text-[11.5px] font-semibold tabular-nums" style={{ color: coreColor }}>
+        {streak}-Day Streak
+      </span>
     </div>
   );
 }
@@ -603,16 +824,39 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
 
       {/* Progress Bar */}
       <div className="mb-6">
-        <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-800">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 ease-out"
-            style={{ width: `${pct}%` }}
-          />
+        <div className="relative h-2 w-full overflow-visible rounded-full bg-neutral-800">
+          <div className="h-full w-full overflow-hidden rounded-full">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500 ease-out"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {pct >= 70 && pct < 100 && (
+            <div
+              className="absolute top-0 h-2 pointer-events-none transition-all duration-500 ease-out"
+              style={{ left: `${pct}%`, transform: 'translateX(-4px)' }}
+            >
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="absolute bottom-0 rounded-full animate-emberRise"
+                  style={{
+                    left: `${i * 3}px`,
+                    width: 2 + (i % 2),
+                    height: 2 + (i % 2),
+                    background: 'radial-gradient(circle, #fef3c7, #fb923c)',
+                    animationDelay: `${i * 0.32}s`,
+                    animationDuration: '1.1s',
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
         <div className="mt-2 flex items-baseline justify-between">
           <span className="text-[20px] font-semibold text-neutral-100 tabular-nums">{pct}%</span>
           <span className="text-[11px] text-neutral-500">
-            {pct === 100 ? 'Day complete' : pct >= 60 ? 'On pace' : pct === 0 ? 'Not started' : 'In progress'}
+            {pct === 100 ? 'Day complete' : pct >= 70 ? "You're on fire" : pct >= 60 ? 'On pace' : pct === 0 ? 'Not started' : 'In progress'}
           </span>
         </div>
       </div>
@@ -1805,6 +2049,34 @@ export default function JEEDashboard() {
   const totalCount = TRACKER_ITEMS.length;
   const overallPct = Math.round((doneCount / totalCount) * 100);
 
+  // Lifetime count of fully-cleared days across all recorded history — the
+  // number that actually drives Hunter Rank, independent of today's progress.
+  const clearedDaysCount = useMemo(() => {
+    return Object.values(globalHistory).filter((dayObj) =>
+      TRACKER_ITEMS.every((item) => (dayObj as any)?.[item.id])
+    ).length;
+  }, [globalHistory]);
+
+  const hunterRank = useMemo(() => getHunterRank(clearedDaysCount), [clearedDaysCount]);
+  const currentStreak = useMemo(() => computeCurrentStreak(globalHistory, currentDateStr), [globalHistory, currentDateStr]);
+
+  // Fires the "System" quest-clear notification exactly once, the moment
+  // today's Daily Matrix transitions from incomplete to 100%.
+  const [questClear, setQuestClear] = useState<{ rank: typeof HUNTER_RANKS[number]; isNewRank: boolean } | null>(null);
+  const wasCompleteRef = useRef(overallPct === 100);
+  const shownForDateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const justCompleted = !wasCompleteRef.current && overallPct === 100;
+    if (justCompleted && shownForDateRef.current !== currentDateStr) {
+      shownForDateRef.current = currentDateStr;
+      const priorRank = getHunterRank(Math.max(clearedDaysCount - 1, 0));
+      const newRank = getHunterRank(clearedDaysCount);
+      setQuestClear({ rank: newRank, isNewRank: newRank.rank !== priorRank.rank });
+    }
+    wasCompleteRef.current = overallPct === 100;
+  }, [overallPct, currentDateStr, clearedDaysCount]);
+
   if (!unlocked) {
     return <PasswordGate onUnlock={() => setUnlocked(true)} />;
   }
@@ -1868,6 +2140,16 @@ export default function JEEDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2.5">
+            <StreakFlame streak={currentStreak} />
+            <div
+              className="hidden sm:flex items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors duration-500"
+              style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
+            >
+              <Swords className="h-3 w-3" style={{ color: hunterRank.color }} />
+              <span className="text-[11.5px] font-medium" style={{ color: hunterRank.color }}>
+                {hunterRank.label}
+              </span>
+            </div>
             <div className="hidden sm:flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-[11.5px] font-medium text-neutral-400">Execution Quotient: <span className="text-emerald-400 tabular-nums">{overallPct}%</span></span>
@@ -1912,6 +2194,9 @@ export default function JEEDashboard() {
 
       {/* Global Context-Aware Modal Overlay */}
       <GlobalDetailModal modalData={modal} onClose={() => setModal(null)} />
+
+      {/* "System" Quest-Clear Notification — fires on hitting 100% for the day */}
+      <QuestClearNotification data={questClear} onDismiss={() => setQuestClear(null)} />
 
       {/* Global Fluid Cursor (desktop / fine-pointer only) */}
       <MagneticCursor />
@@ -2015,6 +2300,50 @@ export default function JEEDashboard() {
         .fade-num-out-up { animation: fadeNumOutUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
         .fade-num-in-down { animation: fadeNumInDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
         .fade-num-out-down { animation: fadeNumOutDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes questIn {
+          from { opacity: 0; transform: translateY(-14px) scale(0.96); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-questIn { animation: questIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes questOut {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(-10px) scale(0.97); }
+        }
+        .animate-questOut { animation: questOut 0.5s ease-in forwards; }
+        @keyframes questSparkle {
+          0% { transform: translateY(0) scale(0); opacity: 0; }
+          15% { opacity: 1; }
+          100% { transform: translateY(-150px) scale(1); opacity: 0; }
+        }
+        .animate-questSparkle { animation: questSparkle linear infinite; }
+        @keyframes questSweep {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(120%); }
+        }
+        .animate-questSweep { animation: questSweep 2.6s ease-in-out infinite; }
+        @keyframes questCursorBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        .animate-questCursorBlink { animation: questCursorBlink 0.8s step-end infinite; }
+        @keyframes flameFlicker {
+          0%, 100% { transform: scale(1) rotate(-2deg); opacity: 0.95; }
+          25% { transform: scale(1.08) rotate(2deg); opacity: 1; }
+          50% { transform: scale(0.95) rotate(-3deg); opacity: 0.88; }
+          75% { transform: scale(1.05) rotate(1deg); opacity: 1; }
+        }
+        .animate-flameFlicker { animation: flameFlicker 1.4s ease-in-out infinite; transform-origin: bottom center; }
+        @keyframes flameGlow {
+          0%, 100% { opacity: 0.45; transform: scale(0.85); }
+          50% { opacity: 0.9; transform: scale(1.2); }
+        }
+        .animate-flameGlow { animation: flameGlow 1.8s ease-in-out infinite; }
+        @keyframes emberRise {
+          0% { transform: translateY(0) scale(0.4); opacity: 0; }
+          20% { opacity: 1; }
+          100% { transform: translateY(-16px) scale(1); opacity: 0; }
+        }
+        .animate-emberRise { animation: emberRise linear infinite; }
         @keyframes dotBreathe {
           0%, 100% { opacity: 0.5; transform: scale(1); }
           50% { opacity: 1; transform: scale(1.2); }
