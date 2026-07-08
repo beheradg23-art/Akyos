@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   LayoutGrid, Clock3, Dumbbell, BookOpen, Sparkles,
   CheckCircle2, Circle, Target, GraduationCap, Ruler, Weight,
   Droplets, Sunrise, Sun, Moon, Utensils, Flame,
   AlertTriangle, ChevronRight, Eye, Smile, Scissors, Wind,
   TrendingUp, Activity, Timer, Calendar, X, ArrowUpRight, FlameKindling,
-  ChevronLeft
+  ChevronLeft, Lock
 } from 'lucide-react';
 
 // ---------- Deep Interactive Knowledge Matrix ----------
@@ -190,6 +190,104 @@ const getDeadlineCountdown = (targetDateStr) => {
   return diffDays > 0 ? diffDays : 0;
 };
 
+// ---------- Fluid Interaction Engine ----------
+// Dependency-free primitives that give every tap/click a soft expanding
+// ripple, and give the whole app a lagging "magnetic" cursor that swells
+// over anything interactive — the same language used across lusion.co.
+
+function useRipple() {
+  const [ripples, setRipples] = useState([]);
+
+  const spawnRipple = (e, el) => {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const point = e.touches && e.touches[0] ? e.touches[0] : e;
+    const x = point.clientX - rect.left;
+    const y = point.clientY - rect.top;
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setRipples((prev) => [...prev, { id, x, y }]);
+    setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r.id !== id));
+    }, 650);
+  };
+
+  const rippleNodes = ripples.map((r) => (
+    <span
+      key={r.id}
+      className="pointer-events-none absolute h-2 w-2 rounded-full bg-white/25 animate-ripple"
+      style={{ left: r.x, top: r.y }}
+    />
+  ));
+
+  return [spawnRipple, rippleNodes];
+}
+
+function MagneticCursor() {
+  const dotRef = useRef(null);
+  const ringRef = useRef(null);
+  const target = useRef({ x: 0, y: 0 });
+  const pos = useRef({ x: 0, y: 0 });
+  const [active, setActive] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  useEffect(() => {
+    const isFine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+    if (!isFine) return;
+    setActive(true);
+
+    const handleMove = (e) => {
+      target.current.x = e.clientX;
+      target.current.y = e.clientY;
+    };
+    const handleOver = (e) => {
+      if (e.target.closest && e.target.closest('.cursor-target')) setHovering(true);
+    };
+    const handleOut = (e) => {
+      if (e.target.closest && e.target.closest('.cursor-target')) setHovering(false);
+    };
+
+    window.addEventListener('mousemove', handleMove, { passive: true });
+    document.addEventListener('mouseover', handleOver);
+    document.addEventListener('mouseout', handleOut);
+
+    let raf;
+    const loop = () => {
+      pos.current.x += (target.current.x - pos.current.x) * 0.18;
+      pos.current.y += (target.current.y - pos.current.y) * 0.18;
+      if (dotRef.current) {
+        dotRef.current.style.transform = `translate3d(${target.current.x}px, ${target.current.y}px, 0) translate(-50%, -50%)`;
+      }
+      if (ringRef.current) {
+        ringRef.current.style.transform = `translate3d(${pos.current.x}px, ${pos.current.y}px, 0) translate(-50%, -50%)`;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseover', handleOver);
+      document.removeEventListener('mouseout', handleOut);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  if (!active) return null;
+
+  return (
+    <>
+      <div ref={dotRef} className="pointer-events-none fixed left-0 top-0 z-[9999] h-1.5 w-1.5 rounded-full bg-neutral-50" style={{ willChange: 'transform' }} />
+      <div
+        ref={ringRef}
+        className={`pointer-events-none fixed left-0 top-0 z-[9999] rounded-full border bg-transparent mix-blend-difference transition-[width,height,border-color,border-width] duration-200 ease-out ${
+          hovering ? 'h-11 w-11 border-2 border-neutral-50' : 'h-8 w-8 border border-neutral-300/70'
+        }`}
+        style={{ willChange: 'transform' }}
+      />
+    </>
+  );
+}
+
 // ---------- Interactive Modular Overlay Engine ----------
 
 function GlobalDetailModal({ modalData, onClose }) {
@@ -197,7 +295,7 @@ function GlobalDetailModal({ modalData, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
-      <div className="w-full max-w-lg overflow-hidden border border-neutral-800 bg-neutral-900 rounded-2xl shadow-2xl">
+      <div className="w-full max-w-lg overflow-hidden border border-neutral-800 bg-neutral-900 rounded-2xl shadow-2xl animate-modalPop">
         <div className="flex items-center justify-between border-b border-neutral-800 p-4">
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300">
@@ -208,7 +306,7 @@ function GlobalDetailModal({ modalData, onClose }) {
               <p className="text-xs text-neutral-500">{modalData.subtitle || 'System Deep-Dive Data'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors">
+          <button onClick={onClose} className="cursor-target p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-all duration-150 active:scale-90">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -277,12 +375,63 @@ function SectionHeading({ icon: Icon, title, subtitle }) {
 }
 
 function Card({ children, className = '', onClick }) {
+  const ref = useRef(null);
+  const fineRef = useRef(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const [spot, setSpot] = useState({ x: 50, y: 50 });
+  const [hovering, setHovering] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [spawnRipple, rippleNodes] = useRipple();
+
+  const handleMove = (e) => {
+    if (!fineRef.current || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    setTilt({ rx: (0.5 - py) * 7, ry: (px - 0.5) * 7 });
+    setSpot({ x: px * 100, y: py * 100 });
+    setHovering(true);
+  };
+
+  const handleLeave = () => {
+    setHovering(false);
+    setPressed(false);
+    setTilt({ rx: 0, ry: 0 });
+  };
+
+  const handleDown = (e) => {
+    setPressed(true);
+    if (onClick) spawnRipple(e, ref.current);
+  };
+
+  const handleUp = () => setPressed(false);
+
   return (
-    <div 
+    <div
+      ref={ref}
       onClick={onClick}
-      className={`rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm p-5 transition-all duration-200 hover:border-neutral-700 ${onClick ? 'cursor-pointer hover:bg-neutral-900/90 hover:scale-[1.01]' : ''} ${className}`}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      onMouseDown={handleDown}
+      onMouseUp={handleUp}
+      onTouchStart={handleDown}
+      onTouchEnd={handleUp}
+      className={`cursor-target relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm p-5 will-change-transform ${
+        onClick ? 'cursor-pointer hover:border-neutral-700' : ''
+      } ${className}`}
+      style={{
+        transform: `perspective(900px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(${pressed ? 0.975 : 1})`,
+        transition: hovering ? 'transform 100ms linear' : 'transform 500ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
     >
-      {children}
+      {hovering && (
+        <div
+          className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+          style={{ background: `radial-gradient(420px circle at ${spot.x}% ${spot.y}%, rgba(255,255,255,0.06), transparent 65%)` }}
+        />
+      )}
+      {onClick && rippleNodes}
+      <div className="relative">{children}</div>
     </div>
   );
 }
@@ -349,6 +498,51 @@ function CountdownMatrix() {
 }
 
 // ---------- Bento Box Daily Execution Tracker Sidebar ----------
+
+function TrackerItemButton({ item, isChecked, onToggle }) {
+  const ref = useRef(null);
+  const [pressed, setPressed] = useState(false);
+  const [spawnRipple, rippleNodes] = useRipple();
+
+  const handleDown = (e) => {
+    setPressed(true);
+    spawnRipple(e, ref.current);
+  };
+  const handleUp = () => setPressed(false);
+
+  return (
+    <button
+      ref={ref}
+      onClick={onToggle}
+      onMouseDown={handleDown}
+      onMouseUp={handleUp}
+      onMouseLeave={handleUp}
+      onTouchStart={handleDown}
+      onTouchEnd={handleUp}
+      className={`cursor-target relative flex flex-col items-start justify-between overflow-hidden p-3.5 rounded-xl border text-left transition-colors duration-200 group ${
+        isChecked
+          ? 'bg-emerald-500/[0.08] border-emerald-500/30 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]'
+          : 'bg-neutral-900/40 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
+      }`}
+      style={{
+        transform: `scale(${pressed ? 0.955 : 1})`,
+        transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
+    >
+      <div className="flex w-full justify-between items-start mb-2.5">
+        {isChecked ? (
+          <CheckCircle2 className="h-4.5 w-4.5 text-emerald-400 shrink-0" strokeWidth={2} />
+        ) : (
+          <Circle className="h-4.5 w-4.5 text-neutral-600 group-hover:text-neutral-400 shrink-0 transition-colors" strokeWidth={1.75} />
+        )}
+      </div>
+      <span className={`text-[11.5px] font-medium leading-snug transition-colors ${isChecked ? 'text-emerald-200/90' : 'text-neutral-300 group-hover:text-neutral-200'}`}>
+        {item.label}
+      </span>
+      {rippleNodes}
+    </button>
+  );
+}
 
 function DailyTracker({ currentDayStr, checked, onToggle }) {
   const [timeLeft, setTimeLeft] = useState('');
@@ -420,31 +614,14 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
 
       {/* Bento Grid layout */}
       <div className="grid grid-cols-2 gap-2.5">
-        {TRACKER_ITEMS.map((item) => {
-          const isChecked = !!checked[item.id];
-          return (
-            <button
-              key={item.id}
-              onClick={() => onToggle(item.id)}
-              className={`relative flex flex-col items-start justify-between p-3.5 rounded-xl border text-left transition-all duration-200 group ${
-                isChecked
-                  ? 'bg-emerald-500/[0.08] border-emerald-500/30 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]'
-                  : 'bg-neutral-900/40 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
-              }`}
-            >
-              <div className="flex w-full justify-between items-start mb-2.5">
-                {isChecked ? (
-                  <CheckCircle2 className="h-4.5 w-4.5 text-emerald-400 shrink-0" strokeWidth={2} />
-                ) : (
-                  <Circle className="h-4.5 w-4.5 text-neutral-600 group-hover:text-neutral-400 shrink-0 transition-colors" strokeWidth={1.75} />
-                )}
-              </div>
-              <span className={`text-[11.5px] font-medium leading-snug transition-colors ${isChecked ? 'text-emerald-200/90' : 'text-neutral-300 group-hover:text-neutral-200'}`}>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
+        {TRACKER_ITEMS.map((item) => (
+          <TrackerItemButton
+            key={item.id}
+            item={item}
+            isChecked={!!checked[item.id]}
+            onToggle={() => onToggle(item.id)}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1026,9 +1203,225 @@ function GroomingTab({ setModal }) {
   );
 }
 
+// ---------- Access Gate ----------
+// A simple client-side passcode screen. Note: this only hides the UI from
+// casual access — the code lives in the frontend bundle, so it is not real
+// security against someone who inspects the source.
+
+const APP_PASSCODE = '091224';
+
+function PasswordGate({ onUnlock }) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState(false);
+  const [exiting, setExiting] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  useEffect(() => {
+    if (value.length !== APP_PASSCODE.length) return;
+    if (value === APP_PASSCODE) {
+      setExiting(true);
+      const t = setTimeout(() => onUnlock(), 320);
+      return () => clearTimeout(t);
+    }
+    setError(true);
+    const t = setTimeout(() => {
+      setValue('');
+      setError(false);
+      if (inputRef.current) inputRef.current.focus();
+    }, 500);
+    return () => clearTimeout(t);
+  }, [value, onUnlock]);
+
+  const handleChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, APP_PASSCODE.length);
+    setValue(digits);
+  };
+
+  const boxes = Array.from({ length: APP_PASSCODE.length });
+
+  return (
+    <div
+      className={`fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 transition-all duration-300 ease-out ${
+        exiting ? 'opacity-0 scale-[0.97]' : 'opacity-100 scale-100'
+      }`}
+      onClick={() => inputRef.current && inputRef.current.focus()}
+    >
+      <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 shadow-lg shadow-sky-500/10">
+        <Lock className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+      </div>
+
+      <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">Restricted Access</h1>
+      <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+        This command center holds personal data. Enter the passcode to continue.
+      </p>
+
+      <div className={`relative flex gap-2.5 ${error ? 'animate-shake' : ''}`}>
+        {boxes.map((_, i) => {
+          const filled = i < value.length;
+          const isCurrent = i === value.length;
+          return (
+            <div
+              key={i}
+              className={`flex h-12 w-10 items-center justify-center rounded-xl border text-lg font-semibold tabular-nums transition-colors duration-150 ${
+                error
+                  ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300'
+                  : isCurrent
+                  ? 'border-sky-500/50 bg-neutral-900/80 text-neutral-100'
+                  : filled
+                  ? 'border-neutral-700 bg-neutral-900/80 text-neutral-100'
+                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-700'
+              }`}
+            >
+              {filled ? value[i] : ''}
+            </div>
+          );
+        })}
+        <input
+          ref={inputRef}
+          value={value}
+          onChange={handleChange}
+          type="password"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          autoComplete="off"
+          aria-label="Passcode"
+          className="absolute inset-0 h-full w-full cursor-default opacity-0"
+        />
+      </div>
+
+      <p className={`mt-5 h-4 text-[12px] font-medium text-rose-400 transition-opacity duration-150 ${error ? 'opacity-100' : 'opacity-0'}`}>
+        Incorrect passcode
+      </p>
+    </div>
+  );
+}
+
+// ---------- Opening / Intro Loader ----------
+// A single-run splash animation: a counting percentage, a thin gradient
+// progress line, then a clean upward "curtain" wipe that reveals the app.
+
+function IntroLoader({ onFinish }) {
+  const [percent, setPercent] = useState(0);
+  const [phase, setPhase] = useState('loading'); // loading -> collapsing -> wiping -> done
+
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reduceMotion) {
+      setPhase('done');
+      onFinish();
+      return;
+    }
+
+    const duration = 1900;
+    const start = performance.now();
+    let raf;
+
+    const tick = (now) => {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic — settles gently near 100
+      setPercent(Math.round(eased * 100));
+      if (t < 1) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        setPhase('collapsing');
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (phase === 'collapsing') {
+      const t1 = setTimeout(() => setPhase('wiping'), 260);
+      return () => clearTimeout(t1);
+    }
+    if (phase === 'wiping') {
+      const t2 = setTimeout(() => setPhase('done'), 820);
+      return () => clearTimeout(t2);
+    }
+    if (phase === 'done') {
+      onFinish();
+    }
+  }, [phase, onFinish]);
+
+  const handleSkip = () => {
+    if (phase === 'loading') setPhase('collapsing');
+  };
+
+  if (phase === 'done') return null;
+
+  return (
+    <div
+      onClick={handleSkip}
+      role="presentation"
+      className={`fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 transition-transform duration-[820ms] ease-[cubic-bezier(0.76,0,0.24,1)] cursor-pointer ${
+        phase === 'wiping' ? '-translate-y-full' : 'translate-y-0'
+      }`}
+    >
+      <div
+        className={`flex flex-col items-center transition-all duration-300 ease-out ${
+          phase === 'loading' ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.97]'
+        }`}
+      >
+        <div className="mb-5 flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-emerald-500 shadow-lg shadow-sky-500/10 animate-fadeInUp">
+          <GraduationCap className="h-4.5 w-4.5 text-neutral-950" strokeWidth={2} />
+        </div>
+
+        <span
+          className="mb-6 text-[10px] font-medium uppercase tracking-[0.35em] text-neutral-500 animate-fadeInUp"
+          style={{ animationDelay: '70ms' }}
+        >
+          Ashutosh Behera
+        </span>
+
+        <div className="flex items-start leading-none tabular-nums">
+          <span
+            className="font-extralight text-transparent bg-clip-text bg-gradient-to-br from-neutral-50 to-neutral-500"
+            style={{ fontSize: 'clamp(3.25rem, 13vw, 6rem)' }}
+          >
+            {percent}
+          </span>
+          <span
+            className="mt-1 font-extralight text-neutral-600"
+            style={{ fontSize: 'clamp(1.1rem, 3.4vw, 1.75rem)' }}
+          >
+            %
+          </span>
+        </div>
+
+        <div className="mt-6 h-px w-36 sm:w-52 overflow-hidden rounded-full bg-neutral-800">
+          <div
+            className="h-full bg-gradient-to-r from-sky-500 to-emerald-500 transition-[width] duration-100 ease-linear"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+
+        <span
+          className="mt-5 text-[10px] font-medium uppercase tracking-[0.3em] text-neutral-600 animate-fadeInUp"
+          style={{ animationDelay: '150ms' }}
+        >
+          JEE 2027 · Drop-Year OS
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Main Root Dashboard Component ----------
 
 export default function JEEDashboard() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [introDone, setIntroDone] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [modal, setModal] = useState(null);
 
@@ -1081,6 +1474,10 @@ export default function JEEDashboard() {
   const totalCount = TRACKER_ITEMS.length;
   const overallPct = Math.round((doneCount / totalCount) * 100);
 
+  if (!unlocked) {
+    return <PasswordGate onUnlock={() => setUnlocked(true)} />;
+  }
+
   const renderTab = () => {
     switch (activeTab) {
       case 'overview': return <OverviewTab setModal={setModal} />;
@@ -1095,6 +1492,7 @@ export default function JEEDashboard() {
 
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-neutral-200 font-sans antialiased">
+      {!introDone && <IntroLoader onFinish={() => setIntroDone(true)} />}
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Header Elements */}
@@ -1125,7 +1523,7 @@ export default function JEEDashboard() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[12.5px] font-medium whitespace-nowrap transition-all duration-150 ${
+                className={`cursor-target flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-[12.5px] font-medium whitespace-nowrap transition-all duration-150 active:scale-95 ${
                   isActive
                     ? 'bg-neutral-100 text-neutral-900 shadow-sm'
                     : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
@@ -1154,6 +1552,9 @@ export default function JEEDashboard() {
       {/* Global Context-Aware Modal Overlay */}
       <GlobalDetailModal modalData={modal} onClose={() => setModal(null)} />
 
+      {/* Global Fluid Cursor (desktop / fine-pointer only) */}
+      <MagneticCursor />
+
       {/* Embedded Support Custom Styles */}
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -1163,6 +1564,33 @@ export default function JEEDashboard() {
           to { opacity: 1; transform: scale(1); }
         }
         .animate-fadeIn { animation: fadeIn 0.18s ease-out forwards; }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeInUp { animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes rippleExpand {
+          from { transform: translate(-50%, -50%) scale(0); opacity: 0.35; }
+          to { transform: translate(-50%, -50%) scale(26); opacity: 0; }
+        }
+        .animate-ripple { animation: rippleExpand 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes modalPop {
+          0% { opacity: 0; transform: scale(0.92) translateY(8px); }
+          60% { opacity: 1; transform: scale(1.015) translateY(0); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-modalPop { animation: modalPop 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-6px); }
+          80% { transform: translateX(6px); }
+        }
+        .animate-shake { animation: shake 400ms ease-in-out; }
+        @media (pointer: fine) {
+          * { cursor: none !important; }
+        }
       `}</style>
     </div>
   );
