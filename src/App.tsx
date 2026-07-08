@@ -1733,7 +1733,7 @@ export default function JEEDashboard() {
 
     // Replace with your own Spotify Developer Dashboard Client ID —
     // the same way the Strava client_id above is wired up.
-    const clientId = '2f4cd23001604c63936002f1d7a52660D';
+    const clientId = '2f4cd23001604c63936002f1d7a52660';
 
     const isLive = window.location.hostname.includes('vercel.app');
     const targetOrigin = isLive
