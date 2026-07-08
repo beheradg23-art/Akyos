@@ -158,6 +158,7 @@ const TABS = [
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
   { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
   { id: 'grooming', label: 'Clinical Grooming', icon: Sparkles },
+  { id: 'strava', label: 'Strava Sync', icon: Activity },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
 ];
 
@@ -1421,6 +1422,30 @@ function IntroLoader({ onFinish }) {
 
 export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
+  // --- Strava Sync Engine States ---
+  const [stravaActivities, setStravaActivities] = useState([]);
+  const [isStravaLoading, setIsStravaLoading] = useState(false);
+
+  useEffect(() => {
+    const handleStravaMessage = (event: any) => {
+      if (event.data && event.data.type === 'STRAVA_DATA') {
+        setStravaActivities(event.data.data);
+        setIsStravaLoading(false);
+      }
+    };
+    window.addEventListener('message', handleStravaMessage);
+    return () => window.removeEventListener('message', handleStravaMessage);
+  }, []);
+
+  const handleStravaConnect = () => {
+    setIsStravaLoading(true);
+    // Grab your Client ID from Vite environment metadata securely
+    const clientId = import.meta.env.VITE_STRAVA_CLIENT_ID || "";
+    const redirectUri = encodeURIComponent("http://localhost:3000/api/strava-callback");
+    const scope = "activity:read_all";
+    const stravaAuthUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}`;
+    window.open(stravaAuthUrl, 'Connect with Strava', 'width=600,height=800');
+  };
   const [introDone, setIntroDone] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [modal, setModal] = useState(null);
@@ -1485,6 +1510,14 @@ export default function JEEDashboard() {
       case 'training': return <TrainingFuelTab setModal={setModal} />;
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
       case 'grooming': return <GroomingTab setModal={setModal} />;
+      case 'strava': 
+        return (
+          <StravaTab 
+            stravaActivities={stravaActivities} 
+            isStravaLoading={isStravaLoading} 
+            handleStravaConnect={handleStravaConnect} 
+          />
+        );
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setModal={setModal} />;
       default: return null;
     }
@@ -1592,6 +1625,78 @@ export default function JEEDashboard() {
           * { cursor: none !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+
+
+interface StravaTabProps {
+  stravaActivities: any[];
+  isStravaLoading: boolean;
+  handleStravaConnect: () => void;
+}
+
+// ---------- Tab Subcomponent: Strava Feed ----------
+function StravaTab({ stravaActivities, isStravaLoading, handleStravaConnect }: StravaTabProps) {
+  return (
+    <div className="space-y-5 animate-fadeIn">
+      <div className="border border-neutral-800 bg-gradient-to-br from-neutral-900 to-neutral-950/40 rounded-2xl p-6 shadow-xl">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-neutral-800 pb-4 mb-4">
+          <div>
+            <div className="flex items-center gap-2 text-orange-500 font-semibold text-sm uppercase tracking-wider">
+              <span>🎛️ Telemetry Engine</span>
+            </div>
+            <h3 className="text-lg font-bold text-neutral-200 mt-1">Strava Integration Panel</h3>
+            <p className="text-xs text-neutral-500">Secure real-time athletic activity telemetry synchronization</p>
+          </div>
+          
+          <button
+            onClick={handleStravaConnect}
+            disabled={isStravaLoading}
+            className="cursor-target flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 disabled:from-neutral-800 disabled:to-neutral-800 text-neutral-950 font-bold text-xs uppercase tracking-wider rounded-xl transition duration-150 shadow-lg shadow-orange-950/10 active:scale-95"
+          >
+            {isStravaLoading ? 'Syncing System...' : 'Connect Strava Account'}
+          </button>
+        </div>
+
+        {stravaActivities.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[50vh] overflow-y-auto pr-1">
+            {stravaActivities.map((activity: any) => {
+              const activityDate = new Date(activity.start_date_local).toLocaleDateString(undefined, {
+                month: 'short', day: 'numeric', year: 'numeric'
+              });
+              
+              return (
+                <div key={activity.id} className="flex items-center justify-between p-3.5 bg-neutral-950/40 border border-neutral-800 rounded-xl hover:border-neutral-700 transition-all">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xl bg-neutral-900 border border-neutral-800 p-2 rounded-lg">
+                      {activity.type === 'Run' ? '🏃' : activity.type === 'Ride' ? '🚴' : activity.type === 'Swim' ? '🏊' : '💪'}
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-neutral-200 truncate max-w-[200px]">{activity.name}</p>
+                      <span className="text-[11px] text-neutral-500 font-medium">{activityDate} · {activity.type}</span>
+                    </div>
+                  </div>
+                  <div className="text-right font-mono">
+                    <p className="text-xs font-bold text-orange-400">
+                      {(activity.distance / 1000).toFixed(2)} km
+                    </p>
+                    <p className="text-[11px] text-neutral-500">
+                      {Math.floor(activity.moving_time / 60)} mins
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 text-center bg-neutral-950/20 rounded-xl border border-dashed border-neutral-800">
+            <p className="text-xs text-neutral-400 font-medium mb-1">No Strava metrics imported yet.</p>
+            <p className="text-[11px] text-neutral-500">Trigger standard authorization protocol above to download your logs.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
