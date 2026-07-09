@@ -7,7 +7,8 @@ import {
   TrendingUp, Activity, Timer, Calendar, X, ArrowUpRight, FlameKindling,
   ChevronLeft, Lock, Music2, Play, Pause, SkipBack, SkipForward,
   Volume2, Volume1, VolumeX, Search, Disc3, ListMusic, RotateCcw,
-  Crown, Swords, Download, Upload, ShieldCheck
+  Crown, Swords, Download, Upload, ShieldCheck, ClipboardList, BarChart3, Trash2, Plus, Bell, BellOff,
+  Settings, Save, GripVertical, PenLine, RefreshCcw
 } from 'lucide-react';
 
 // ---------- Deep Interactive Knowledge Matrix ----------
@@ -68,7 +69,7 @@ const PROFILE = {
   ],
 };
 
-const TIMELINE = [
+const DEFAULT_TIMELINE = [
   { start: '05:00', end: '05:20', label: 'Wake & Prep', detail: 'Pre-breakfast drinks, Vitamin D3', icon: Sunrise, type: 'prep', longDesc: 'Instant waking routine. Rehydrating the system with 500ml water + Chia seeds immediately to eliminate sleep inertia. Take single high-dose Vitamin D3 drop.' },
   { start: '05:20', end: '08:30', label: 'Study Slot 1 — Mathematics', detail: 'Allen Lectures at 1.5x–2x + active practice', icon: BookOpen, type: 'study', subject: 'math', longDesc: 'Peak cognitive availability window. Focus exclusively on core algebraic and trigonometric proof systems. Complete minimum 25 high-tier questions.' },
   { start: '08:30', end: '08:50', label: 'Breakfast Window', detail: 'Clean fuel block', icon: Utensils, type: 'meal', longDesc: '4 whole eggs, 3 whites, oats base. Ensure exact macronutrient absorption timing prior to the grueling Physics block.' },
@@ -99,7 +100,7 @@ const DIET = {
   ],
 };
 
-const TRAINING = [
+const DEFAULT_TRAINING = [
   { day: 'Monday', focus: 'Gym Upper Body (Pull Focus)', exercises: [{ name: 'Lat Pulldowns', sets: '4×12' }, { name: 'Seated Cable Rows', sets: '3×12' }, { name: 'DB Lateral Raises', sets: '4×20' }, { name: 'Behind-the-Back Wrist Curls', sets: '4×20 (high pump)' }], mode: 'gym' },
   { day: 'Tuesday', focus: 'Calisthenics Pull & Push Basics', exercises: [{ name: 'Dead-hang holds', sets: '4×Max' }, { name: 'Negative Pull-ups', sets: '4×5 (5-sec slow descent)' }, { name: 'Standard Push-ups', sets: '4×12' }], mode: 'calisthenics' },
   { day: 'Wednesday', focus: 'Legs & Deep Core Compression', exercises: [{ name: 'Goblet Squats', sets: '4×12' }, { name: 'Romanian Deadlifts', sets: '3×12' }, { name: 'Hanging Leg / Knee Raises', sets: '4×12' }, { name: 'Stomach Vacuums (structural planks)', sets: '3×60s' }], mode: 'gym' },
@@ -132,6 +133,48 @@ const SYLLABUS = [
   }},
 ];
 
+// ---------- Spaced-Repetition Revision Tracking ----------
+// The syllabus roadmap shows *what* to study, but nothing previously tracked
+// *when a topic was last revisited* — the actual mechanism behind forgetting
+// month-1 material by month-4. This gives every topic a "last revised" stamp
+// and flags anything gone stale.
+//
+// Topic names aren't unique across phases (e.g. "Vectors" appears in both
+// Phase 1 physics and Phase 4 math), so tracking is keyed by phase+subject+topic.
+
+const REVISION_FRESH_DAYS = 7;   // revised within this window: considered fresh
+const REVISION_DUE_DAYS = 14;    // beyond this: overdue, needs attention
+
+function getTopicRevisionKey(phase, subject, topic) {
+  return `${phase}|${subject}|${topic}`;
+}
+
+function getDaysSinceDate(dateStr) {
+  const then = new Date(dateStr + 'T00:00:00').getTime();
+  const now = new Date(getLocalDateString() + 'T00:00:00').getTime();
+  return Math.max(0, Math.round((now - then) / (1000 * 60 * 60 * 24)));
+}
+
+function getRevisionStatus(lastRevisedStr) {
+  if (!lastRevisedStr) return { status: 'never', days: null };
+  const days = getDaysSinceDate(lastRevisedStr);
+  if (days < REVISION_FRESH_DAYS) return { status: 'fresh', days };
+  if (days < REVISION_DUE_DAYS) return { status: 'due', days };
+  return { status: 'overdue', days };
+}
+
+const ALL_SYLLABUS_TOPICS = SYLLABUS.flatMap((p) =>
+  (['math', 'physics', 'chem']).flatMap((subject) =>
+    p.subjects[subject].map((topic) => ({
+      key: getTopicRevisionKey(p.phase, subject, topic),
+      topic,
+      subject,
+      phase: p.phase,
+      month: p.month,
+    }))
+  )
+);
+
 const GROOMING = [
   { icon: Eye, title: 'Dark Circles', issue: 'Deep, prominent shadows from history of late-night scrolling', plan: '11 PM sleep lock + Caffeine 5% + EGCG topical serum, applied at night', tag: 'skincare', details: ['Cleanse target areas under lower orbital bone gently.', 'Apply 2 concentrated drops of serum onto pad of ring finger.', 'Pat softly inside an outside-in arc vector map without skin pulling.'] },
   { icon: Wind, title: 'Tonsillitis', issue: 'Chronic Grade 2 hypertrophy, currently asymptomatic', plan: 'Watchful waiting + 0.5% Betadine gargles twice a week', tag: 'watch', details: ['Mix 5-10ml Betadine with equal parts lukewarm water.', 'Gargle continuously for 45 seconds targeting rear pharyngeal areas.', 'Avoid consuming liquids for 20 minutes post application.'] },
@@ -141,7 +184,7 @@ const GROOMING = [
   { icon: Eye, title: 'Eyesight', issue: '-3 prescription both eyes, 6/6 corrected vision', plan: 'Blue-light / anti-glare glasses for heavy screen study', tag: 'vision', details: ['Enforce 20-20-20 rule during 3-hour continuous lecture stacks.', 'Sterilize protective lens glass structures daily before morning math slot.'] },
 ];
 
-const TRACKER_ITEMS = [
+const DEFAULT_TRACKER_ITEMS = [
   { id: 't1', label: '5 AM Wake-Up' },
   { id: 't2', label: 'Math Block' },
   { id: 't3', label: 'Physics Block' },
@@ -153,6 +196,79 @@ const TRACKER_ITEMS = [
   { id: 't9', label: '4L+ Water Hit' },
   { id: 't10', label: '11 PM Sleep Lock' },
 ];
+
+// ---------- Config Editability ----------
+// TRACKER_ITEMS, TIMELINE, and TRAINING used to be hardcoded constants —
+// updating the daily routine as the exam gets closer meant editing source
+// code. They're now user-editable, backed by localStorage, with these
+// DEFAULT_* arrays as the fallback / "Reset to default" target. Everything
+// downstream reads the *live* config (via ConfigContext) instead of these
+// constants directly.
+
+// Icons can't survive JSON.stringify, so timeline blocks are persisted with
+// an `iconName` string key into this small curated set, and resolved back to
+// a component at render time.
+const ICON_LIBRARY: Record<string, any> = {
+  Sunrise, Sun, Moon, BookOpen, Utensils, Dumbbell, Timer, Sparkles,
+  Target, Flame, Activity, Droplets, Bell, ClipboardList, Music2,
+};
+const ICON_LIBRARY_KEYS = Object.keys(ICON_LIBRARY);
+
+function resolveIconName(icon: any): string {
+  const found = Object.entries(ICON_LIBRARY).find(([, comp]) => comp === icon);
+  return found ? found[0] : 'BookOpen';
+}
+
+const DEFAULT_TIMELINE_STORABLE = DEFAULT_TIMELINE.map((slot) => ({
+  ...slot,
+  iconName: resolveIconName(slot.icon),
+}));
+
+function hydrateTimeline(rawList: any[]): any[] {
+  return rawList.map((slot, i) => ({
+    start: slot.start ?? '00:00',
+    end: slot.end ?? slot.start ?? '00:00',
+    label: slot.label || `Block ${i + 1}`,
+    detail: slot.detail || '',
+    type: ['study', 'gym', 'meal', 'prep', 'sleep'].includes(slot.type) ? slot.type : 'prep',
+    subject: slot.subject || undefined,
+    longDesc: slot.longDesc || '',
+    iconName: slot.iconName && ICON_LIBRARY[slot.iconName] ? slot.iconName : 'BookOpen',
+    icon: ICON_LIBRARY[slot.iconName] || BookOpen,
+  }));
+}
+
+function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[] }) {
+  return {
+    trackerItems: config.trackerItems,
+    training: config.training,
+    timeline: config.timeline.map(({ icon, ...rest }) => rest),
+  };
+}
+
+function deserializeConfig(raw: any) {
+  return {
+    trackerItems: Array.isArray(raw?.trackerItems) && raw.trackerItems.length ? raw.trackerItems : DEFAULT_TRACKER_ITEMS,
+    training: Array.isArray(raw?.training) && raw.training.length ? raw.training : DEFAULT_TRAINING,
+    timeline: Array.isArray(raw?.timeline) && raw.timeline.length ? hydrateTimeline(raw.timeline) : hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
+  };
+}
+
+const CONFIG_STORAGE_KEY = 'app_config_v1';
+
+const ConfigContext = React.createContext<{
+  trackerItems: any[];
+  timeline: any[];
+  training: any[];
+  updateConfig: (partial: Record<string, any>) => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training') => void;
+}>({
+  trackerItems: DEFAULT_TRACKER_ITEMS,
+  timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
+  training: DEFAULT_TRAINING,
+  updateConfig: () => {},
+  resetConfigSection: () => {},
+});
 
 // ---------- Hunter Rank Progression (Solo Leveling-flavored meta layer) ----------
 // Rank climbs permanently based on total lifetime days where every single
@@ -178,10 +294,10 @@ function getHunterRank(clearedDays) {
 // Counts consecutive fully-cleared days leading up to today. If today isn't
 // finished yet, it doesn't break the streak — it just isn't counted yet,
 // so the flame doesn't die mid-afternoon just because the day is in progress.
-function computeCurrentStreak(globalHistory, todayStr) {
+function computeCurrentStreak(globalHistory, todayStr, trackerItems = DEFAULT_TRACKER_ITEMS) {
   const isDayComplete = (dateStr) => {
     const dayObj = globalHistory[dateStr];
-    return !!dayObj && TRACKER_ITEMS.every((item) => dayObj[item.id]);
+    return !!dayObj && trackerItems.every((item) => dayObj[item.id]);
   };
 
   let streak = 0;
@@ -205,11 +321,13 @@ const TABS = [
   { id: 'timeline', label: 'Master Timeline', icon: Clock3 },
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
   { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
+  { id: 'mocktests', label: 'Mock Test Tracker', icon: ClipboardList },
   { id: 'ashclock', label: "Ash's Clock", icon: Timer },
   { id: 'grooming', label: 'Clinical Grooming', icon: Sparkles },
   { id: 'spotify', label: 'Spotify Player', icon: Music2 },
   { id: 'strava', label: 'Strava Sync', icon: Activity },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
+  { id: 'settings', label: 'Config & Settings', icon: Settings },
 ];
 
 const SUBJECT_STYLE = {
@@ -218,6 +336,13 @@ const SUBJECT_STYLE = {
   chem: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', dot: 'bg-emerald-400' },
   mixed: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-400' },
 };
+
+const POMODORO_SUBJECTS = [
+  { key: 'math', label: 'Math' },
+  { key: 'physics', label: 'Physics' },
+  { key: 'chem', label: 'Chemistry' },
+  { key: 'mixed', label: 'Mixed / PYQ' },
+];
 
 // ---------- Helper Functions for Date & LocalStorage ----------
 
@@ -437,6 +562,7 @@ function TypewriterText({ text }) {
 }
 
 function QuestClearNotification({ data, onDismiss }) {
+  const { trackerItems } = React.useContext(ConfigContext);
   const [phase, setPhase] = useState('in'); // 'in' | 'out'
   const sparkles = useMemo(
     () =>
@@ -502,7 +628,7 @@ function QuestClearNotification({ data, onDismiss }) {
             <h3 className="text-lg font-bold text-sky-50 tracking-wide mb-1 min-h-[1.5em]">
               <TypewriterText text="Daily Quest Cleared!" />
             </h3>
-            <p className="text-[12px] text-sky-200/60 mb-4">All {TRACKER_ITEMS.length} objectives completed for today.</p>
+            <p className="text-[12px] text-sky-200/60 mb-4">All {trackerItems.length} objectives completed for today.</p>
 
             {data.isNewRank && (
               <div className="mb-4 animate-fadeInUp" style={{ animationDelay: '1.3s' }}>
@@ -725,7 +851,7 @@ function CountdownMatrix() {
 
 // ---------- Bento Box Daily Execution Tracker Sidebar ----------
 
-function TrackerItemButton({ item, isChecked, onToggle }) {
+function TrackerItemButton({ item, isChecked, onToggle, isDerived }) {
   const ref = useRef(null);
   const [pressed, setPressed] = useState(false);
   const [spawnRipple, rippleNodes] = useRipple();
@@ -745,6 +871,7 @@ function TrackerItemButton({ item, isChecked, onToggle }) {
       onMouseLeave={handleUp}
       onTouchStart={handleDown}
       onTouchEnd={handleUp}
+      title={isDerived ? 'Auto-synced from the Fuel Matrix meal log — click to go log meals' : undefined}
       className={`cursor-target relative flex flex-col items-start justify-between overflow-hidden p-3.5 rounded-xl border text-left transition-colors duration-200 group ${
         isChecked
           ? 'bg-emerald-500/[0.08] border-emerald-500/30 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]'
@@ -761,6 +888,9 @@ function TrackerItemButton({ item, isChecked, onToggle }) {
         ) : (
           <Circle className="h-4.5 w-4.5 text-neutral-600 group-hover:text-neutral-400 shrink-0 transition-colors" strokeWidth={1.75} />
         )}
+        {isDerived && (
+          <span className="text-[8.5px] uppercase tracking-wider font-bold text-neutral-600 group-hover:text-neutral-400 transition-colors">Auto</span>
+        )}
       </div>
       <span className={`text-[11.5px] font-medium leading-snug transition-colors ${isChecked ? 'text-emerald-200/90' : 'text-neutral-300 group-hover:text-neutral-200'}`}>
         {item.label}
@@ -770,7 +900,8 @@ function TrackerItemButton({ item, isChecked, onToggle }) {
   );
 }
 
-function DailyTracker({ currentDayStr, checked, onToggle }) {
+function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }) {
+  const { trackerItems } = React.useContext(ConfigContext);
   const [timeLeft, setTimeLeft] = useState('');
 
   // Live midnight countdown logic
@@ -792,8 +923,8 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
     return () => clearInterval(timerId);
   }, []);
 
-  const total = TRACKER_ITEMS.length;
-  const done = TRACKER_ITEMS.filter((i) => checked[i.id]).length;
+  const total = trackerItems.length;
+  const done = trackerItems.filter((i) => checked[i.id]).length;
   const pct = Math.round((done / total) * 100);
   const formattedDay = useMemo(() => getDayName(currentDayStr), [currentDayStr]);
 
@@ -863,14 +994,18 @@ function DailyTracker({ currentDayStr, checked, onToggle }) {
 
       {/* Bento Grid layout */}
       <div className="grid grid-cols-2 gap-2.5">
-        {TRACKER_ITEMS.map((item) => (
-          <TrackerItemButton
-            key={item.id}
-            item={item}
-            isChecked={!!checked[item.id]}
-            onToggle={() => onToggle(item.id)}
-          />
-        ))}
+        {trackerItems.map((item) => {
+          const isDerived = item.id === 't6';
+          return (
+            <TrackerItemButton
+              key={item.id}
+              item={item}
+              isChecked={!!checked[item.id]}
+              isDerived={isDerived}
+              onToggle={isDerived ? () => setActiveTab && setActiveTab('training') : () => onToggle(item.id)}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -902,15 +1037,22 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
       version: 1,
     },
     jee_command_history_v2: globalHistory,
+    mock_test_log: localStorage.getItem('mock_test_log'),
+    topic_revision_log: localStorage.getItem('topic_revision_log'),
+    diet_log_v1: localStorage.getItem('diet_log_v1'),
+    weight_log_v1: localStorage.getItem('weight_log_v1'),
     ash_clock_focus_min: localStorage.getItem('ash_clock_focus_min'),
     ash_clock_break_min: localStorage.getItem('ash_clock_break_min'),
     ash_clock_hunter_level: localStorage.getItem('ash_clock_hunter_level'),
     ash_clock_quests_cleared: localStorage.getItem('ash_clock_quests_cleared'),
+    pomodoro_subject_log: localStorage.getItem('pomodoro_subject_log'),
+    ash_clock_last_subject: localStorage.getItem('ash_clock_last_subject'),
     strava_activities: localStorage.getItem('strava_activities'),
     strava_connected: localStorage.getItem('strava_connected'),
     spotify_profile: localStorage.getItem('spotify_profile'),
     spotify_recent: localStorage.getItem('spotify_recent'),
     spotify_connected: localStorage.getItem('spotify_connected'),
+    app_config_v1: localStorage.getItem('app_config_v1'),
   });
 
   const handleExport = () => {
@@ -949,9 +1091,12 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
         setGlobalHistory(parsed.jee_command_history_v2);
 
         const passthroughKeys = [
+          'mock_test_log', 'topic_revision_log', 'diet_log_v1', 'weight_log_v1',
           'ash_clock_focus_min', 'ash_clock_break_min', 'ash_clock_hunter_level',
-          'ash_clock_quests_cleared', 'strava_activities', 'strava_connected',
+          'ash_clock_quests_cleared', 'pomodoro_subject_log', 'ash_clock_last_subject',
+          'strava_activities', 'strava_connected',
           'spotify_profile', 'spotify_recent', 'spotify_connected',
+          'app_config_v1',
         ];
         passthroughKeys.forEach((key) => {
           if (parsed[key] !== undefined && parsed[key] !== null) {
@@ -996,7 +1141,7 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
       </div>
 
       <p className="mt-4 text-[12.5px] text-neutral-500 leading-relaxed">
-        Everything here — the Daily Matrix history, streak, Hunter Rank, and cached Strava/Spotify data — lives only in this browser's storage. Clearing site data, switching devices, or reinstalling the browser erases it permanently, with no way to recover it. Export a backup file regularly, and import it to restore everything on a new device or after a reset.
+        Everything here — the Daily Matrix history, streak, Hunter Rank, mock test scores, weight log, and cached Strava/Spotify data — lives only in this browser's storage. Clearing site data, switching devices, or reinstalling the browser erases it permanently, with no way to recover it. Export a backup file regularly, and import it to restore everything on a new device or after a reset.
       </p>
 
       {status && (
@@ -1015,6 +1160,7 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
 }
 
 function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
+  const { trackerItems } = React.useContext(ConfigContext);
   const [currentNavDate, setCurrentNavDate] = useState(new Date());
   
   const year = currentNavDate.getFullYear();
@@ -1040,17 +1186,17 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
   const handlePastDateClick = (dateStr) => {
     if (!dateStr) return;
     const itemsCompleted = globalHistory[dateStr] || {};
-    const arrayItems = TRACKER_ITEMS.map(item => {
+    const arrayItems = trackerItems.map(item => {
       return `${itemsCompleted[item.id] ? '✅' : '❌'} ${item.label}`;
     });
     const completedCount = Object.values(itemsCompleted).filter(Boolean).length;
-    const percentage = Math.round((completedCount / TRACKER_ITEMS.length) * 100);
+    const percentage = Math.round((completedCount / trackerItems.length) * 100);
 
     setModal({
       title: `Execution Analysis: ${dateStr}`,
       subtitle: `${getDayName(dateStr)} · Efficiency Index: ${percentage}%`,
       icon: Calendar,
-      arrayTitle: `Logged Metric Parameters (${completedCount}/${TRACKER_ITEMS.length})`,
+      arrayTitle: `Logged Metric Parameters (${completedCount}/${trackerItems.length})`,
       arrayItems: arrayItems,
       cues: percentage === 100 ? 'Absolute perfect operation architecture verified.' : 'Identify points of focus slippage to correct trends.'
     });
@@ -1060,7 +1206,7 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
     if (!dateStr || !globalHistory[dateStr]) return 'bg-neutral-900 border-neutral-800 text-neutral-600';
     const checks = globalHistory[dateStr];
     const score = Object.values(checks).filter(Boolean).length;
-    const pct = score / TRACKER_ITEMS.length;
+    const pct = score / trackerItems.length;
 
     if (score === 0) return 'bg-neutral-900 border-neutral-800 text-neutral-500';
     if (pct <= 0.3) return 'bg-rose-950/60 border-rose-800/40 text-rose-300 hover:bg-rose-900/50';
@@ -1111,7 +1257,7 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
                 <>
                   <span className="font-mono">{parseInt(dateStr.split('-')[2])}</span>
                   {globalHistory[dateStr] && Object.values(globalHistory[dateStr]).filter(Boolean).length > 0 && (
-                    <span className={`absolute bottom-1.5 h-1 w-1 rounded-full ${dateStr === getLocalDateString() || Object.values(globalHistory[dateStr]).filter(Boolean).length === TRACKER_ITEMS.length ? 'bg-neutral-950' : 'bg-current'}`} />
+                    <span className={`absolute bottom-1.5 h-1 w-1 rounded-full ${dateStr === getLocalDateString() || Object.values(globalHistory[dateStr]).filter(Boolean).length === trackerItems.length ? 'bg-neutral-950' : 'bg-current'}`} />
                   )}
                 </>
               )}
@@ -1139,6 +1285,17 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
 // ---------- Tab Subcomponent: Overview ----------
 
 function OverviewTab({ setModal }) {
+  const latestWeight = useMemo(() => {
+    try {
+      const saved = localStorage.getItem(WEIGHT_LOG_KEY);
+      const entries = saved ? JSON.parse(saved) : [];
+      if (!entries.length) return null;
+      return [...entries].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
+    } catch {
+      return null;
+    }
+  }, []);
+
   return (
     <div className="space-y-5 animate-fadeIn">
       <CountdownMatrix />
@@ -1154,7 +1311,7 @@ function OverviewTab({ setModal }) {
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <StatPill icon={Ruler} label="Height" value="188 cm" />
-            <StatPill icon={Weight} label="Weight" value="76 kg" />
+            <StatPill icon={Weight} label="Weight" value={latestWeight ? `${latestWeight.weight} kg` : `${PROFILE.weight} kg`} />
             <StatPill icon={Target} label="Category" value="OBC-NCL" accent="amber" />
             <StatPill icon={TrendingUp} label="JEE Main Baseline" value="83 %ile" accent="blue" />
           </div>
@@ -1263,7 +1420,8 @@ function OverviewTab({ setModal }) {
 
 // ---------- Tab Subcomponent: Timeline ----------
 
-function TimelineTab({ setModal }) {
+function TimelineTab({ setModal, notificationsEnabled, notificationPermission, onToggleNotifications }) {
+  const { timeline } = React.useContext(ConfigContext);
   const typeStyle = {
     study: 'border-l-sky-500',
     gym: 'border-l-emerald-500',
@@ -1281,9 +1439,32 @@ function TimelineTab({ setModal }) {
 
   return (
     <div className="animate-fadeIn">
-      <SectionHeading icon={Clock3} title="Master Timeline" subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+        <SectionHeading icon={Clock3} title="Master Timeline" subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
+        <RippleButton
+          onClick={onToggleNotifications}
+          className={`cursor-target shrink-0 flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
+            notificationsEnabled
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
+              : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
+          }`}
+        >
+          {notificationsEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+          {notificationsEnabled ? 'Block Reminders On' : 'Enable Block Reminders'}
+        </RippleButton>
+      </div>
+      {notificationPermission === 'denied' && (
+        <p className="text-[11.5px] text-rose-400/80 mb-4">
+          Notifications are blocked for this site in your browser settings — allow them there first, then try again.
+        </p>
+      )}
+      {notificationsEnabled && notificationPermission === 'granted' && (
+        <p className="text-[11.5px] text-neutral-600 mb-4">
+          You'll get a ping 5 minutes before each block starts, for as long as this tab stays open — browser notifications can't wake up a fully closed tab.
+        </p>
+      )}
       <div className="space-y-2.5">
-        {TIMELINE.map((slot, i) => {
+        {timeline.map((slot, i) => {
           const Icon = slot.icon;
           const sub = slot.subject ? SUBJECT_STYLE[slot.subject] : null;
           return (
@@ -1327,9 +1508,239 @@ function TimelineTab({ setModal }) {
 
 // ---------- Tab Subcomponent: Training & Fuel ----------
 
-function TrainingFuelTab({ setModal }) {
-  const [activeDay, setActiveDay] = useState(TRAINING[0].day);
-  const dayData = TRAINING.find((d) => d.day === activeDay);
+// ---------- Weight Trend (recomposition tracking) ----------
+
+const WEIGHT_LOG_KEY = 'weight_log_v1';
+
+function WeightTrendChart({ entries }) {
+  const width = 600;
+  const height = 200;
+  const padding = { top: 16, right: 14, bottom: 24, left: 36 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+  const n = entries.length;
+
+  const weights = entries.map((e) => e.weight);
+  const rawMin = Math.min(...weights);
+  const rawMax = Math.max(...weights);
+  // Pad the range so the line never touches the top/bottom edge, and give it
+  // a floor of 2kg span so a flat week of identical weigh-ins doesn't render
+  // as a wall-to-wall jagged line from floating point noise.
+  const span = Math.max(rawMax - rawMin, 2);
+  const yMin = rawMin - span * 0.25;
+  const yMax = rawMax + span * 0.25;
+
+  const xFor = (i) => padding.left + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const yFor = (w) => padding.top + innerH - ((w - yMin) / (yMax - yMin)) * innerH;
+
+  const path = entries.map((e, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(e.weight).toFixed(1)}`).join(' ');
+  const areaPath = `${path} L ${xFor(n - 1).toFixed(1)} ${(padding.top + innerH).toFixed(1)} L ${xFor(0).toFixed(1)} ${(padding.top + innerH).toFixed(1)} Z`;
+
+  const gridLines = [yMin, yMin + (yMax - yMin) / 2, yMax];
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+      <defs>
+        <linearGradient id="weightFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {gridLines.map((g) => (
+        <g key={g}>
+          <line x1={padding.left} x2={width - padding.right} y1={yFor(g)} y2={yFor(g)} stroke="#27272a" strokeWidth="1" />
+          <text x={padding.left - 6} y={yFor(g) + 3} fontSize="9" fill="#71717a" textAnchor="end">{g.toFixed(1)}</text>
+        </g>
+      ))}
+      <path d={areaPath} fill="url(#weightFill)" stroke="none" />
+      <path d={path} fill="none" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {entries.map((e, i) => (
+        <circle key={e.id} cx={xFor(i)} cy={yFor(e.weight)} r="3" fill="#38bdf8">
+          <title>{`${e.date}: ${e.weight} kg`}</title>
+        </circle>
+      ))}
+      {entries.map(
+        (e, i) =>
+          (i === 0 || i === n - 1 || i === Math.floor((n - 1) / 2)) && (
+            <text key={e.id} x={xFor(i)} y={height - 6} fontSize="9" fill="#71717a" textAnchor="middle">
+              {e.date.slice(5)}
+            </text>
+          )
+      )}
+    </svg>
+  );
+}
+
+function WeightTrackerCard() {
+  const [entries, setEntries] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem(WEIGHT_LOG_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WEIGHT_LOG_KEY, JSON.stringify(entries));
+    } catch {
+      /* storage unavailable — fail silently, nothing to do here */
+    }
+  }, [entries]);
+
+  const [formDate, setFormDate] = useState(() => getLocalDateString());
+  const [formWeight, setFormWeight] = useState('');
+
+  const sortedEntries = useMemo(() => [...entries].sort((a, b) => a.date.localeCompare(b.date)), [entries]);
+
+  const handleLog = () => {
+    const val = Number(formWeight);
+    if (!formWeight || Number.isNaN(val) || val <= 0) return;
+    setEntries((prev) => {
+      // One weigh-in per day — logging again on the same date overwrites
+      // rather than stacking duplicate points on the chart.
+      const existing = prev.find((e) => e.date === formDate);
+      if (existing) {
+        return prev.map((e) => (e.date === formDate ? { ...e, weight: val } : e));
+      }
+      return [...prev, { id: `w_${Date.now()}`, date: formDate, weight: val }];
+    });
+    setFormWeight('');
+  };
+
+  const handleDelete = (id: string) => {
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+  };
+
+  const first = sortedEntries[0];
+  const latest = sortedEntries[sortedEntries.length - 1];
+  const baseline = first ? first.weight : PROFILE.weight;
+  const delta = latest ? +(latest.weight - baseline).toFixed(1) : 0;
+
+  const last30 = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    return sortedEntries.filter((e) => new Date(e.date) >= cutoff);
+  }, [sortedEntries]);
+  const delta30 = last30.length >= 2 ? +(last30[last30.length - 1].weight - last30[0].weight).toFixed(1) : null;
+
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={TrendingUp} title="Body Weight Trend" subtitle="Weekly weigh-ins — the real check on whether the recomposition plan is working" />
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Date</label>
+            <input
+              type="date"
+              value={formDate}
+              onChange={(e) => setFormDate(e.target.value)}
+              className="rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Weight (kg)</label>
+            <input
+              type="number" min={0} step="0.1" value={formWeight}
+              onChange={(e) => setFormWeight(e.target.value)}
+              placeholder="e.g. 77.4"
+              onKeyDown={(e) => e.key === 'Enter' && handleLog()}
+              className="w-28 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+          <RippleButton
+            onClick={handleLog}
+            className="cursor-target flex items-center gap-1.5 rounded-lg bg-neutral-100 text-neutral-900 px-3.5 py-2 text-[12.5px] font-semibold hover:bg-white transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> Log
+          </RippleButton>
+        </div>
+      </div>
+
+      {sortedEntries.length === 0 ? (
+        <p className="text-[13px] text-neutral-500">
+          No weigh-ins logged yet. Add one above every week — the trend line and change-over-time stats build up automatically from here.
+        </p>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap gap-2.5">
+            <StatPill icon={Weight} label="Latest" value={`${latest.weight} kg`} />
+            <StatPill icon={Calendar} label="Since First Log" value={`${delta > 0 ? '+' : ''}${delta} kg`} accent={delta === 0 ? 'neutral' : delta > 0 ? 'emerald' : 'blue'} />
+            {delta30 !== null && (
+              <StatPill icon={TrendingUp} label="Last 30 Days" value={`${delta30 > 0 ? '+' : ''}${delta30} kg`} accent={delta30 === 0 ? 'neutral' : delta30 > 0 ? 'emerald' : 'blue'} />
+            )}
+          </div>
+
+          {sortedEntries.length >= 2 && (
+            <div className="mb-4">
+              <WeightTrendChart entries={sortedEntries} />
+            </div>
+          )}
+
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {[...sortedEntries].reverse().map((e) => (
+              <div key={e.id} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2">
+                <div className="text-[12.5px] text-neutral-300">{getDayName(e.date)}, {e.date}</div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[13px] font-semibold tabular-nums text-neutral-100">{e.weight} kg</span>
+                  <button
+                    onClick={() => handleDelete(e.id)}
+                    className="cursor-target p-1.5 rounded-lg text-neutral-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors"
+                    title="Delete this entry"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }) {
+  const { training } = React.useContext(ConfigContext);
+  const [activeDay, setActiveDay] = useState(training[0].day);
+  const dayData = training.find((d) => d.day === activeDay) || training[0];
+
+  // If the routine gets edited in Settings and the previously-selected day
+  // no longer exists, fall back to the first day instead of showing nothing.
+  useEffect(() => {
+    if (!training.find((d) => d.day === activeDay)) {
+      setActiveDay(training[0].day);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [training]);
+
+  // Per-meal diet check-ins live in the parent (JEEDashboard) so the Daily
+  // Matrix's "All 6 Meals Hit" box can auto-derive from this instead of being
+  // a second, independent source of truth for the same thing.
+  const todayStr = currentDateStr;
+  const todayLog = dietLog[todayStr] || {};
+  const mealsLoggedToday = DIET.meals.filter((m) => todayLog[m.name]).length;
+
+  const toggleMeal = (mealName: string) => {
+    setDietLog((prev) => {
+      const day = { ...(prev[todayStr] || {}) };
+      day[mealName] = !day[mealName];
+      return { ...prev, [todayStr]: day };
+    });
+  };
+
+  const last7Days = useMemo(() => {
+    const days = [];
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dStr = getLocalDateString(d);
+      const count = Object.values(dietLog[dStr] || {}).filter(Boolean).length;
+      days.push({ date: dStr, count });
+    }
+    return days;
+  }, [dietLog]);
 
   const modeStyle = {
     gym: 'bg-sky-500/10 text-sky-400 border-sky-500/25',
@@ -1356,7 +1767,7 @@ function TrainingFuelTab({ setModal }) {
       <div>
         <SectionHeading icon={Dumbbell} title="Hybrid Vascularity Workout Split" subtitle="Select day to map active routines. Click any individual exercise to view strict mechanical form guides." />
         <div className="flex flex-wrap gap-2 mb-4">
-          {TRAINING.map((d) => (
+          {training.map((d) => (
             <button
               key={d.day}
               onClick={() => setActiveDay(d.day)}
@@ -1377,7 +1788,7 @@ function TrainingFuelTab({ setModal }) {
               <div className="text-[15px] font-semibold text-neutral-100">{dayData.day} Target Matrix</div>
               <div className="text-[12.5px] text-neutral-500">{dayData.focus}</div>
             </div>
-            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${modeStyle[dayData.mode]}`}>
+            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide ${modeStyle[dayData.mode] || modeStyle.rest}`}>
               {dayData.mode}
             </span>
           </div>
@@ -1399,6 +1810,8 @@ function TrainingFuelTab({ setModal }) {
         </Card>
       </div>
 
+      <WeightTrackerCard />
+
       <div>
         <SectionHeading icon={Flame} title="V-Taper Fuel Matrix" subtitle={`${DIET.target} · ${DIET.protein}`} />
         <div className="mb-4 flex flex-wrap gap-2.5">
@@ -1406,41 +1819,88 @@ function TrainingFuelTab({ setModal }) {
           <StatPill icon={Activity} label="Protein Target" value="165g–175g+" accent="emerald" />
           <StatPill icon={Droplets} label="Hydration" value={DIET.hydration} accent="blue" />
         </div>
+
+        <div className="mb-4 flex items-center justify-between flex-wrap gap-3 rounded-xl border border-neutral-800 bg-neutral-900/40 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className={`h-4 w-4 ${mealsLoggedToday === DIET.meals.length ? 'text-emerald-400' : 'text-neutral-500'}`} />
+            <span className="text-[12.5px] text-neutral-300">
+              <span className="font-semibold text-neutral-100 tabular-nums">{mealsLoggedToday}/{DIET.meals.length}</span> meals logged today
+              <span className="text-neutral-600"> · syncs the "All 6 Meals Hit" box on the Daily Matrix</span>
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {last7Days.map((d) => {
+              const pct = d.count / DIET.meals.length;
+              const isToday = d.date === todayStr;
+              return (
+                <div
+                  key={d.date}
+                  title={`${d.date}: ${d.count}/${DIET.meals.length} meals logged`}
+                  className={`h-5 w-5 rounded-md flex items-center justify-center text-[8.5px] font-bold ${isToday ? 'ring-1 ring-neutral-500' : ''}`}
+                  style={{
+                    backgroundColor: pct === 0 ? 'rgba(255,255,255,0.04)' : `rgba(52,211,153,${0.15 + pct * 0.65})`,
+                    color: pct > 0.6 ? '#052e1f' : '#71717a',
+                  }}
+                >
+                  {d.count > 0 ? d.count : ''}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          {DIET.meals.map((m) => (
-            <Card 
-              key={m.name}
-              onClick={() => setModal({
-                title: m.name,
-                subtitle: `Scheduled Timing Window: ${m.time}`,
-                icon: m.icon,
-                arrayTitle: 'Exact Nutrient Components',
-                arrayItems: m.items,
-                cues: 'Avoid heavy hydration consumption simultaneously during solid meals to keep enzyme kinetics tracking perfectly.'
-              })}
-            >
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-800 text-neutral-300">
-                    <m.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+          {DIET.meals.map((m) => {
+            const isLogged = !!todayLog[m.name];
+            return (
+              <Card
+                key={m.name}
+                onClick={() => setModal({
+                  title: m.name,
+                  subtitle: `Scheduled Timing Window: ${m.time}`,
+                  icon: m.icon,
+                  arrayTitle: 'Exact Nutrient Components',
+                  arrayItems: m.items,
+                  cues: 'Avoid heavy hydration consumption simultaneously during solid meals to keep enzyme kinetics tracking perfectly.'
+                })}
+                className={isLogged ? 'border-emerald-500/30 bg-emerald-500/[0.03]' : ''}
+              >
+                <div className="flex items-center justify-between mb-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-800 text-neutral-300">
+                      <m.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    </div>
+                    <div>
+                      <div className="text-[12.5px] font-medium text-neutral-100 leading-none">{m.name}</div>
+                      <div className="text-[11px] text-neutral-500 mt-0.5">{m.time}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-[12.5px] font-medium text-neutral-100 leading-none">{m.name}</div>
-                    <div className="text-[11px] text-neutral-500 mt-0.5">{m.time}</div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleMeal(m.name); }}
+                      title={isLogged ? 'Logged — click to undo' : 'Mark as eaten today'}
+                      className="cursor-target p-1 rounded-md hover:bg-neutral-800 transition-colors"
+                    >
+                      {isLogged ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-neutral-600" />
+                      )}
+                    </button>
+                    <ArrowUpRight className="h-3 w-3 text-neutral-600" />
                   </div>
                 </div>
-                <ArrowUpRight className="h-3 w-3 text-neutral-600" />
-              </div>
-              <ul className="space-y-1">
-                {m.items.map((it) => (
-                  <li key={it} className="flex items-start gap-1.5 text-[12px] text-neutral-400 leading-snug">
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
-                    {it}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))}
+                <ul className="space-y-1">
+                  {m.items.map((it) => (
+                    <li key={it} className="flex items-start gap-1.5 text-[12px] text-neutral-400 leading-snug">
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-neutral-600" />
+                      {it}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1452,6 +1912,37 @@ function TrainingFuelTab({ setModal }) {
 function SyllabusTab({ setModal }) {
   const [activePhase, setActivePhase] = useState(1);
   const phase = SYLLABUS.find((p) => p.phase === activePhase);
+
+  const [revisionLog, setRevisionLog] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('topic_revision_log');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('topic_revision_log', JSON.stringify(revisionLog));
+    } catch {
+      /* storage unavailable — fail silently */
+    }
+  }, [revisionLog]);
+
+  const markRevised = (key: string) => {
+    setRevisionLog((prev) => ({ ...prev, [key]: getLocalDateString() }));
+  };
+
+  // Topics revised at least once before, now gone stale — sorted worst-first.
+  // Topics never touched at all are excluded here (not "overdue", just not
+  // started yet); they still get a neutral badge inline in the topic lists.
+  const staleTopics = useMemo(() => {
+    return ALL_SYLLABUS_TOPICS
+      .map((t) => ({ ...t, ...getRevisionStatus(revisionLog[t.key]) }))
+      .filter((t) => t.status === 'due' || t.status === 'overdue')
+      .sort((a, b) => (b.days || 0) - (a.days || 0));
+  }, [revisionLog]);
 
   const handleTopicClick = (topicName) => {
     const meta = TOPIC_DETAILS[topicName] || { 
@@ -1472,6 +1963,43 @@ function SyllabusTab({ setModal }) {
   return (
     <div className="animate-fadeIn">
       <SectionHeading icon={BookOpen} title="JEE Syllabus Runway" subtitle="4-month absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
+
+      {staleTopics.length > 0 && (
+        <Card className="mb-5 border border-amber-500/20">
+          <SectionHeading
+            icon={RotateCcw}
+            title="Revision Due"
+            subtitle={`${staleTopics.length} topic${staleTopics.length === 1 ? '' : 's'} revised before, now going stale — oldest first`}
+          />
+          <div className="space-y-2 mt-4">
+            {staleTopics.slice(0, 8).map((t) => (
+              <div
+                key={t.key}
+                className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5 flex-wrap"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${t.status === 'overdue' ? 'bg-rose-400' : 'bg-amber-400'}`} />
+                  <button onClick={() => handleTopicClick(t.topic)} className="cursor-target text-[13px] text-neutral-200 hover:text-neutral-50 text-left truncate">
+                    {t.topic}
+                  </button>
+                  <span className={`text-[10.5px] shrink-0 ${SUBJECT_STYLE[t.subject].text}`}>{t.month}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${t.status === 'overdue' ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
+                    {t.days}d ago
+                  </span>
+                  <RippleButton
+                    onClick={() => markRevised(t.key)}
+                    className="cursor-target flex items-center gap-1 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-semibold text-neutral-300 hover:bg-neutral-800 transition-colors"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Mark Revised
+                  </RippleButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-5">
         {SYLLABUS.map((p) => (
@@ -1507,23 +2035,438 @@ function SyllabusTab({ setModal }) {
               <span className={`text-[13px] font-semibold ${s.style.text}`}>{s.title}</span>
             </div>
             <ul className="space-y-2">
-              {phase.subjects[s.key].map((topic) => (
-                <li 
-                  key={topic} 
-                  onClick={() => handleTopicClick(topic)}
-                  className="flex items-center justify-between gap-2 text-[12.5px] text-neutral-300 leading-snug p-2 rounded-lg bg-neutral-950/40 border border-neutral-800/40 cursor-pointer hover:bg-neutral-800/50 hover:border-neutral-700 transition-all group"
-                >
-                  <div className="flex items-start gap-2">
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 mt-0.5 text-neutral-600 group-hover:text-sky-400" strokeWidth={2} />
-                    <span className="group-hover:text-neutral-100">{topic}</span>
-                  </div>
-                  <ArrowUpRight className="h-3 w-3 text-neutral-600 opacity-0 group-hover:opacity-100 transition-all" />
-                </li>
-              ))}
+              {phase.subjects[s.key].map((topic) => {
+                const key = getTopicRevisionKey(activePhase, s.key, topic);
+                const { status, days } = getRevisionStatus(revisionLog[key]);
+                const dotColor =
+                  status === 'never' ? 'bg-neutral-700' :
+                  status === 'fresh' ? 'bg-emerald-400' :
+                  status === 'due' ? 'bg-amber-400' : 'bg-rose-400';
+                const badgeText =
+                  status === 'never' ? 'Not yet revised' :
+                  status === 'fresh' ? `Revised ${days === 0 ? 'today' : `${days}d ago`}` :
+                  status === 'due' ? `Due · ${days}d ago` : `Overdue · ${days}d ago`;
+                const badgeClass =
+                  status === 'never' ? 'text-neutral-600' :
+                  status === 'fresh' ? 'text-emerald-400' :
+                  status === 'due' ? 'text-amber-400' : 'text-rose-400';
+
+                return (
+                  <li
+                    key={topic}
+                    className="flex flex-col gap-1.5 text-[12.5px] text-neutral-300 leading-snug p-2 rounded-lg bg-neutral-950/40 border border-neutral-800/40 hover:bg-neutral-800/50 hover:border-neutral-700 transition-all group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div onClick={() => handleTopicClick(topic)} className="flex items-start gap-2 cursor-pointer min-w-0">
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 mt-0.5 text-neutral-600 group-hover:text-sky-400" strokeWidth={2} />
+                        <span className="group-hover:text-neutral-100 truncate">{topic}</span>
+                      </div>
+                      <ArrowUpRight
+                        onClick={() => handleTopicClick(topic)}
+                        className="h-3 w-3 shrink-0 text-neutral-600 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pl-5.5">
+                      <span className={`flex items-center gap-1.5 text-[10.5px] ${badgeClass}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} /> {badgeText}
+                      </span>
+                      <button
+                        onClick={() => markRevised(key)}
+                        title="Mark as revised today"
+                        className="cursor-target shrink-0 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+                      >
+                        <RotateCcw className="h-2.5 w-2.5" /> Revise
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ---------- Tab Subcomponent: Mock Test Tracker ----------
+// A dependency-free SVG line chart tracing Math/Physics/Chem scores over time.
+function ScoreTrendChart({ tests }) {
+  const width = 600;
+  const height = 220;
+  const padding = { top: 10, right: 10, bottom: 24, left: 32 };
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+  const n = tests.length;
+
+  // Every test can have a different max-marks per subject, so the chart plots
+  // percentage-of-max (score / max * 100) rather than the raw score. That's
+  // the only way an 68/80 and a 74/100 land on the same comparable scale.
+  const pctFor = (t, key) => {
+    const s = t.scores[key];
+    if (!s || !s.max) return 0;
+    return (s.score / s.max) * 100;
+  };
+
+  const xFor = (i) => padding.left + (n === 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const yFor = (pct) => padding.top + innerH - (Math.max(0, Math.min(pct, 100)) / 100) * innerH;
+
+  const buildPath = (key) =>
+    tests.map((t, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(pctFor(t, key)).toFixed(1)}`).join(' ');
+
+  const series = [
+    { key: 'math', color: '#38bdf8', label: 'Math' },
+    { key: 'physics', color: '#a78bfa', label: 'Physics' },
+    { key: 'chem', color: '#34d399', label: 'Chemistry' },
+  ];
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
+        {[0, 25, 50, 75, 100].map((gVal) => (
+          <g key={gVal}>
+            <line x1={padding.left} x2={width - padding.right} y1={yFor(gVal)} y2={yFor(gVal)} stroke="#27272a" strokeWidth="1" />
+            <text x={padding.left - 6} y={yFor(gVal) + 3} fontSize="9" fill="#71717a" textAnchor="end">{gVal}%</text>
+          </g>
+        ))}
+        {series.map((s) => (
+          <path key={s.key} d={buildPath(s.key)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        ))}
+        {series.map((s) =>
+          tests.map((t, i) => {
+            const raw = t.scores[s.key];
+            return (
+              <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" fill={s.color}>
+                <title>{`${s.label}: ${raw.score}/${raw.max} (${pctFor(t, s.key).toFixed(1)}%)`}</title>
+              </circle>
+            );
+          })
+        )}
+        {tests.map(
+          (t, i) =>
+            (i === 0 || i === n - 1 || i === Math.floor((n - 1) / 2)) && (
+              <text key={i} x={xFor(i)} y={height - 6} fontSize="9" fill="#71717a" textAnchor="middle">
+                {t.date.slice(5)}
+              </text>
+            )
+        )}
+      </svg>
+      <div className="flex items-center gap-4 mt-1 justify-center text-[11px] text-neutral-400">
+        {series.map((s) => (
+          <span key={s.key} className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} /> {s.label}
+          </span>
+        ))}
+      </div>
+      <p className="text-center text-[10.5px] text-neutral-600 mt-2">Plotted as % of that test's max marks, since full marks vary test to test — hover a point for the raw score.</p>
+    </div>
+  );
+}
+
+function MockTestTab() {
+  const [tests, setTests] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('mock_test_log');
+      const parsed = saved ? JSON.parse(saved) : [];
+      // Back-compat: earlier version stored raw numbers per subject with an
+      // implicit fixed 100 max. Normalize those into { score, max } shape.
+      return parsed.map((t: any) => ({
+        ...t,
+        scores: {
+          math: typeof t.scores?.math === 'number' ? { score: t.scores.math, max: 100 } : t.scores?.math,
+          physics: typeof t.scores?.physics === 'number' ? { score: t.scores.physics, max: 100 } : t.scores?.physics,
+          chem: typeof t.scores?.chem === 'number' ? { score: t.scores.chem, max: 100 } : t.scores?.chem,
+        },
+      }));
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('mock_test_log', JSON.stringify(tests));
+    } catch {
+      /* storage unavailable — fail silently, nothing to do here */
+    }
+  }, [tests]);
+
+  const [formPhase, setFormPhase] = useState(1);
+  const [formDate, setFormDate] = useState(() => getLocalDateString());
+  const [formLabel, setFormLabel] = useState('');
+  const [formMath, setFormMath] = useState('');
+  const [formMathMax, setFormMathMax] = useState('100');
+  const [formPhysics, setFormPhysics] = useState('');
+  const [formPhysicsMax, setFormPhysicsMax] = useState('100');
+  const [formChem, setFormChem] = useState('');
+  const [formChemMax, setFormChemMax] = useState('100');
+  const [formWeakTopics, setFormWeakTopics] = useState<string[]>([]);
+
+  const activePhaseData = SYLLABUS.find((p) => p.phase === formPhase);
+
+  const toggleWeakTopic = (topic: string) => {
+    setFormWeakTopics((prev) => (prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]));
+  };
+
+  const resetForm = () => {
+    setFormLabel('');
+    setFormMath('');
+    setFormPhysics('');
+    setFormChem('');
+    // Max-marks fields deliberately are NOT reset — most students sit a run of
+    // tests from the same series with the same marking scheme, so keeping
+    // the last-used max marks pre-filled saves re-typing every single time.
+    setFormWeakTopics([]);
+  };
+
+  const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
+
+  const handleAddTest = () => {
+    if (!formMath && !formPhysics && !formChem) return;
+    const mathMax = Math.max(1, Number(formMathMax) || 100);
+    const physicsMax = Math.max(1, Number(formPhysicsMax) || 100);
+    const chemMax = Math.max(1, Number(formChemMax) || 100);
+    const entry = {
+      id: `mt_${Date.now()}`,
+      date: formDate,
+      label: formLabel.trim() || 'Untitled Test',
+      scores: {
+        math: { score: clamp(Number(formMath) || 0, mathMax), max: mathMax },
+        physics: { score: clamp(Number(formPhysics) || 0, physicsMax), max: physicsMax },
+        chem: { score: clamp(Number(formChem) || 0, chemMax), max: chemMax },
+      },
+      weakTopics: formWeakTopics,
+    };
+    setTests((prev) => [...prev, entry]);
+    resetForm();
+  };
+
+  const handleDeleteTest = (id: string) => {
+    setTests((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const sortedTests = useMemo(() => [...tests].sort((a, b) => a.date.localeCompare(b.date)), [tests]);
+
+  const weakTopicCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    tests.forEach((t) => {
+      (t.weakTopics || []).forEach((topic: string) => {
+        counts[topic] = (counts[topic] || 0) + 1;
+      });
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [tests]);
+
+  const subjectMeta = [
+    { key: 'math', title: 'Mathematics' },
+    { key: 'physics', title: 'Physics' },
+    { key: 'chem', title: 'Chemistry' },
+  ];
+
+  return (
+    <div className="space-y-5 animate-fadeIn">
+      <Card>
+        <SectionHeading
+          icon={ClipboardList}
+          title="Log a Mock Test"
+          subtitle="Log each attempt with its actual full marks. Flag whichever topics cost you marks — the priority list below builds itself from this."
+        />
+
+        <div className="grid sm:grid-cols-2 gap-3 mb-4 mt-4">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Test Date</label>
+            <input
+              type="date"
+              value={formDate}
+              onChange={(e) => setFormDate(e.target.value)}
+              className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Test Name (optional)</label>
+            <input
+              type="text"
+              value={formLabel}
+              onChange={(e) => setFormLabel(e.target.value)}
+              placeholder="e.g. Allen Weekly Test 14"
+              className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2 text-[13px] text-neutral-200 placeholder:text-neutral-600 focus:outline-none focus:border-neutral-600"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-5">
+          <div>
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.math.text}`}>Math</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number" min={0} value={formMath}
+                onChange={(e) => setFormMath(e.target.value)}
+                placeholder="Score"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+              />
+              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <input
+                type="number" min={1} value={formMathMax}
+                onChange={(e) => setFormMathMax(e.target.value)}
+                title="Full marks for this subject in this test"
+                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+              />
+            </div>
+          </div>
+          <div>
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.physics.text}`}>Physics</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number" min={0} value={formPhysics}
+                onChange={(e) => setFormPhysics(e.target.value)}
+                placeholder="Score"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+              />
+              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <input
+                type="number" min={1} value={formPhysicsMax}
+                onChange={(e) => setFormPhysicsMax(e.target.value)}
+                title="Full marks for this subject in this test"
+                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+              />
+            </div>
+          </div>
+          <div>
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.chem.text}`}>Chem</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number" min={0} value={formChem}
+                onChange={(e) => setFormChem(e.target.value)}
+                placeholder="Score"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+              />
+              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <input
+                type="number" min={1} value={formChemMax}
+                onChange={(e) => setFormChemMax(e.target.value)}
+                title="Full marks for this subject in this test"
+                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+              />
+            </div>
+          </div>
+        </div>
+        <p className="text-[10.5px] text-neutral-600 -mt-3.5 mb-5">Enter the actual full marks for each subject — it doesn't need to be 100, and can differ subject to subject or test to test.</p>
+
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold">Flag Weak Topics (optional)</label>
+            <div className="flex gap-1 flex-wrap">
+              {SYLLABUS.map((p) => (
+                <button
+                  key={p.phase}
+                  onClick={() => setFormPhase(p.phase)}
+                  className={`cursor-target px-2.5 py-1 rounded-md text-[10.5px] font-semibold transition-colors ${
+                    formPhase === p.phase ? 'bg-neutral-100 text-neutral-900' : 'bg-neutral-900 text-neutral-500 hover:text-neutral-300'
+                  }`}
+                >
+                  {p.month}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4 rounded-xl border border-neutral-800 bg-neutral-950/40 p-3.5 max-h-56 overflow-y-auto">
+            {subjectMeta.map((s) => (
+              <div key={s.key}>
+                <div className={`text-[11px] font-semibold mb-1.5 ${SUBJECT_STYLE[s.key].text}`}>{s.title}</div>
+                <div className="space-y-1.5">
+                  {activePhaseData?.subjects[s.key].map((topic) => (
+                    <label key={topic} className="flex items-center gap-1.5 text-[12px] text-neutral-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formWeakTopics.includes(topic)}
+                        onChange={() => toggleWeakTopic(topic)}
+                        className="accent-rose-500"
+                      />
+                      {topic}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <RippleButton
+          onClick={handleAddTest}
+          className="cursor-target flex items-center gap-1.5 rounded-lg bg-neutral-100 text-neutral-900 px-4 py-2.5 text-[12.5px] font-semibold hover:bg-white transition-colors"
+        >
+          <Plus className="h-3.5 w-3.5" /> Log Test
+        </RippleButton>
+      </Card>
+
+      {sortedTests.length > 0 && (
+        <Card>
+          <SectionHeading icon={BarChart3} title="Score Trend" subtitle={`${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`} />
+          <div className="mt-4">
+            <ScoreTrendChart tests={sortedTests} />
+          </div>
+        </Card>
+      )}
+
+      {weakTopicCounts.length > 0 && (
+        <Card>
+          <SectionHeading icon={AlertTriangle} title="Weak Topic Priority" subtitle="Ranked by how often each topic has been flagged across your logged tests" />
+          <div className="space-y-2 mt-4">
+            {weakTopicCounts.map(([topic, count], idx) => (
+              <div key={topic} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span className={`text-[11px] font-mono w-5 text-center ${idx < 3 ? 'text-rose-400' : 'text-neutral-600'}`}>#{idx + 1}</span>
+                  <span className="text-[13px] text-neutral-200">{topic}</span>
+                </div>
+                <span
+                  className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                    idx < 3 ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' : 'bg-neutral-800/60 text-neutral-400 border-neutral-800'
+                  }`}
+                >
+                  Flagged {count}×
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <SectionHeading icon={ClipboardList} title="Test Log" subtitle={sortedTests.length ? 'All logged attempts, most recent first' : 'Nothing logged yet'} />
+        {sortedTests.length === 0 ? (
+          <p className="text-[13px] text-neutral-500 mt-4">
+            No mock tests logged yet. Add your first one above — the score trend and weak-topic ranking will build up automatically from here.
+          </p>
+        ) : (
+          <div className="space-y-2 mt-4">
+            {[...sortedTests].reverse().map((t) => {
+              const totalScore = t.scores.math.score + t.scores.physics.score + t.scores.chem.score;
+              const totalMax = t.scores.math.max + t.scores.physics.max + t.scores.chem.max;
+              return (
+                <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5 flex-wrap">
+                  <div>
+                    <div className="text-[13px] font-medium text-neutral-200">{t.label}</div>
+                    <div className="text-[11px] text-neutral-500">{getDayName(t.date)}, {t.date}</div>
+                  </div>
+                  <div className="flex items-center gap-3 text-[12px]">
+                    <span className={SUBJECT_STYLE.math.text}>M {t.scores.math.score}/{t.scores.math.max}</span>
+                    <span className={SUBJECT_STYLE.physics.text}>P {t.scores.physics.score}/{t.scores.physics.max}</span>
+                    <span className={SUBJECT_STYLE.chem.text}>C {t.scores.chem.score}/{t.scores.chem.max}</span>
+                    <span className="font-bold text-neutral-100">{totalScore}/{totalMax}</span>
+                    <button
+                      onClick={() => handleDeleteTest(t.id)}
+                      className="cursor-target p-1.5 rounded-lg text-neutral-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors"
+                      title="Delete this test"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -1801,6 +2744,315 @@ function IntroLoader({ onFinish }) {
           JEE 2027 · Drop-Year OS
         </span>
       </div>
+    </div>
+  );
+}
+
+// ---------- Config Editor (Settings Tab) ----------
+// Makes TRACKER_ITEMS, TIMELINE, and TRAINING editable in-app instead of
+// requiring a source-code edit every time the routine changes. Each editor
+// keeps a local draft copy so nothing is written to the live config (and
+// therefore to every other tab reading it) until "Save" is pressed.
+
+const btnGhost = 'cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors';
+const btnSave = (dirty: boolean) => `cursor-target flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-semibold transition-colors ${dirty ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15' : 'border-neutral-800 bg-neutral-900 text-neutral-600'}`;
+const fieldInput = 'w-full rounded-lg border border-neutral-800 bg-neutral-950/50 px-2.5 py-1.5 text-[12px] text-neutral-200 focus:outline-none focus:border-neutral-600';
+const fieldLabel = 'text-[10px] uppercase tracking-wide text-neutral-600 font-bold block mb-1';
+
+function TrackerItemsEditor() {
+  const { trackerItems, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [items, setItems] = useState(trackerItems);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { setItems(trackerItems); setDirty(false); }, [trackerItems]);
+
+  const updateLabel = (id: string, label: string) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, label } : it)));
+    setDirty(true);
+  };
+  const removeItem = (id: string) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    setDirty(true);
+  };
+  const addItem = () => {
+    setItems((prev) => [...prev, { id: `custom_${Date.now()}`, label: 'New Objective' }]);
+    setDirty(true);
+  };
+  const save = () => {
+    if (!items.length) return;
+    updateConfig({ trackerItems: items });
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={ClipboardList} title="Daily Checklist Items" subtitle="The objectives that make up the Daily Matrix sidebar" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('trackerItems'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.id} className="flex items-center gap-2">
+            <input value={item.label} onChange={(e) => updateLabel(item.id, e.target.value)} className={`flex-1 ${fieldInput}`} />
+            {item.id === 't6' && <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-600">Auto-synced</span>}
+            <button onClick={() => removeItem(item.id)} className="cursor-target shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-500 hover:text-rose-400 hover:border-rose-500/30 transition-colors">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <RippleButton onClick={addItem} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
+        <Plus className="h-3.5 w-3.5" /> Add Objective
+      </RippleButton>
+      <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
+        "All 6 Meals Hit" stays wired to the Fuel Matrix meal log as long as it keeps its id — renaming its label is fine, but deleting it breaks that auto-sync.
+      </p>
+    </Card>
+  );
+}
+
+function TimelineEditor() {
+  const { timeline, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [items, setItems] = useState(timeline);
+  const [dirty, setDirty] = useState(false);
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  useEffect(() => { setItems(timeline); setDirty(false); }, [timeline]);
+
+  const patch = (i: number, patchObj: Record<string, any>) => {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patchObj } : it)));
+    setDirty(true);
+  };
+  const removeBlock = (i: number) => {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setDirty(true);
+  };
+  const addBlock = () => {
+    setItems((prev) => {
+      setOpenIdx(prev.length);
+      return [...prev, { start: '12:00', end: '12:30', label: 'New Block', detail: '', type: 'prep', subject: undefined, longDesc: '', iconName: 'BookOpen', icon: BookOpen }];
+    });
+    setDirty(true);
+  };
+  const save = () => {
+    if (!items.length) return;
+    updateConfig({ timeline: items.map((it) => ({ ...it, icon: ICON_LIBRARY[it.iconName] || BookOpen })) });
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={Clock3} title="Master Timeline Blocks" subtitle="The time-boxed slots that make up the day's schedule" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('timeline'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {items.map((slot, i) => {
+          const Icon = ICON_LIBRARY[slot.iconName] || BookOpen;
+          const isOpen = openIdx === i;
+          return (
+            <div key={i} className="rounded-lg border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+              <button onClick={() => setOpenIdx(isOpen ? null : i)} className="cursor-target w-full flex items-center gap-3 px-3.5 py-2.5 text-left">
+                <Icon className="h-4 w-4 text-neutral-500 shrink-0" strokeWidth={1.75} />
+                <span className="text-[11.5px] text-neutral-500 tabular-nums shrink-0 w-[92px]">{slot.start}–{slot.end}</span>
+                <span className="text-[12.5px] text-neutral-200 flex-1 truncate">{slot.label}</span>
+                <ChevronRight className={`h-3.5 w-3.5 text-neutral-600 transition-transform shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+              </button>
+              {isOpen && (
+                <div className="px-3.5 pb-3.5 pt-1 space-y-2.5 border-t border-neutral-800/60">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className={fieldLabel}>Start</label>
+                      <input type="time" value={slot.start} onChange={(e) => patch(i, { start: e.target.value })} className={fieldInput} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>End</label>
+                      <input type="time" value={slot.end} onChange={(e) => patch(i, { end: e.target.value })} className={fieldInput} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={fieldLabel}>Label</label>
+                    <input value={slot.label} onChange={(e) => patch(i, { label: e.target.value })} className={fieldInput} />
+                  </div>
+                  <div>
+                    <label className={fieldLabel}>Detail</label>
+                    <input value={slot.detail} onChange={(e) => patch(i, { detail: e.target.value })} className={fieldInput} />
+                  </div>
+                  <div>
+                    <label className={fieldLabel}>Long Description</label>
+                    <textarea value={slot.longDesc} onChange={(e) => patch(i, { longDesc: e.target.value })} rows={2} className={`${fieldInput} resize-none`} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div>
+                      <label className={fieldLabel}>Type</label>
+                      <select value={slot.type} onChange={(e) => patch(i, { type: e.target.value })} className={fieldInput}>
+                        {['study', 'gym', 'meal', 'prep', 'sleep'].map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Subject</label>
+                      <select value={slot.subject || ''} onChange={(e) => patch(i, { subject: e.target.value || undefined })} className={fieldInput}>
+                        <option value="">—</option>
+                        {['math', 'physics', 'chem', 'mixed'].map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Icon</label>
+                      <select value={slot.iconName} onChange={(e) => patch(i, { iconName: e.target.value })} className={fieldInput}>
+                        {ICON_LIBRARY_KEYS.map((k) => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <button onClick={() => removeBlock(i)} className="cursor-target flex items-center gap-1.5 text-[11.5px] font-medium text-rose-400/80 hover:text-rose-300 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" /> Remove block
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <RippleButton onClick={addBlock} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
+        <Plus className="h-3.5 w-3.5" /> Add Block
+      </RippleButton>
+    </Card>
+  );
+}
+
+function TrainingEditor() {
+  const { training, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [days, setDays] = useState(training);
+  const [dirty, setDirty] = useState(false);
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+
+  useEffect(() => { setDays(training); setDirty(false); }, [training]);
+
+  const patchDay = (i: number, patchObj: Record<string, any>) => {
+    setDays((prev) => prev.map((d, idx) => (idx === i ? { ...d, ...patchObj } : d)));
+    setDirty(true);
+  };
+  const removeDay = (i: number) => {
+    setDays((prev) => prev.filter((_, idx) => idx !== i));
+    setDirty(true);
+  };
+  const addDay = () => {
+    setDays((prev) => {
+      setOpenIdx(prev.length);
+      return [...prev, { day: 'New Day', focus: '', exercises: [], mode: 'gym' }];
+    });
+    setDirty(true);
+  };
+  const patchExercise = (dayIdx: number, exIdx: number, patchObj: Record<string, any>) => {
+    setDays((prev) => prev.map((d, idx) => (idx !== dayIdx ? d : { ...d, exercises: d.exercises.map((ex: any, ei: number) => (ei === exIdx ? { ...ex, ...patchObj } : ex)) })));
+    setDirty(true);
+  };
+  const removeExercise = (dayIdx: number, exIdx: number) => {
+    setDays((prev) => prev.map((d, idx) => (idx !== dayIdx ? d : { ...d, exercises: d.exercises.filter((_: any, ei: number) => ei !== exIdx) })));
+    setDirty(true);
+  };
+  const addExercise = (dayIdx: number) => {
+    setDays((prev) => prev.map((d, idx) => (idx !== dayIdx ? d : { ...d, exercises: [...d.exercises, { name: 'New Exercise', sets: '3×10' }] })));
+    setDirty(true);
+  };
+  const save = () => {
+    if (!days.length) return;
+    updateConfig({ training: days });
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={Dumbbell} title="Training Split" subtitle="Gym / calisthenics days and their exercises" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('training'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {days.map((d, i) => {
+          const isOpen = openIdx === i;
+          return (
+            <div key={i} className="rounded-lg border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+              <button onClick={() => setOpenIdx(isOpen ? null : i)} className="cursor-target w-full flex items-center gap-3 px-3.5 py-2.5 text-left">
+                <span className="text-[12.5px] font-medium text-neutral-200 flex-1 truncate">{d.day} — {d.focus}</span>
+                <span className="text-[10px] uppercase tracking-wide text-neutral-600 shrink-0">{d.exercises.length} ex.</span>
+                <ChevronRight className={`h-3.5 w-3.5 text-neutral-600 transition-transform shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+              </button>
+              {isOpen && (
+                <div className="px-3.5 pb-3.5 pt-1 space-y-2.5 border-t border-neutral-800/60">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className={fieldLabel}>Day Label</label>
+                      <input value={d.day} onChange={(e) => patchDay(i, { day: e.target.value })} className={fieldInput} />
+                    </div>
+                    <div>
+                      <label className={fieldLabel}>Mode</label>
+                      <select value={d.mode} onChange={(e) => patchDay(i, { mode: e.target.value })} className={fieldInput}>
+                        {['gym', 'calisthenics', 'rest'].map((m) => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={fieldLabel}>Focus</label>
+                    <input value={d.focus} onChange={(e) => patchDay(i, { focus: e.target.value })} className={fieldInput} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={fieldLabel}>Exercises</label>
+                    {d.exercises.map((ex: any, ei: number) => (
+                      <div key={ei} className="flex items-center gap-2">
+                        <input value={ex.name} onChange={(e) => patchExercise(i, ei, { name: e.target.value })} className={`flex-1 ${fieldInput}`} placeholder="Exercise name" />
+                        <input value={ex.sets} onChange={(e) => patchExercise(i, ei, { sets: e.target.value })} className={`w-24 shrink-0 ${fieldInput}`} placeholder="Sets" />
+                        <button onClick={() => removeExercise(i, ei)} className="cursor-target shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-500 hover:text-rose-400 hover:border-rose-500/30 transition-colors">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button onClick={() => addExercise(i)} className="cursor-target flex items-center gap-1.5 text-[11.5px] font-medium text-neutral-400 hover:text-neutral-200 transition-colors">
+                      <Plus className="h-3.5 w-3.5" /> Add exercise
+                    </button>
+                  </div>
+                  <button onClick={() => removeDay(i)} className="cursor-target flex items-center gap-1.5 text-[11.5px] font-medium text-rose-400/80 hover:text-rose-300 transition-colors">
+                    <Trash2 className="h-3.5 w-3.5" /> Remove day
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <RippleButton onClick={addDay} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
+        <Plus className="h-3.5 w-3.5" /> Add Day
+      </RippleButton>
+    </Card>
+  );
+}
+
+function ConfigEditorTab() {
+  return (
+    <div className="space-y-5 animate-fadeIn">
+      <SectionHeading icon={Settings} title="Config & Settings" subtitle="Edit the Daily Checklist, Timeline, and Training Split — changes apply everywhere instantly, no code required" />
+      <TrackerItemsEditor />
+      <TimelineEditor />
+      <TrainingEditor />
     </div>
   );
 }
@@ -2118,7 +3370,7 @@ export default function JEEDashboard() {
 
     // Replace with your own Spotify Developer Dashboard Client ID —
     // the same way the Strava client_id above is wired up.
-    const clientId = 'YOUR_SPOTIFY_CLIENT_ID';
+    const clientId = '2f4cd23001604c63936002f1d7a52660';
 
     const isLive = window.location.hostname.includes('vercel.app');
     const targetOrigin = isLive
@@ -2138,6 +3390,97 @@ export default function JEEDashboard() {
   const [introDone, setIntroDone] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [modal, setModal] = useState(null);
+
+  // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
+  // Purely additive: the click-based tab bar above still works exactly as
+  // before. This just lets a left/right swipe anywhere on the workspace
+  // move to the next/previous tab in the TABS array.
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [swipePeek, setSwipePeek] = useState<'left' | 'right' | null>(null);
+
+  const SWIPE_MIN_DISTANCE = 60; // px — how far a swipe must travel to count
+  const SWIPE_MAX_OFF_AXIS = 70; // px — how vertical it can drift before we treat it as a scroll instead
+
+  const goToAdjacentTab = (direction: 1 | -1) => {
+    const currentIndex = TABS.findIndex((t) => t.id === activeTab);
+    if (currentIndex === -1) return;
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= TABS.length) return;
+    setActiveTab(TABS[nextIndex].id);
+  };
+
+  const handleWorkspaceTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't hijack gestures meant for form controls, sliders, or the
+    // (already horizontally-scrollable) tab bar itself.
+    if (target.closest('input, textarea, select, nav, [data-no-swipe]')) {
+      swipeStartRef.current = null;
+      return;
+    }
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleWorkspaceTouchMove = (e: React.TouchEvent) => {
+    if (!swipeStartRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
+    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) {
+      setSwipePeek(dx < 0 ? 'left' : 'right');
+    } else {
+      setSwipePeek(null);
+    }
+  };
+
+  const handleWorkspaceTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    setSwipePeek(null);
+    if (!start) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_DISTANCE || Math.abs(dy) > SWIPE_MAX_OFF_AXIS) return;
+    goToAdjacentTab(dx < 0 ? 1 : -1); // swipe left goes to next tab, swipe right goes to previous tab
+  };
+
+  // Editable Config — Daily Checklist / Timeline / Training routine.
+  // Everything else in the app reads this through ConfigContext instead of
+  // the DEFAULT_* module constants, so edits made in the Settings tab
+  // propagate everywhere immediately without a page reload.
+  const [config, setConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+      return deserializeConfig(saved ? JSON.parse(saved) : null);
+    } catch (e) {
+      console.error('Error hydrating config from localStorage', e);
+      return deserializeConfig(null);
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(serializeConfig(config)));
+    } catch (e) {
+      console.error('Error persisting config to localStorage', e);
+    }
+  }, [config]);
+
+  const updateConfig = (partial: Record<string, any>) => {
+    setConfig((prev) => ({ ...prev, ...partial }));
+  };
+
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training') => {
+    setConfig((prev) => ({
+      ...prev,
+      [key]: key === 'timeline'
+        ? hydrateTimeline(DEFAULT_TIMELINE_STORABLE)
+        : key === 'training'
+        ? DEFAULT_TRAINING
+        : DEFAULT_TRACKER_ITEMS,
+    }));
+  };
 
   // Core Data Persistence Engine (Localised ISO keys)
   const [currentDateStr, setCurrentDateStr] = useState(() => getLocalDateString());
@@ -2168,6 +3511,120 @@ export default function JEEDashboard() {
     localStorage.setItem('jee_command_history_v2', JSON.stringify(globalHistory));
   }, [globalHistory]);
 
+  // Per-meal diet check-ins (Fuel Matrix). Lifted up here — rather than kept
+  // local to TrainingFuelTab — specifically so the Daily Matrix's "All 6
+  // Meals Hit" box can auto-derive from it instead of being tracked twice.
+  const [dietLog, setDietLog] = useState<Record<string, Record<string, boolean>>>(() => {
+    try {
+      const saved = localStorage.getItem('diet_log_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('diet_log_v1', JSON.stringify(dietLog));
+    } catch {
+      /* storage unavailable — fail silently */
+    }
+  }, [dietLog]);
+
+  const allMealsHitToday = useMemo(() => {
+    const todayMeals = dietLog[currentDateStr] || {};
+    return DIET.meals.every((m) => todayMeals[m.name]);
+  }, [dietLog, currentDateStr]);
+
+  // Keep the Daily Matrix's t6 box in lockstep with the Fuel Matrix meal log,
+  // rather than letting it drift as an independent manual checkbox.
+  useEffect(() => {
+    setGlobalHistory((prev) => {
+      const day = prev[currentDateStr] || {};
+      if (!!day.t6 === allMealsHitToday) return prev;
+      return {
+        ...prev,
+        [currentDateStr]: { ...day, t6: allMealsHitToday },
+      };
+    });
+  }, [allMealsHitToday, currentDateStr]);
+
+  // ---- Time-block browser notifications ----
+  // The Master Timeline is a strict schedule but nothing previously enforced
+  // it — this pings 5 minutes before each block starts, for as long as the
+  // tab stays open. No service worker here, so it can't wake a fully closed
+  // tab; this is a best-effort foreground reminder, not a background push.
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('timeline_notifications_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [notificationPermission, setNotificationPermission] = useState(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('timeline_notifications_enabled', String(notificationsEnabled));
+    } catch {
+      /* storage unavailable — fail silently */
+    }
+  }, [notificationsEnabled]);
+
+  const handleToggleNotifications = async () => {
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission === 'granted') {
+      setNotificationsEnabled(true);
+    }
+  };
+
+  // Schedules one timer per remaining timeline block for today, 5 minutes
+  // ahead of its start time. Re-runs at midnight rollover (currentDateStr
+  // changes) and whenever the feature is toggled, always clearing prior
+  // timers first so nothing double-fires.
+  useEffect(() => {
+    if (!notificationsEnabled) return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const now = new Date();
+
+    config.timeline.forEach((slot) => {
+      if (slot.start === slot.end) return; // zero-length marker (Sleep Lock) — nothing to alert before
+      const [h, m] = slot.start.split(':').map(Number);
+      const slotTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+      const alertTime = new Date(slotTime.getTime() - 5 * 60 * 1000);
+      const msUntil = alertTime.getTime() - now.getTime();
+      if (msUntil <= 0) return;
+
+      const timer = setTimeout(() => {
+        try {
+          new Notification(`Starting soon: ${slot.label}`, {
+            body: `${slot.detail} — begins at ${slot.start}`,
+            tag: `timeline-${slot.start}`,
+          });
+        } catch {
+          /* Notification constructor can throw in some restricted contexts */
+        }
+      }, msUntil);
+      timers.push(timer);
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [notificationsEnabled, currentDateStr, config.timeline]);
+
   // Read current active item checklist matrix
   const checked = useMemo(() => {
     return globalHistory[currentDateStr] || {};
@@ -2185,19 +3642,22 @@ export default function JEEDashboard() {
   };
 
   const doneCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
-  const totalCount = TRACKER_ITEMS.length;
+  const totalCount = config.trackerItems.length;
   const overallPct = Math.round((doneCount / totalCount) * 100);
 
   // Lifetime count of fully-cleared days across all recorded history — the
   // number that actually drives Hunter Rank, independent of today's progress.
   const clearedDaysCount = useMemo(() => {
     return Object.values(globalHistory).filter((dayObj) =>
-      TRACKER_ITEMS.every((item) => (dayObj as any)?.[item.id])
+      config.trackerItems.every((item) => (dayObj as any)?.[item.id])
     ).length;
-  }, [globalHistory]);
+  }, [globalHistory, config.trackerItems]);
 
   const hunterRank = useMemo(() => getHunterRank(clearedDaysCount), [clearedDaysCount]);
-  const currentStreak = useMemo(() => computeCurrentStreak(globalHistory, currentDateStr), [globalHistory, currentDateStr]);
+  const currentStreak = useMemo(
+    () => computeCurrentStreak(globalHistory, currentDateStr, config.trackerItems),
+    [globalHistory, currentDateStr, config.trackerItems]
+  );
 
   // Fires the "System" quest-clear notification exactly once, the moment
   // today's Daily Matrix transitions from incomplete to 100%.
@@ -2223,9 +3683,17 @@ export default function JEEDashboard() {
   const renderTab = () => {
     switch (activeTab) {
       case 'overview': return <OverviewTab setModal={setModal} />;
-      case 'timeline': return <TimelineTab setModal={setModal} />;
-      case 'training': return <TrainingFuelTab setModal={setModal} />;
+      case 'timeline': return (
+        <TimelineTab
+          setModal={setModal}
+          notificationsEnabled={notificationsEnabled}
+          notificationPermission={notificationPermission}
+          onToggleNotifications={handleToggleNotifications}
+        />
+      );
+      case 'training': return <TrainingFuelTab setModal={setModal} dietLog={dietLog} setDietLog={setDietLog} currentDateStr={currentDateStr} />;
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
+      case 'mocktests': return <MockTestTab />;
       case 'ashclock': return <AshClockTab />;
       case 'grooming': return <GroomingTab setModal={setModal} />;
       case 'spotify':
@@ -2258,11 +3726,21 @@ export default function JEEDashboard() {
           />
         );
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} setModal={setModal} />;
+      case 'settings': return <ConfigEditorTab />;
       default: return null;
     }
   };
 
   return (
+    <ConfigContext.Provider
+      value={{
+        trackerItems: config.trackerItems,
+        timeline: config.timeline,
+        training: config.training,
+        updateConfig,
+        resetConfigSection,
+      }}
+    >
     <div className="min-h-screen w-full bg-zinc-950 text-neutral-200 font-sans antialiased">
       {!introDone && <IntroLoader onFinish={() => setIntroDone(true)} />}
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
@@ -2318,11 +3796,35 @@ export default function JEEDashboard() {
           })}
         </nav>
 
-        {/* Dashboard Grid Workspace Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5">
+        {/* Dashboard Grid Workspace Layout — swipe left/right anywhere here to move between tabs */}
+        <div
+          className={`relative grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 transition-transform duration-150 ease-out touch-pan-y ${
+            swipePeek === 'left' ? '-translate-x-2' : swipePeek === 'right' ? 'translate-x-2' : 'translate-x-0'
+          }`}
+          onTouchStart={handleWorkspaceTouchStart}
+          onTouchMove={handleWorkspaceTouchMove}
+          onTouchEnd={handleWorkspaceTouchEnd}
+          onTouchCancel={handleWorkspaceTouchEnd}
+        >
+          {/* Faint edge hints that appear mid-swipe, Instagram-style */}
+          <div
+            className={`pointer-events-none fixed left-2 top-1/2 z-30 -translate-y-1/2 rounded-full bg-neutral-900/80 border border-neutral-700 p-2 transition-opacity duration-150 ${
+              swipePeek === 'right' ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <ChevronLeft className="h-4 w-4 text-neutral-300" />
+          </div>
+          <div
+            className={`pointer-events-none fixed right-2 top-1/2 z-30 -translate-y-1/2 rounded-full bg-neutral-900/80 border border-neutral-700 p-2 transition-opacity duration-150 ${
+              swipePeek === 'left' ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <ChevronRight className="h-4 w-4 text-neutral-300" />
+          </div>
+
           <main>{renderTab()}</main>
           <aside>
-            <DailyTracker currentDayStr={currentDateStr} checked={checked} onToggle={toggleCheck} />
+            <DailyTracker currentDayStr={currentDateStr} checked={checked} onToggle={toggleCheck} setActiveTab={setActiveTab} />
           </aside>
         </div>
 
@@ -2493,6 +3995,7 @@ export default function JEEDashboard() {
         }
       `}</style>
     </div>
+    </ConfigContext.Provider>
   );
 }
 
@@ -3106,7 +4609,7 @@ function RippleButton({
 // increasing (the live clock), downward when it's decreasing (the pomodoro
 // countdown). This replaces the earlier 3D flip mechanic with something
 // quieter and closer to an odometer roll.
-function FadeDigit({ char, size = 84, direction = 'up' }: { char: string; size?: number; direction?: 'up' | 'down' }) {
+function FadeDigit({ char, size = 84, direction = 'up' }: { char: string; size?: number | string; direction?: 'up' | 'down' }) {
   const [current, setCurrent] = useState(char);
   const [outgoing, setOutgoing] = useState<string | null>(null);
   const timeoutRef = useRef<any>(null);
@@ -3122,7 +4625,7 @@ function FadeDigit({ char, size = 84, direction = 'up' }: { char: string; size?:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [char]);
 
-  const styleVar = { ['--fade-h' as any]: `${size}px` };
+  const styleVar = { ['--fade-h' as any]: typeof size === 'number' ? `${size}px` : size };
   const inClass = direction === 'up' ? 'fade-num-in-up' : 'fade-num-in-down';
   const outClass = direction === 'up' ? 'fade-num-out-up' : 'fade-num-out-down';
 
@@ -3136,7 +4639,7 @@ function FadeDigit({ char, size = 84, direction = 'up' }: { char: string; size?:
   );
 }
 
-function FadePair({ value, size = 84, direction = 'up' }: { value: string; size?: number; direction?: 'up' | 'down' }) {
+function FadePair({ value, size = 84, direction = 'up' }: { value: string; size?: number | string; direction?: 'up' | 'down' }) {
   const chars = value.padStart(2, '0').split('');
   return (
     <div className="flex gap-1">
@@ -3146,17 +4649,19 @@ function FadePair({ value, size = 84, direction = 'up' }: { value: string; size?
   );
 }
 
-function FadeColon({ size = 84 }: { size?: number }) {
-  const dot = Math.max(5, size * 0.09);
+function FadeColon({ size = 84 }: { size?: number | string }) {
+  const dotStyle = typeof size === 'number'
+    ? { width: Math.max(5, size * 0.09), height: Math.max(5, size * 0.09) }
+    : { width: 'clamp(4px, 1.4vw, 7px)', height: 'clamp(4px, 1.4vw, 7px)' };
   return (
     <div className="flex flex-col items-center justify-center gap-2" style={{ height: size }}>
       <span
         className="block rounded-full bg-purple-400/80 animate-dotBreathe"
-        style={{ width: dot, height: dot, boxShadow: '0 0 8px rgba(192,132,252,0.8)' }}
+        style={{ ...dotStyle, boxShadow: '0 0 8px rgba(192,132,252,0.8)' }}
       />
       <span
         className="block rounded-full bg-purple-400/80 animate-dotBreathe"
-        style={{ width: dot, height: dot, boxShadow: '0 0 8px rgba(192,132,252,0.8)', animationDelay: '0.3s' }}
+        style={{ ...dotStyle, boxShadow: '0 0 8px rgba(192,132,252,0.8)', animationDelay: '0.3s' }}
       />
     </div>
   );
@@ -3181,14 +4686,14 @@ function LiveClockView() {
   const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
-    <div className="flex flex-col items-center py-6">
-      <div className="flex items-end gap-2 sm:gap-3">
-        <FadePair value={hh} size={64} direction="up" />
-        <FadeColon size={64} />
-        <FadePair value={mm} size={64} direction="up" />
-        <FadeColon size={64} />
-        <FadePair value={ss} size={64} direction="up" />
-        <span className="ml-2 mb-2 text-xs font-bold text-purple-300/80 tracking-widest">{isPM ? 'PM' : 'AM'}</span>
+    <div className="flex flex-col items-center py-6 w-full">
+      <div className="flex items-end gap-1.5 sm:gap-3 max-w-full">
+        <FadePair value={hh} size="clamp(38px, 10vw, 64px)" direction="up" />
+        <FadeColon size="clamp(38px, 10vw, 64px)" />
+        <FadePair value={mm} size="clamp(38px, 10vw, 64px)" direction="up" />
+        <FadeColon size="clamp(38px, 10vw, 64px)" />
+        <FadePair value={ss} size="clamp(38px, 10vw, 64px)" direction="up" />
+        <span className="ml-1 sm:ml-2 mb-1.5 sm:mb-2 text-[10px] sm:text-xs font-bold text-purple-300/80 tracking-widest shrink-0">{isPM ? 'PM' : 'AM'}</span>
       </div>
       <p className="mt-6 text-[12.5px] text-neutral-500 tracking-wide">{dateLabel}</p>
       <p className="mt-1 text-[10px] text-purple-400/50 tracking-[0.2em] uppercase">Hunter's Association Standard Time</p>
@@ -3196,7 +4701,7 @@ function LiveClockView() {
   );
 }
 
-function PomodoroView() {
+function PomodoroView({ onSessionComplete }) {
   const [focusMinutes, setFocusMinutes] = useState<number>(() => {
     const saved = localStorage.getItem('ash_clock_focus_min');
     return saved ? parseInt(saved, 10) : DEFAULT_FOCUS_MIN;
@@ -3205,6 +4710,9 @@ function PomodoroView() {
     const saved = localStorage.getItem('ash_clock_break_min');
     return saved ? parseInt(saved, 10) : DEFAULT_BREAK_MIN;
   });
+
+  const [subject, setSubject] = useState<string>(() => localStorage.getItem('ash_clock_last_subject') || 'math');
+  useEffect(() => { localStorage.setItem('ash_clock_last_subject', subject); }, [subject]);
 
   const [sessionType, setSessionType] = useState<'focus' | 'break'>('focus');
   const [secondsLeft, setSecondsLeft] = useState(() => focusMinutes * 60);
@@ -3262,6 +4770,7 @@ function PomodoroView() {
     if (sessionType === 'focus') {
       const nextQuests = questsCleared + 1;
       setQuestsCleared(nextQuests);
+      onSessionComplete?.(subject, focusMinutes);
       if (nextQuests % 4 === 0) {
         const nextLevel = hunterLevel + 1;
         setHunterLevel(nextLevel);
@@ -3359,10 +4868,28 @@ function PomodoroView() {
         {sessionType === 'focus' ? 'Focus Gate' : 'Rest Zone'}
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3">
-        <FadePair value={mm} size={88} direction="down" />
-        <FadeColon size={88} />
-        <FadePair value={ss} size={88} direction="down" />
+      {/* Subject tag — which gate is this? */}
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap justify-center">
+        {POMODORO_SUBJECTS.map((s) => (
+          <RippleButton
+            key={s.key}
+            onClick={() => !isRunning && setSubject(s.key)}
+            disabled={isRunning}
+            className={`cursor-target rounded-full px-3 py-1 text-[10.5px] font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+              subject === s.key
+                ? `${SUBJECT_STYLE[s.key].bg} ${SUBJECT_STYLE[s.key].text} ${SUBJECT_STYLE[s.key].border}`
+                : 'bg-neutral-900/60 text-neutral-500 border-neutral-800 hover:text-neutral-300'
+            }`}
+          >
+            {s.label}
+          </RippleButton>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5 sm:gap-3 max-w-full">
+        <FadePair value={mm} size="clamp(46px, 14vw, 88px)" direction="down" />
+        <FadeColon size="clamp(46px, 14vw, 88px)" />
+        <FadePair value={ss} size="clamp(46px, 14vw, 88px)" direction="down" />
       </div>
 
       {/* Progress bar */}
@@ -3458,12 +4985,94 @@ function PomodoroView() {
   );
 }
 
+function PomodoroSubjectStats({ log }) {
+  const todayStr = getLocalDateString();
+
+  const totals = useMemo(() => {
+    const all: Record<string, number> = { math: 0, physics: 0, chem: 0, mixed: 0 };
+    const today: Record<string, number> = { math: 0, physics: 0, chem: 0, mixed: 0 };
+    log.forEach((entry: any) => {
+      all[entry.subject] = (all[entry.subject] || 0) + entry.minutes;
+      if (entry.date === todayStr) today[entry.subject] = (today[entry.subject] || 0) + entry.minutes;
+    });
+    return { all, today };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [log]);
+
+  const grandTotal: number = Object.values(totals.all).reduce((a: number, b: number) => a + b, 0);
+  const maxSubjectMinutes = Math.max(1, ...Object.values(totals.all));
+
+  const formatHrs = (mins: number) => {
+    if (mins === 0) return '0m';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+
+  return (
+    <Card>
+      <SectionHeading
+        icon={BarChart3}
+        title="Subject Hours"
+        subtitle={grandTotal > 0 ? `${formatHrs(grandTotal)} logged across all Focus Gates — checking Chemistry isn't quietly falling behind` : 'Complete a tagged Focus Gate to start building this up'}
+      />
+      {grandTotal === 0 ? (
+        <p className="text-[13px] text-neutral-500 mt-4">
+          No Pomodoro sessions logged yet. Tag a subject above and clear a Focus Gate — hours per subject will build up here automatically.
+        </p>
+      ) : (
+        <div className="space-y-3 mt-4">
+          {POMODORO_SUBJECTS.map((s) => {
+            const allMin = totals.all[s.key] || 0;
+            const todayMin = totals.today[s.key] || 0;
+            const pct = (allMin / maxSubjectMinutes) * 100;
+            return (
+              <div key={s.key}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-[12px] font-semibold ${SUBJECT_STYLE[s.key].text}`}>{s.label}</span>
+                  <span className="text-[11.5px] text-neutral-400 tabular-nums">
+                    {formatHrs(allMin)} total{todayMin > 0 ? ` · ${formatHrs(todayMin)} today` : ''}
+                  </span>
+                </div>
+                <div className="h-2 w-full rounded-full bg-neutral-900 overflow-hidden">
+                  <div className={`h-full rounded-full ${SUBJECT_STYLE[s.key].dot}`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AshClockTab() {
   const [mode, setMode] = useState<'clock' | 'pomodoro'>('clock');
 
+  const [pomodoroLog, setPomodoroLog] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('pomodoro_subject_log');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pomodoro_subject_log', JSON.stringify(pomodoroLog));
+    } catch {
+      /* storage unavailable — fail silently, nothing to do here */
+    }
+  }, [pomodoroLog]);
+
+  const handleSessionComplete = (subject: string, minutes: number) => {
+    setPomodoroLog((prev) => [...prev, { id: `pom_${Date.now()}`, date: getLocalDateString(), subject, minutes }]);
+  };
+
   return (
     <div className="space-y-5 animate-fadeIn">
-      <div className="relative overflow-hidden border border-purple-900/30 bg-gradient-to-br from-[#1a0f2e] via-neutral-950 to-[#150a26] rounded-2xl p-6 shadow-xl">
+      <div className="relative overflow-hidden border border-purple-900/30 bg-gradient-to-br from-[#1a0f2e] via-neutral-950 to-[#150a26] rounded-2xl p-4 sm:p-6 shadow-xl">
         <div className="absolute -top-32 -left-20 w-72 h-72 rounded-full bg-purple-600/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-32 -right-20 w-72 h-72 rounded-full bg-fuchsia-600/10 blur-3xl pointer-events-none" />
 
@@ -3499,9 +5108,11 @@ function AshClockTab() {
         </div>
 
         <div className="relative">
-          {mode === 'clock' ? <LiveClockView /> : <PomodoroView />}
+          {mode === 'clock' ? <LiveClockView /> : <PomodoroView onSessionComplete={handleSessionComplete} />}
         </div>
       </div>
+
+      {mode === 'pomodoro' && <PomodoroSubjectStats log={pomodoroLog} />}
     </div>
   );
 }
