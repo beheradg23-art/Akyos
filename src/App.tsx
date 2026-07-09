@@ -10,6 +10,12 @@ import {
   Crown, Swords, Download, Upload, ShieldCheck, ClipboardList, BarChart3, Trash2, Plus, Bell, BellOff,
   Settings, Save, GripVertical, PenLine, RefreshCcw
 } from 'lucide-react';
+import AuthGate from './components/AuthGate';
+import { useCloudAutoSync } from './lib/cloudSync';
+import CloudSyncCard from './components/CloudSyncCard';
+
+
+
 
 // ---------- Deep Interactive Knowledge Matrix ----------
 
@@ -3050,6 +3056,7 @@ function ConfigEditorTab() {
   return (
     <div className="space-y-5 animate-fadeIn">
       <SectionHeading icon={Settings} title="Config & Settings" subtitle="Edit the Daily Checklist, Timeline, and Training Split — changes apply everywhere instantly, no code required" />
+      <CloudSyncCard />
       <TrackerItemsEditor />
       <TimelineEditor />
       <TrainingEditor />
@@ -3061,6 +3068,7 @@ function ConfigEditorTab() {
 
 export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
+  useCloudAutoSync(unlocked);
   // --- Strava Sync Engine States ---
   // This reads cached workouts from the browser disk immediately on page load
   const [stravaActivities, setStravaActivities] = useState<any[]>(() => {
@@ -3677,7 +3685,7 @@ export default function JEEDashboard() {
   }, [overallPct, currentDateStr, clearedDaysCount]);
 
   if (!unlocked) {
-    return <PasswordGate onUnlock={() => setUnlocked(true)} />;
+    return <AuthGate onUnlock={() => setUnlocked(true)} />;
   }
 
   const renderTab = () => {
