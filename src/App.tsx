@@ -2855,7 +2855,7 @@ function IntroLoader({ onFinish }) {
           className="mb-6 text-[10px] font-medium uppercase tracking-[0.35em] text-neutral-500 animate-fadeInUp"
           style={{ animationDelay: '70ms' }}
         >
-          Ashutosh Behera
+          Akyos
         </span>
 
         <div className="flex items-start leading-none tabular-nums">
@@ -2884,7 +2884,7 @@ function IntroLoader({ onFinish }) {
           className="mt-5 text-[10px] font-medium uppercase tracking-[0.3em] text-neutral-600 animate-fadeInUp"
           style={{ animationDelay: '150ms' }}
         >
-          JEE 2027 · Drop-Year OS
+          Your Answer to Chaos
         </span>
       </div>
     </div>
@@ -3704,8 +3704,8 @@ export default function JEEDashboard() {
               <GraduationCap className="h-5.5 w-5.5 text-neutral-950" strokeWidth={2} />
             </div>
             <div>
-              <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none">Ashutosh — Dynamic Command Center</h1>
-              <p className="text-[12.5px] text-neutral-500 mt-1">JEE 2027 Drop-Year Core Operating System</p>
+              <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none">Akyos</h1>
+              <p className="text-[12.5px] text-neutral-500 mt-1">Your Answer to Chaos</p>
             </div>
           </div>
           <div className="flex items-center gap-2.5">
