@@ -2294,58 +2294,58 @@ function MockTestTab() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div>
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.math.text}`}>Math</label>
-            <div className="flex items-center gap-1.5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.math.text}`}>Math</label>
+            <div className="flex items-stretch gap-2">
               <input
-                type="number" min={0} value={formMath}
+                type="number" inputMode="decimal" min={0} value={formMath}
                 onChange={(e) => setFormMath(e.target.value)}
                 placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
               />
-              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
               <input
-                type="number" min={1} value={formMathMax}
+                type="number" inputMode="decimal" min={1} value={formMathMax}
                 onChange={(e) => setFormMathMax(e.target.value)}
                 title="Full marks for this subject in this test"
-                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
               />
             </div>
           </div>
-          <div>
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.physics.text}`}>Physics</label>
-            <div className="flex items-center gap-1.5">
+          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.physics.text}`}>Physics</label>
+            <div className="flex items-stretch gap-2">
               <input
-                type="number" min={0} value={formPhysics}
+                type="number" inputMode="decimal" min={0} value={formPhysics}
                 onChange={(e) => setFormPhysics(e.target.value)}
                 placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
               />
-              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
               <input
-                type="number" min={1} value={formPhysicsMax}
+                type="number" inputMode="decimal" min={1} value={formPhysicsMax}
                 onChange={(e) => setFormPhysicsMax(e.target.value)}
                 title="Full marks for this subject in this test"
-                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
               />
             </div>
           </div>
-          <div>
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-1.5 ${SUBJECT_STYLE.chem.text}`}>Chem</label>
-            <div className="flex items-center gap-1.5">
+          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
+            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.chem.text}`}>Chem</label>
+            <div className="flex items-stretch gap-2">
               <input
-                type="number" min={0} value={formChem}
+                type="number" inputMode="decimal" min={0} value={formChem}
                 onChange={(e) => setFormChem(e.target.value)}
                 placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"
+                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30"
               />
-              <span className="text-neutral-600 text-[12px] shrink-0">/</span>
+              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
               <input
-                type="number" min={1} value={formChemMax}
+                type="number" inputMode="decimal" min={1} value={formChemMax}
                 onChange={(e) => setFormChemMax(e.target.value)}
                 title="Full marks for this subject in this test"
-                className="w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-2 text-[13px] text-neutral-400 focus:outline-none focus:border-neutral-600"
+                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-emerald-500/60 focus:ring-1 focus:ring-emerald-500/30"
               />
             </div>
           </div>
