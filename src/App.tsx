@@ -190,15 +190,6 @@ const ALL_SYLLABUS_TOPICS = SYLLABUS.flatMap((p) =>
   )
 );
 
-const GROOMING = [
-  { icon: Eye, title: 'Dark Circles', issue: 'Deep, prominent shadows from history of late-night scrolling', plan: '11 PM sleep lock + Caffeine 5% + EGCG topical serum, applied at night', tag: 'skincare', details: ['Cleanse target areas under lower orbital bone gently.', 'Apply 2 concentrated drops of serum onto pad of ring finger.', 'Pat softly inside an outside-in arc vector map without skin pulling.'] },
-  { icon: Wind, title: 'Tonsillitis', issue: 'Chronic Grade 2 hypertrophy, currently asymptomatic', plan: 'Watchful waiting + 0.5% Betadine gargles twice a week', tag: 'watch', details: ['Mix 5-10ml Betadine with equal parts lukewarm water.', 'Gargle continuously for 45 seconds targeting rear pharyngeal areas.', 'Avoid consuming liquids for 20 minutes post application.'] },
-  { icon: Smile, title: 'Yellow Teeth', issue: 'Plaque / surface staining', plan: 'Hydrogen peroxide whitening strips + schedule dental scaling appointment', tag: 'dental', details: ['Apply active layer strip across perfectly dried dental framework.', 'Leave for 30 minutes flat; eliminate saliva accumulation blocks.', 'Rinse thoroughly; enforce strict ban on tannin liquids (coffee/tea).'] },
-  { icon: Ruler, title: 'Facial Asymmetry & Jawline', issue: 'Lack of jaw definition', plan: 'Nasal breathing, mewing posture, supine back-sleeping, chewing hard foods evenly', tag: 'posture', details: ['Seal lips completely, transition standard respiration strictly nasal.', 'Rest full posterior third of tongue hard against internal upper palate.', 'Train symmetrical masseter activation when chewing whole nutrient sources.'] },
-  { icon: Scissors, title: 'Body Hair', issue: 'High density, unwanted', plan: 'Electric trimmer touch-ups every Sunday', tag: 'routine', details: ['Schedule macro trim window post Sunday noon workout.', 'Clean apparatus elements; run baseline guard settings to protect skin mechanics.'] },
-  { icon: Eye, title: 'Eyesight', issue: '-3 prescription both eyes, 6/6 corrected vision', plan: 'Blue-light / anti-glare glasses for heavy screen study', tag: 'vision', details: ['Enforce 20-20-20 rule during 3-hour continuous lecture stacks.', 'Sterilize protective lens glass structures daily before morning math slot.'] },
-];
-
 const DEFAULT_TRACKER_ITEMS = [
   { id: 't1', label: '5 AM Wake-Up' },
   { id: 't2', label: 'Math Block' },
@@ -341,8 +332,7 @@ const TABS = [
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
   { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
   { id: 'mocktests', label: 'Mock Test Tracker', icon: ClipboardList },
-  { id: 'ashclock', label: "Ash's Clock", icon: Timer },
-  { id: 'grooming', label: 'Clinical Grooming', icon: Sparkles },
+  { id: 'ashclock', label: 'Clock', icon: Timer },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
 ];
 
@@ -1582,29 +1572,6 @@ function OverviewTab({ setModal }) {
             ))}
           </div>
         </Card>
-
-        <Card className="md:col-span-2 xl:col-span-3">
-          <SectionHeading icon={AlertTriangle} title="Clinical Watchlist" subtitle="Grooming & medical target points" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-            {GROOMING.map((g) => (
-              <div 
-                key={g.title} 
-                onClick={() => setModal({
-                  title: g.title,
-                  subtitle: `Category: ${g.tag.toUpperCase()}`,
-                  icon: g.icon,
-                  textBody: g.issue,
-                  arrayTitle: 'Action Execution Protocol',
-                  arrayItems: g.details || [g.plan]
-                })}
-                className="rounded-lg border border-neutral-800/70 bg-neutral-950/40 p-2.5 flex flex-col items-center text-center gap-1.5 cursor-pointer hover:bg-neutral-800/50 hover:border-neutral-600 transition-all"
-              >
-                <g.icon className="h-4 w-4 text-amber-400/90" strokeWidth={1.75} />
-                <span className="text-[11px] font-medium text-neutral-300 leading-tight">{g.title}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
       </div>
     </div>
   );
@@ -2710,69 +2677,6 @@ function MockTestTab() {
   );
 }
 
-// ---------- Tab Subcomponent: Grooming ----------
-
-function GroomingTab({ setModal }) {
-  const tagStyle = {
-    skincare: 'bg-violet-500/10 text-violet-300 border-violet-500/25',
-    watch: 'bg-amber-500/10 text-amber-300 border-amber-500/25',
-    dental: 'bg-sky-500/10 text-sky-300 border-sky-500/25',
-    posture: 'bg-violet-500/10 text-violet-300 border-violet-500/25',
-    routine: 'bg-neutral-800 text-neutral-400 border-neutral-700',
-    vision: 'bg-sky-500/10 text-sky-300 border-sky-500/25',
-  };
-
-  return (
-    <div className="animate-fadeIn">
-      <SectionHeading icon={Sparkles} title="Clinical Grooming" subtitle="Self-reported clinical optimization map — Click blocks for meticulous execution instructions" />
-
-      <div className="mb-5 flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3.5">
-        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" strokeWidth={1.75} />
-        <p className="text-[12px] text-amber-200/90 leading-relaxed">
-          These are Ashutosh's own stated fixes, not clinical guidance. Anything involving the tonsils, teeth, or eyes is worth confirming with an actual doctor or dentist before committing to a routine.
-        </p>
-      </div>
-
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3.5">
-        {GROOMING.map((g) => (
-          <Card 
-            key={g.title}
-            onClick={() => setModal({
-              title: g.title,
-              subtitle: `Tag Axis Focus: ${g.tag.toUpperCase()}`,
-              icon: g.icon,
-              textBody: `Identified Condition Parameter: ${g.issue}`,
-              arrayTitle: 'Step-By-Step Execution Protocol',
-              arrayItems: g.details
-            })}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800">
-                  <g.icon className="h-4 w-4 text-neutral-300" strokeWidth={1.75} />
-                </div>
-                <span className="text-[13px] font-semibold text-neutral-100">{g.title}</span>
-              </div>
-              <ArrowUpRight className="h-3.5 w-3.5 text-neutral-600" />
-            </div>
-            <div className="mb-2.5">
-              <div className="text-[10.5px] uppercase tracking-wide text-neutral-500 mb-1">Issue Parameters</div>
-              <p className="text-[12px] text-neutral-400 leading-snug">{g.issue}</p>
-            </div>
-            <div className="mb-3">
-              <div className="text-[10.5px] uppercase tracking-wide text-neutral-500 mb-1">Stated Plan</div>
-              <p className="text-[12px] text-neutral-300 leading-snug">{g.plan}</p>
-            </div>
-            <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${tagStyle[g.tag]}`}>
-              {g.tag}
-            </span>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ---------- Access Gate ----------
 // A simple client-side passcode screen. Note: this only hides the UI from
 // casual access — the code lives in the frontend bundle, so it is not real
@@ -3767,7 +3671,6 @@ export default function JEEDashboard() {
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
       case 'mocktests': return <MockTestTab />;
       case 'ashclock': return <AshClockTab />;
-      case 'grooming': return <GroomingTab setModal={setModal} />;
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} setModal={setModal} />;
       case 'settings': return <ConfigEditorTab />;
       default: return null;
@@ -4581,7 +4484,7 @@ function AshClockTab() {
               <Timer className="h-5.5 w-5.5 text-neutral-50" strokeWidth={2} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-neutral-100 leading-tight">Ash's Clock</h3>
+              <h3 className="text-lg font-bold text-neutral-100 leading-tight">Clock</h3>
               <p className="text-[12px] text-purple-300/60 mt-0.5 italic">"Even the Shadow Monarch answers to time."</p>
             </div>
           </div>
