@@ -99,12 +99,12 @@ export default function AlarmsPanel() {
           >
             <button
               onClick={() => handleToggleEnabled(a)}
-              className={`cursor-target shrink-0 w-10 h-6 rounded-full transition-colors relative ${
+              className={`cursor-target shrink-0 inline-flex h-6 w-10 items-center rounded-full transition-colors ${
                 a.enabled ? 'bg-purple-500' : 'bg-neutral-800'
               }`}
             >
               <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-neutral-100 transition-transform ${
+                className={`inline-block h-5 w-5 transform rounded-full bg-neutral-100 shadow transition-transform ${
                   a.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'
                 }`}
               />
