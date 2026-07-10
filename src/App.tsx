@@ -1858,21 +1858,17 @@ function ChangePasswordCard() {
 // the entry point into Settings, and sign out — everything that isn't
 // day-to-day tracking content lives here now instead of the main nav.
 
-function AccountMenu({
-  open, onClose, onOpenSettings, globalHistory, setGlobalHistory,
+function AccountPage({
+  globalHistory, setGlobalHistory,
 }: {
-  open: boolean;
-  onClose: () => void;
-  onOpenSettings: () => void;
   globalHistory: any;
   setGlobalHistory: (v: any) => void;
 }) {
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
     supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-  }, [open]);
+  }, []);
 
   const handleSignOut = async () => {
     sessionStorage.removeItem('dcc_cloud_synced_this_session');
@@ -1881,59 +1877,33 @@ function AccountMenu({
     window.location.reload();
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-[900]">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fadeIn" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-neutral-950/98 border-l border-neutral-800 overflow-y-auto animate-slideInRight">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-neutral-800 bg-neutral-950/95 backdrop-blur-xl px-5 py-4">
-          <h2 className="text-[14px] font-bold text-neutral-100">Account</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200 transition-colors">
-            <X className="h-4.5 w-4.5" />
-          </button>
+    <div className="max-w-xl space-y-5 animate-fadeIn">
+      <SectionHeading icon={UserCircle2} title="Account" subtitle="Profile, cloud sync, security & backups" />
+
+      <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-gradient-to-br from-violet-500/[0.08] via-neutral-950 to-sky-500/[0.05] p-4">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 text-[15px] font-bold text-neutral-950">
+          {email ? email[0].toUpperCase() : <UserCircle2 className="h-6 w-6 text-neutral-950" />}
         </div>
-
-        <div className="p-5 space-y-5">
-          <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-gradient-to-br from-violet-500/[0.08] via-neutral-950 to-sky-500/[0.05] p-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 text-[15px] font-bold text-neutral-950">
-              {email ? email[0].toUpperCase() : <UserCircle2 className="h-6 w-6 text-neutral-950" />}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold text-neutral-100">{email || 'Not signed in'}</p>
-              <p className="text-[11.5px] text-neutral-500">Signed in via Supabase</p>
-            </div>
-          </div>
-
-          <CloudSyncCard />
-          <PushNotificationsCard />
-          <ChangePasswordCard />
-
-          <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
-
-          <button
-            onClick={onOpenSettings}
-            className="flex w-full items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-950/60 px-4 py-3.5 text-left transition-colors hover:bg-neutral-900"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800">
-              <Settings className="h-4 w-4 text-neutral-300" />
-            </div>
-            <div className="flex-1">
-              <p className="text-[13px] font-semibold text-neutral-100">Settings</p>
-              <p className="text-[11.5px] text-neutral-500">Edit Daily Checklist, Timeline & Training Split</p>
-            </div>
-            <ChevronRight className="h-4 w-4 text-neutral-600" />
-          </button>
-
-          <button
-            onClick={handleSignOut}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-900/40 bg-rose-950/20 px-4 py-3 text-[13px] font-semibold text-rose-300 transition-colors hover:bg-rose-950/40"
-          >
-            <LogOut className="h-4 w-4" />
-            Log Out
-          </button>
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-semibold text-neutral-100">{email || 'Not signed in'}</p>
+          <p className="text-[11.5px] text-neutral-500">Signed in via Supabase</p>
         </div>
       </div>
+
+      <CloudSyncCard />
+      <PushNotificationsCard />
+      <ChangePasswordCard />
+
+      <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
+
+      <button
+        onClick={handleSignOut}
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-900/40 bg-rose-950/20 px-4 py-3 text-[13px] font-semibold text-rose-300 transition-colors hover:bg-rose-950/40"
+      >
+        <LogOut className="h-4 w-4" />
+        Log Out
+      </button>
     </div>
   );
 }
@@ -4639,8 +4609,8 @@ export default function JEEDashboard() {
     }
   });
   const [activeTab, setActiveTab] = useState('overview');
-  const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [modal, setModal] = useState(null);
 
   // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
@@ -4989,6 +4959,7 @@ export default function JEEDashboard() {
       case 'ashclock': return <AshClockTab />;
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} setModal={setModal} />;
       case 'settings': return <ConfigEditorTab />;
+      case 'account': return <AccountPage globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />;
       default: return null;
     }
   };
@@ -5026,17 +4997,19 @@ export default function JEEDashboard() {
         />
       )}
 
-      {/* Sidebar Navigation — persistent rail on desktop, sliding drawer on mobile */}
+      {/* Sidebar Navigation — persistent rail on desktop (minimized until hovered), sliding drawer on mobile */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[240px] shrink-0 flex-col border-r border-neutral-800/70 bg-neutral-950/98 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:translate-x-0 lg:bg-neutral-950/50 lg:backdrop-blur-xl ${
+        onMouseEnter={() => setSidebarExpanded(true)}
+        onMouseLeave={() => setSidebarExpanded(false)}
+        className={`fixed inset-y-0 left-0 z-50 flex w-[240px] shrink-0 flex-col border-r border-neutral-800/70 bg-neutral-950/98 transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:translate-x-0 lg:bg-neutral-950/50 lg:backdrop-blur-xl ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        } ${sidebarExpanded ? 'lg:w-[240px]' : 'lg:w-[68px]'}`}
       >
-        <div className="flex items-center gap-2.5 px-4 pt-5 pb-4">
+        <div className={`flex items-center gap-2.5 px-4 pt-5 pb-4 ${!sidebarExpanded ? 'lg:justify-center lg:px-0' : ''}`}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-md shadow-violet-500/20">
             <GraduationCap className="h-4 w-4 text-neutral-950" strokeWidth={2} />
           </div>
-          <span className="text-[13px] font-semibold tracking-tight text-neutral-200 truncate">Akyos</span>
+          <span className={`text-[13px] font-semibold tracking-tight text-neutral-200 truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[140px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>Akyos</span>
           <button
             onClick={() => setSidebarOpen(false)}
             aria-label="Close navigation"
@@ -5055,26 +5028,64 @@ export default function JEEDashboard() {
                 <button
                   key={tab.id}
                   onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
+                  title={tab.label}
                   className={`cursor-target group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+                    !sidebarExpanded ? 'lg:justify-center lg:px-0' : ''
+                  } ${
                     isActive
                       ? 'bg-neutral-100 text-neutral-900 shadow-sm'
                       : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                  <span className="truncate">{tab.label}</span>
+                  <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{tab.label}</span>
                 </button>
               );
             })}
           </div>
         </nav>
+
+        {/* Settings & Account — pinned to the bottom of the rail */}
+        <div className="mt-auto border-t border-neutral-800/70 px-3 py-3 space-y-1">
+          <button
+            onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
+            title="Settings"
+            className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+              !sidebarExpanded ? 'lg:justify-center lg:px-0' : ''
+            } ${
+              activeTab === 'settings'
+                ? 'bg-neutral-100 text-neutral-900 shadow-sm'
+                : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
+            }`}
+          >
+            <Settings className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>Settings</span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('account'); setSidebarOpen(false); }}
+            title="Account"
+            className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+              !sidebarExpanded ? 'lg:justify-center lg:px-0' : ''
+            } ${
+              activeTab === 'account'
+                ? 'bg-neutral-100 text-neutral-900 shadow-sm'
+                : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
+            }`}
+          >
+            <UserCircle2 className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>Account</span>
+          </button>
+        </div>
       </aside>
 
       {/* Main column */}
       <div className="relative z-10 flex-1 min-w-0">
 
-        {/* Sticky header — brand, streak, rank, EQ, and account menu stay pinned while the page scrolls beneath */}
-        <header className="sticky top-0 z-30 flex flex-row items-center justify-between gap-3 border-b border-neutral-800/70 bg-zinc-950/85 backdrop-blur-xl px-4 sm:px-6 lg:px-8 py-3.5">
+        {/* Sticky header — brand, streak, rank, and EQ stay pinned while the page scrolls beneath */}
+        <header
+          onMouseEnter={() => setSidebarExpanded(false)}
+          className="sticky top-0 z-30 flex flex-row items-center justify-between gap-3 border-b border-neutral-800/70 bg-zinc-950/85 backdrop-blur-xl px-4 sm:px-6 lg:px-8 py-3.5"
+        >
           <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -5106,13 +5117,6 @@ export default function JEEDashboard() {
               <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
               <span className="text-[11.5px] font-medium text-neutral-400">Execution Quotient: <span className="text-violet-400 tabular-nums">{overallPct}%</span></span>
             </div>
-            <button
-              onClick={() => setMenuOpen(true)}
-              aria-label="Open account menu"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/60 text-neutral-300 transition-colors hover:border-violet-500/40 hover:text-violet-300"
-            >
-              <UserCircle2 className="h-4 w-4" />
-            </button>
           </div>
         </header>
 
@@ -5158,15 +5162,6 @@ export default function JEEDashboard() {
 
       {/* Global Context-Aware Modal Overlay */}
       <GlobalDetailModal modalData={modal} onClose={() => setModal(null)} />
-
-      {/* Account Menu — account info, cloud sync, password, backup/restore, settings, sign out */}
-      <AccountMenu
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onOpenSettings={() => { setActiveTab('settings'); setMenuOpen(false); }}
-        globalHistory={globalHistory}
-        setGlobalHistory={setGlobalHistory}
-      />
 
       {/* "System" Quest-Clear Notification — fires on hitting 100% for the day */}
       <QuestClearNotification data={questClear} onDismiss={() => setQuestClear(null)} />
