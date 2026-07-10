@@ -13,8 +13,12 @@ import {
 import AuthGate from './components/AuthGate';
 import { useCloudAutoSync } from './lib/cloudSync';
 import CloudSyncCard from './components/CloudSyncCard';
+import PushNotificationsCard from './components/PushNotificationsCard';
+import AlarmsPanel from './components/AlarmsPanel';
 import { supabase } from './lib/supabaseClient';
 import { generateTopicDetails, generateExerciseGuide, generateProfileTargets } from './lib/contentGen';
+import { subscribeToPush, messageServiceWorker } from './lib/pushNotifications';
+import { startActiveTimer, clearActiveTimer } from './lib/activeTimers';
 
 
 
@@ -1303,6 +1307,7 @@ function AccountMenu({
           </div>
 
           <CloudSyncCard />
+          <PushNotificationsCard />
           <ChangePasswordCard />
 
           <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
@@ -1619,7 +1624,7 @@ function TimelineTab({ setModal, notificationsEnabled, notificationPermission, o
       )}
       {notificationsEnabled && notificationPermission === 'granted' && (
         <p className="text-[11.5px] text-neutral-600 mb-4">
-          You'll get a ping 5 minutes before each block starts, for as long as this tab stays open — browser notifications can't wake up a fully closed tab.
+          You'll get a ping 5 minutes before each block starts — this now works even if the app is closed or your phone is asleep, as long as Push Notifications is on for this device (Account &gt; Push Notifications).
         </p>
       )}
       <div className="space-y-2.5">
@@ -3525,11 +3530,14 @@ export default function JEEDashboard() {
     });
   }, [allMealsHitToday, currentDateStr]);
 
-  // ---- Time-block browser notifications ----
+  // ---- Time-block notifications ----
   // The Master Timeline is a strict schedule but nothing previously enforced
-  // it — this pings 5 minutes before each block starts, for as long as the
-  // tab stays open. No service worker here, so it can't wake a fully closed
-  // tab; this is a best-effort foreground reminder, not a background push.
+  // it. This effect still does a foreground-only reminder via the local
+  // Notification API (fires immediately, no round trip). The *reliable*
+  // version — 5 min before each block, even with the app closed — is handled
+  // server-side by the push-scheduler Edge Function, which reads
+  // `timeline_notifications_enabled` + `app_config_v1.timeline` from each
+  // user's cloud-synced data once a minute. See supabase/functions/push-scheduler.
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     try {
       return localStorage.getItem('timeline_notifications_enabled') === 'true';
@@ -3552,6 +3560,10 @@ export default function JEEDashboard() {
   const handleToggleNotifications = async () => {
     if (notificationsEnabled) {
       setNotificationsEnabled(false);
+      // Leaves the push subscription itself alone (that's a per-device toggle
+      // in Account > Push Notifications) — this only stops Timeline reminders
+      // specifically, both the foreground ones below and the server-side ones
+      // the push-scheduler sends by reading `timeline_notifications_enabled`.
       return;
     }
     if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -3562,6 +3574,9 @@ export default function JEEDashboard() {
     setNotificationPermission(permission);
     if (permission === 'granted') {
       setNotificationsEnabled(true);
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id;
+      if (userId) await subscribeToPush(userId);
     }
   };
 
@@ -4135,6 +4150,37 @@ function PomodoroView({ onSessionComplete }) {
 
   const intervalRef = useRef<any>(null);
 
+  // Needed so the running session survives the app being backgrounded/closed:
+  // the server-side scheduler pushes the "session complete" notification by
+  // reading the active_timers row this component keeps in sync.
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
+  const secondsLeftRef = useRef(secondsLeft);
+  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
+
+  // Live-updating "N:NN remaining" notification while the session runs —
+  // this only needs the tab alive in the background (screen off is fine),
+  // not a server push, so it just talks to the service worker directly.
+  useEffect(() => {
+    if (!isRunning) return;
+    const sendLiveUpdate = () => {
+      const s = secondsLeftRef.current;
+      const mm2 = Math.floor(s / 60).toString().padStart(2, '0');
+      const ss2 = (s % 60).toString().padStart(2, '0');
+      messageServiceWorker({
+        type: 'POMODORO_LIVE_UPDATE',
+        title: sessionType === 'focus' ? '⚔️ Focus Gate in progress' : '🌙 Rest Zone',
+        body: `${mm2}:${ss2} remaining${sessionType === 'focus' ? ` · ${subject}` : ''}`,
+      });
+    };
+    sendLiveUpdate();
+    const liveInterval = setInterval(sendLiveUpdate, 20000);
+    return () => clearInterval(liveInterval);
+  }, [isRunning, sessionType, subject]);
+
   useEffect(() => { localStorage.setItem('ash_clock_focus_min', String(focusMinutes)); }, [focusMinutes]);
   useEffect(() => { localStorage.setItem('ash_clock_break_min', String(breakMinutes)); }, [breakMinutes]);
   useEffect(() => { localStorage.setItem('ash_clock_hunter_level', String(hunterLevel)); }, [hunterLevel]);
@@ -4169,6 +4215,15 @@ function PomodoroView({ onSessionComplete }) {
 
   const handleSessionComplete = () => {
     playChime();
+    if (userId) clearActiveTimer(userId, 'pomodoro');
+    messageServiceWorker({
+      type: 'POMODORO_COMPLETE',
+      title: sessionType === 'focus' ? '⚔️ Focus Gate cleared!' : '🌙 Rest Zone complete',
+      body:
+        sessionType === 'focus'
+          ? `${subject} session done — time to rest.`
+          : "Break's over — a new Gate awaits, Hunter.",
+    });
     if (sessionType === 'focus') {
       const nextQuests = questsCleared + 1;
       setQuestsCleared(nextQuests);
@@ -4215,14 +4270,20 @@ function PomodoroView({ onSessionComplete }) {
 
   const handleStartPause = () => {
     if (!isRunning) {
-      if (secondsLeft === 0) {
-        setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
-      }
+      const freshStart = secondsLeft === 0;
+      const newSecondsLeft = freshStart ? (sessionType === 'focus' ? focusMinutes : breakMinutes) * 60 : secondsLeft;
+      if (freshStart) setSecondsLeft(newSecondsLeft);
       setSystemMessage(
         sessionType === 'focus'
           ? '[Quest Alert] A Focus Gate has opened. Clear it before the timer expires.'
           : '[Rest Zone] Recovering mana. The next Gate awaits.'
       );
+      if (userId) {
+        startActiveTimer(userId, 'pomodoro', new Date(Date.now() + newSecondsLeft * 1000), { subject, sessionType });
+      }
+    } else {
+      if (userId) clearActiveTimer(userId, 'pomodoro');
+      messageServiceWorker({ type: 'POMODORO_LIVE_CLEAR' });
     }
     setIsRunning((r) => !r);
   };
@@ -4231,6 +4292,8 @@ function PomodoroView({ onSessionComplete }) {
     setIsRunning(false);
     setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
     setSystemMessage("[Timer reset.] Awaiting the Hunter's command.");
+    if (userId) clearActiveTimer(userId, 'pomodoro');
+    messageServiceWorker({ type: 'POMODORO_LIVE_CLEAR' });
   };
 
   const handleSkip = () => {
@@ -4449,7 +4512,7 @@ function PomodoroSubjectStats({ log }) {
 }
 
 function AshClockTab() {
-  const [mode, setMode] = useState<'clock' | 'pomodoro'>('clock');
+  const [mode, setMode] = useState<'clock' | 'pomodoro' | 'alarm'>('clock');
 
   const [pomodoroLog, setPomodoroLog] = useState<any[]>(() => {
     try {
@@ -4506,11 +4569,25 @@ function AshClockTab() {
             >
               POMODORO
             </RippleButton>
+            <RippleButton
+              onClick={() => setMode('alarm')}
+              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+                mode === 'alarm' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
+              }`}
+            >
+              ALARM
+            </RippleButton>
           </div>
         </div>
 
         <div className="relative">
-          {mode === 'clock' ? <LiveClockView /> : <PomodoroView onSessionComplete={handleSessionComplete} />}
+          {mode === 'clock' ? (
+            <LiveClockView />
+          ) : mode === 'pomodoro' ? (
+            <PomodoroView onSessionComplete={handleSessionComplete} />
+          ) : (
+            <AlarmsPanel />
+          )}
         </div>
       </div>
 
