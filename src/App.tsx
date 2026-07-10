@@ -742,6 +742,8 @@ const ICON_OPTIONS: Record<string, any> = {
   weight: Weight,
   smile: Smile,
   eye: Eye,
+  rotateCcw: RotateCcw,
+  alertTriangle: AlertTriangle,
 };
 
 const ICON_OPTION_KEYS = Object.keys(ICON_OPTIONS);
@@ -802,17 +804,42 @@ function hydrateTabIcons(raw: any): Record<TabLabelKey, string> {
   return out;
 }
 
-// Sub-section labels/icons — the cards *inside* a tab (e.g. Dashboard
+// Sub-section labels/icons — the named panels *inside* a tab (e.g. Dashboard
 // Overview's "Profile", "Targets", "Today's Shape" cards). Each entry is
 // keyed by a stable id prefixed with the tab it lives in ('ov_' = Dashboard
-// Overview) so more tabs' sub-sections can register into this same map
-// later without id collisions.
-const SECTION_LABEL_ROWS: { key: string; defaultLabel: string; defaultIcon: string }[] = [
-  { key: 'ov_profile', defaultLabel: 'Profile', defaultIcon: 'graduationCap' },
-  { key: 'ov_targets', defaultLabel: 'Targets', defaultIcon: 'target' },
-  { key: 'ov_shape', defaultLabel: "Today's Shape", defaultIcon: 'clock3' },
-  { key: 'ov_fuel', defaultLabel: 'Fuel Snapshot', defaultIcon: 'flame' },
-  { key: 'ov_syllabus', defaultLabel: 'Syllabus Runway', defaultIcon: 'calendar' },
+// Overview, 'tl_' = Timeline, 'tf_' = Training & Fuel, 'syl_' = Syllabus,
+// 'mt_' = Mock Tests, 'ac_' = Account, 'hist_' = History, 'clk_' = Clock) so
+// every tab's sub-sections can share this one map without id collisions.
+// `group` is display-only metadata used to cluster rows by tab in Settings.
+const SECTION_LABEL_ROWS: { key: string; defaultLabel: string; defaultIcon: string; group: string }[] = [
+  // Dashboard Overview
+  { key: 'ov_countdown', defaultLabel: 'Countdown', defaultIcon: 'target', group: 'Dashboard Overview' },
+  { key: 'ov_profile', defaultLabel: 'Profile', defaultIcon: 'graduationCap', group: 'Dashboard Overview' },
+  { key: 'ov_targets', defaultLabel: 'Targets', defaultIcon: 'target', group: 'Dashboard Overview' },
+  { key: 'ov_shape', defaultLabel: "Today's Shape", defaultIcon: 'clock3', group: 'Dashboard Overview' },
+  { key: 'ov_fuel', defaultLabel: 'Fuel Snapshot', defaultIcon: 'flame', group: 'Dashboard Overview' },
+  { key: 'ov_syllabus', defaultLabel: 'Syllabus Runway', defaultIcon: 'calendar', group: 'Dashboard Overview' },
+  // Timeline
+  { key: 'tl_master', defaultLabel: 'Master Timeline', defaultIcon: 'clock3', group: 'Timeline' },
+  { key: 'tl_weight', defaultLabel: 'Body Weight Trend', defaultIcon: 'trendingUp', group: 'Timeline' },
+  // Training & Fuel
+  { key: 'tf_workout', defaultLabel: 'Hybrid Vascularity Workout Split', defaultIcon: 'dumbbell', group: 'Training & Fuel' },
+  { key: 'tf_fuel', defaultLabel: 'Fuel Matrix', defaultIcon: 'flame', group: 'Training & Fuel' },
+  // Syllabus
+  { key: 'syl_runway', defaultLabel: 'Syllabus Runway', defaultIcon: 'bookOpen', group: 'Syllabus' },
+  { key: 'syl_revision', defaultLabel: 'Revision Due', defaultIcon: 'rotateCcw', group: 'Syllabus' },
+  // Mock Tests
+  { key: 'mt_log', defaultLabel: 'Log a Mock Test', defaultIcon: 'clipboardList', group: 'Mock Tests' },
+  { key: 'mt_trend', defaultLabel: 'Score Trend', defaultIcon: 'barChart3', group: 'Mock Tests' },
+  { key: 'mt_weak', defaultLabel: 'Weak Topic Priority', defaultIcon: 'alertTriangle', group: 'Mock Tests' },
+  { key: 'mt_testlog', defaultLabel: 'Test Log', defaultIcon: 'clipboardList', group: 'Mock Tests' },
+  // Clock
+  { key: 'clk_subjecthours', defaultLabel: 'Subject Hours', defaultIcon: 'barChart3', group: 'Clock' },
+  // History
+  { key: 'hist_heatmap', defaultLabel: 'Execution Heatmap Analytics', defaultIcon: 'calendar', group: 'History' },
+  // Account
+  { key: 'ac_account', defaultLabel: 'Account', defaultIcon: 'userCircle2', group: 'Account' },
+  { key: 'ac_backup', defaultLabel: 'Data Backup & Restore', defaultIcon: 'shieldCheck', group: 'Account' },
 ];
 
 const DEFAULT_SECTION_LABELS: Record<string, { label: string; icon: string }> = SECTION_LABEL_ROWS.reduce(
@@ -1586,7 +1613,7 @@ function CountdownMatrix() {
   if (!hasAny) {
     return (
       <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-        <SectionHeading icon={Target} title="Countdown" subtitle="Set a target date to see it here" />
+        <EditableSectionHeading id="ov_countdown" defaultTitle="Countdown" defaultIcon={Target} subtitle="Set a target date to see it here" />
         <p className="text-[12.5px] text-neutral-500">
           Add one in <span className="text-neutral-300 font-medium">Settings &gt; Countdown</span> to track live time remaining toward it — you can add more than one.
         </p>
@@ -1622,9 +1649,10 @@ function CountdownMatrix() {
 
   return (
     <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-      <SectionHeading
-        icon={Target}
-        title="Countdown"
+      <EditableSectionHeading
+        id="ov_countdown"
+        defaultIcon={Target}
+        defaultTitle="Countdown"
         subtitle={count > 1 ? `${count} targets, nearest first` : 'Time remaining toward your target'}
       />
       <div
@@ -1949,9 +1977,10 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
   return (
     <Card className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <SectionHeading
-          icon={ShieldCheck}
-          title="Data Backup & Restore"
+        <EditableSectionHeading
+          id="ac_backup"
+          defaultTitle="Data Backup & Restore"
+          defaultIcon={ShieldCheck}
           subtitle={`${dayCount} day${dayCount === 1 ? '' : 's'} of history, stored only in this browser`}
         />
         <div className="flex items-center gap-2 shrink-0">
@@ -2101,7 +2130,7 @@ function AccountPage({
 
   return (
     <div className="max-w-xl space-y-5 animate-fadeIn">
-      <SectionHeading icon={UserCircle2} title="Account" subtitle="Profile, cloud sync, security & backups" />
+      <EditableSectionHeading id="ac_account" defaultTitle="Account" defaultIcon={UserCircle2} subtitle="Profile, cloud sync, security & backups" />
 
       <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-gradient-to-br from-violet-500/[0.08] via-neutral-950 to-indigo-500/[0.05] p-4">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 text-[15px] font-bold text-neutral-950">
@@ -2190,7 +2219,7 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
     <div className="space-y-5">
       <Card className="animate-fadeIn">
       <div className="flex items-center justify-between mb-6">
-        <SectionHeading icon={Calendar} title="Execution Heatmap Analytics" subtitle="Persistent performance velocity tracing" />
+        <EditableSectionHeading id="hist_heatmap" defaultTitle="Execution Heatmap Analytics" defaultIcon={Calendar} subtitle="Persistent performance velocity tracing" />
         <div className="flex items-center gap-2 border border-neutral-800 bg-neutral-950/80 p-1 rounded-xl">
           <button 
             onClick={() => setCurrentNavDate(new Date(year, month - 1, 1))}
@@ -2254,10 +2283,11 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
 
 // ---------- Tab Subcomponent: Overview ----------
 
-// Renders a SectionHeading for one of Dashboard Overview's cards, applying
-// any custom label/icon saved in Settings > Dashboard Sub-sections (falling
-// back to the shipped default whenever nothing's been overridden yet).
-function OverviewSectionHeading({ id, defaultTitle, defaultIcon, subtitle }: { id: string; defaultTitle: string; defaultIcon: any; subtitle: string }) {
+// Renders a SectionHeading for a named sub-section of any tab, applying
+// any custom label/icon saved in Settings > Section Labels (falling back to
+// the shipped default whenever nothing's been overridden yet). `id` must
+// match a key registered in SECTION_LABEL_ROWS above.
+function EditableSectionHeading({ id, defaultTitle, defaultIcon, subtitle }: { id: string; defaultTitle: string; defaultIcon: any; subtitle: string }) {
   const { sectionLabels } = React.useContext(ConfigContext);
   const override = sectionLabels[id];
   const Icon = (override && ICON_OPTIONS[override.icon]) || defaultIcon;
@@ -2301,7 +2331,7 @@ function OverviewTab({ setModal }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <Card className="md:col-span-2 xl:col-span-2">
-          <OverviewSectionHeading id="ov_profile" defaultTitle="Profile" defaultIcon={GraduationCap} subtitle="Core identity & academic baseline" />
+          <EditableSectionHeading id="ov_profile" defaultTitle="Profile" defaultIcon={GraduationCap} subtitle="Core identity & academic baseline" />
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mb-4">
             <div>
               <div className="text-[20px] font-semibold text-neutral-100 leading-tight">{profile.name}</div>
@@ -2322,7 +2352,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <OverviewSectionHeading id="ov_targets" defaultTitle="Targets" defaultIcon={Target} subtitle="Ranked by priority (Click to view matrix)" />
+          <EditableSectionHeading id="ov_targets" defaultTitle="Targets" defaultIcon={Target} subtitle="Ranked by priority (Click to view matrix)" />
           <div className="space-y-2.5">
             {profile.targets.map((t) => (
               <div
@@ -2348,7 +2378,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <OverviewSectionHeading id="ov_shape" defaultTitle="Today's Shape" defaultIcon={Clock3} subtitle="Session load map summary" />
+          <EditableSectionHeading id="ov_shape" defaultTitle="Today's Shape" defaultIcon={Clock3} subtitle="Session load map summary" />
           <div className="space-y-2">
             {[
               { label: 'Study Sessions', value: shapeValues.studySessions, icon: BookOpen },
@@ -2368,7 +2398,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <OverviewSectionHeading id="ov_fuel" defaultTitle="Fuel Snapshot" defaultIcon={Flame} subtitle="V-Taper matrix ratios" />
+          <EditableSectionHeading id="ov_fuel" defaultTitle="Fuel Snapshot" defaultIcon={Flame} subtitle="V-Taper matrix ratios" />
           <div className="space-y-2.5">
             <StatPill icon={Flame} label="Calories" value={shapeValues.calories} accent="amber" />
             <StatPill icon={Activity} label="Protein" value={shapeValues.protein} accent="violet" />
@@ -2377,7 +2407,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <OverviewSectionHeading id="ov_syllabus" defaultTitle="Syllabus Runway" defaultIcon={Calendar} subtitle="4-month deadline progression" />
+          <EditableSectionHeading id="ov_syllabus" defaultTitle="Syllabus Runway" defaultIcon={Calendar} subtitle="4-month deadline progression" />
           <div className="space-y-2">
             {syllabus.map((p) => (
               <div key={p.phase} className="flex items-center gap-3 rounded-lg border border-neutral-800/70 bg-neutral-950/40 px-3 py-2">
@@ -2418,7 +2448,7 @@ function TimelineTab({ setModal, notificationsEnabled, notificationPermission, o
   return (
     <div className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
-        <SectionHeading icon={Clock3} title="Master Timeline" subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
+        <EditableSectionHeading id="tl_master" defaultTitle="Master Timeline" defaultIcon={Clock3} subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
         <RippleButton
           onClick={onToggleNotifications}
           className={`cursor-target shrink-0 flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
@@ -2607,7 +2637,7 @@ function WeightTrackerCard() {
   return (
     <Card>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-        <SectionHeading icon={TrendingUp} title="Body Weight Trend" subtitle="Weekly weigh-ins — the real check on whether the recomposition plan is working" />
+        <EditableSectionHeading id="tl_weight" defaultTitle="Body Weight Trend" defaultIcon={TrendingUp} subtitle="Weekly weigh-ins — the real check on whether the recomposition plan is working" />
         <div className="flex items-end gap-2">
           <div>
             <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Date</label>
@@ -2771,7 +2801,7 @@ function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }) {
   return (
     <div className="space-y-8 animate-fadeIn">
       <div>
-        <SectionHeading icon={Dumbbell} title="Hybrid Vascularity Workout Split" subtitle="Select day to map active routines. Click any individual exercise to view strict mechanical form guides." />
+        <EditableSectionHeading id="tf_workout" defaultTitle="Hybrid Vascularity Workout Split" defaultIcon={Dumbbell} subtitle="Select day to map active routines. Click any individual exercise to view strict mechanical form guides." />
         <div className="flex flex-wrap gap-2 mb-4">
           {training.map((d) => (
             <button
@@ -2819,7 +2849,7 @@ function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }) {
       <WeightTrackerCard />
 
       <div>
-        <SectionHeading icon={Flame} title="Fuel Matrix" subtitle="Meals, targets & icons" />
+        <EditableSectionHeading id="tf_fuel" defaultTitle="Fuel Matrix" defaultIcon={Flame} subtitle="Meals, targets & icons" />
         <div className="mb-4 flex flex-wrap gap-2.5">
           <StatPill icon={Flame} label="Calorie Target" value={dietValues.calories} accent="amber" />
           <StatPill icon={Activity} label="Protein Target" value={dietValues.protein} accent="violet" />
@@ -2997,13 +3027,14 @@ function SyllabusTab({ setModal }) {
 
   return (
     <div className="animate-fadeIn">
-      <SectionHeading icon={BookOpen} title="Syllabus Runway" subtitle="Absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
+      <EditableSectionHeading id="syl_runway" defaultTitle="Syllabus Runway" defaultIcon={BookOpen} subtitle="Absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
 
       {staleTopics.length > 0 && (
         <Card className="mb-5 border border-amber-500/20">
-          <SectionHeading
-            icon={RotateCcw}
-            title="Revision Due"
+          <EditableSectionHeading
+            id="syl_revision"
+            defaultTitle="Revision Due"
+            defaultIcon={RotateCcw}
             subtitle={`${staleTopics.length} topic${staleTopics.length === 1 ? '' : 's'} revised before, now going stale — oldest first`}
           />
           <div className="space-y-2 mt-4">
@@ -3331,9 +3362,10 @@ function MockTestTab() {
   return (
     <div className="space-y-5 animate-fadeIn">
       <Card>
-        <SectionHeading
-          icon={ClipboardList}
-          title="Log a Mock Test"
+        <EditableSectionHeading
+          id="mt_log"
+          defaultTitle="Log a Mock Test"
+          defaultIcon={ClipboardList}
           subtitle="Log each attempt with its actual full marks. Flag whichever topics cost you marks — the priority list below builds itself from this."
         />
 
@@ -3436,7 +3468,7 @@ function MockTestTab() {
 
       {sortedTests.length > 0 && (
         <Card>
-          <SectionHeading icon={BarChart3} title="Score Trend" subtitle={`${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`} />
+          <EditableSectionHeading id="mt_trend" defaultTitle="Score Trend" defaultIcon={BarChart3} subtitle={`${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`} />
           <div className="mt-4">
             <ScoreTrendChart tests={sortedTests} subjects={subjects} />
           </div>
@@ -3445,7 +3477,7 @@ function MockTestTab() {
 
       {weakTopicCounts.length > 0 && (
         <Card>
-          <SectionHeading icon={AlertTriangle} title="Weak Topic Priority" subtitle="Ranked by how often each topic has been flagged across your logged tests" />
+          <EditableSectionHeading id="mt_weak" defaultTitle="Weak Topic Priority" defaultIcon={AlertTriangle} subtitle="Ranked by how often each topic has been flagged across your logged tests" />
           <div className="space-y-2 mt-4">
             {weakTopicCounts.map(([topic, count], idx) => (
               <div key={topic} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5">
@@ -3467,7 +3499,7 @@ function MockTestTab() {
       )}
 
       <Card>
-        <SectionHeading icon={ClipboardList} title="Test Log" subtitle={sortedTests.length ? 'All logged attempts, most recent first' : 'Nothing logged yet'} />
+        <EditableSectionHeading id="mt_testlog" defaultTitle="Test Log" defaultIcon={ClipboardList} subtitle={sortedTests.length ? 'All logged attempts, most recent first' : 'Nothing logged yet'} />
         {sortedTests.length === 0 ? (
           <p className="text-[13px] text-neutral-500 mt-4">
             No mock tests logged yet. Add your first one above — the score trend and weak-topic ranking will build up automatically from here.
@@ -4926,6 +4958,12 @@ function TabLabelsEditor() {
   );
 }
 
+// Rows are grouped by which tab they live in (Dashboard Overview, Timeline,
+// Training & Fuel, Syllabus, Mock Tests, Clock, History, Account) so the
+// editor reads as one list per tab rather than one long undifferentiated
+// stack of 19+ rows.
+const SECTION_LABEL_GROUPS: string[] = Array.from(new Set(SECTION_LABEL_ROWS.map((r) => r.group)));
+
 function SectionLabelsEditor() {
   const { sectionLabels, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
   const [draft, setDraft] = useState<Record<string, { label: string; icon: string }>>(sectionLabels);
@@ -4957,7 +4995,7 @@ function SectionLabelsEditor() {
   return (
     <Card className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-        <SectionHeading icon={LayoutGrid} title="Dashboard Overview — Sub-sections" subtitle="Rename & re-icon the cards inside Dashboard Overview" />
+        <SectionHeading icon={LayoutGrid} title="Section Labels" subtitle="Rename & re-icon the named panels inside every tab" />
         <div className="flex items-center gap-2 shrink-0">
           <RippleButton onClick={() => { resetConfigSection('sectionLabels'); setDirty(false); }} className={btnGhost}>
             <RefreshCcw className="h-3.5 w-3.5" /> Reset
@@ -4967,21 +5005,28 @@ function SectionLabelsEditor() {
           </RippleButton>
         </div>
       </div>
-      <div className="space-y-2">
-        {SECTION_LABEL_ROWS.map(({ key }) => (
-          <div key={key} className="flex items-center gap-2">
-            <IconPickerButton value={draft[key]?.icon} onChange={(v) => setIcon(key, v)} />
-            <input
-              value={draft[key]?.label ?? ''}
-              onChange={(e) => setLabel(key, e.target.value)}
-              maxLength={40}
-              className={`flex-1 ${fieldInput}`}
-            />
+      <div className="space-y-5">
+        {SECTION_LABEL_GROUPS.map((group) => (
+          <div key={group}>
+            <h4 className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{group}</h4>
+            <div className="space-y-2">
+              {SECTION_LABEL_ROWS.filter((r) => r.group === group).map(({ key }) => (
+                <div key={key} className="flex items-center gap-2">
+                  <IconPickerButton value={draft[key]?.icon} onChange={(v) => setIcon(key, v)} />
+                  <input
+                    value={draft[key]?.label ?? ''}
+                    onChange={(e) => setLabel(key, e.target.value)}
+                    maxLength={40}
+                    className={`flex-1 ${fieldInput}`}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
-      <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
-        Covers the Profile, Targets, Today's Shape, Fuel Snapshot, and Syllabus Runway cards on Dashboard Overview. The same pattern can be extended to other tabs' sub-sections on request.
+      <p className="mt-4 text-[11px] text-neutral-600 leading-relaxed">
+        Covers every named panel across Dashboard Overview, Timeline, Training & Fuel, Syllabus, Mock Tests, Clock, History, and Account. Renaming or re-iconing only changes the label — what the panel shows stays the same. Clear a name and save to restore its default.
       </p>
     </Card>
   );
@@ -4989,7 +5034,7 @@ function SectionLabelsEditor() {
 
 const SETTINGS_SECTIONS = [
   { key: 'tabLabels', icon: PenLine, title: 'Tab Names & Icons', subtitle: 'Rename and re-icon the sidebar navigation', Component: TabLabelsEditor },
-  { key: 'sectionLabels', icon: LayoutGrid, title: 'Dashboard Sub-sections', subtitle: 'Rename & re-icon the Overview cards', Component: SectionLabelsEditor },
+  { key: 'sectionLabels', icon: LayoutGrid, title: 'Section Labels', subtitle: 'Rename & re-icon panels in every tab', Component: SectionLabelsEditor },
   { key: 'profile', icon: GraduationCap, title: 'Profile & Goals', subtitle: 'Identity, exam/goal & priority targets', Component: ProfileEditor },
   { key: 'countdown', icon: Clock3, title: 'Countdown', subtitle: 'Personal countdowns for the Overview tab', Component: CountdownEditor },
   { key: 'overview', icon: LayoutGrid, title: 'Dashboard Overview', subtitle: "Override Today's Shape & Fuel Snapshot text", Component: OverviewSummaryEditor },
@@ -6309,9 +6354,10 @@ function PomodoroSubjectStats({ log, subjects }) {
 
   return (
     <Card>
-      <SectionHeading
-        icon={BarChart3}
-        title="Subject Hours"
+      <EditableSectionHeading
+        id="clk_subjecthours"
+        defaultTitle="Subject Hours"
+        defaultIcon={BarChart3}
         subtitle={grandTotal > 0 ? `${formatHrs(grandTotal)} logged across all Focus Gates — checking Chemistry isn't quietly falling behind` : 'Complete a tagged Focus Gate to start building this up'}
       />
       {grandTotal === 0 ? (
