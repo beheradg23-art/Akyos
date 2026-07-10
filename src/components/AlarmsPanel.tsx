@@ -77,10 +77,10 @@ export default function AlarmsPanel() {
       {pushStatus !== 'subscribed' && (
         <button
           onClick={handleEnablePush}
-          className="cursor-target mb-5 flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-[12px] font-semibold text-purple-300 hover:bg-purple-500/15 transition-colors"
+          className="cursor-target mb-5 flex items-center gap-2 rounded-2xl sm:rounded-full border border-purple-500/30 bg-purple-500/10 px-4 py-2.5 sm:py-2 text-[11.5px] sm:text-[12px] font-semibold text-purple-300 hover:bg-purple-500/15 transition-colors w-full sm:w-auto max-w-md text-left sm:text-center"
         >
-          <AlarmClock className="h-3.5 w-3.5" />
-          Enable push so alarms fire even when this tab is closed
+          <AlarmClock className="h-3.5 w-3.5 shrink-0" />
+          <span>Enable push so alarms fire even when this tab is closed</span>
         </button>
       )}
 
@@ -95,7 +95,7 @@ export default function AlarmsPanel() {
         {alarms.map((a) => (
           <div
             key={a.id}
-            className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-950/40 px-4 py-3"
+            className="flex items-center gap-2 sm:gap-3 rounded-xl border border-neutral-800 bg-neutral-950/40 px-3 sm:px-4 py-3"
           >
             <button
               onClick={() => handleToggleEnabled(a)}
@@ -110,8 +110,8 @@ export default function AlarmsPanel() {
               />
             </button>
             <div className="min-w-0 flex-1">
-              <div className={`text-lg font-bold tabular-nums ${a.enabled ? 'text-neutral-100' : 'text-neutral-600'}`}>{a.time}</div>
-              <div className="text-[11px] text-neutral-500 truncate">
+              <div className={`text-base sm:text-lg font-bold tabular-nums truncate ${a.enabled ? 'text-neutral-100' : 'text-neutral-600'}`}>{a.time}</div>
+              <div className="text-[10.5px] sm:text-[11px] text-neutral-500 truncate">
                 {a.label} · {formatDays(a.days)}
               </div>
             </div>
@@ -125,7 +125,7 @@ export default function AlarmsPanel() {
         ))}
 
         {showForm && (
-          <div className="rounded-xl border border-purple-800/40 bg-purple-950/20 p-4 space-y-3">
+          <div className="rounded-xl border border-purple-800/40 bg-purple-950/20 p-3.5 sm:p-4 space-y-3">
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
@@ -138,12 +138,12 @@ export default function AlarmsPanel() {
               onChange={(e) => setTime(e.target.value)}
               className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-purple-600"
             />
-            <div className="flex items-center gap-1.5 justify-between">
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
               {DAY_LABELS.map((label2, i) => (
                 <button
                   key={i}
                   onClick={() => toggleDay(i)}
-                  className={`cursor-target h-7 w-7 rounded-full text-[10.5px] font-bold transition-colors ${
+                  className={`cursor-target aspect-square w-full rounded-full text-[10px] sm:text-[10.5px] font-bold transition-colors ${
                     days.includes(i) ? 'bg-purple-500 text-neutral-950' : 'bg-neutral-900 text-neutral-500'
                   }`}
                 >

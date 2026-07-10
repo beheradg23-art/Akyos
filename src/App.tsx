@@ -3713,17 +3713,17 @@ export default function JEEDashboard() {
       <div className="relative z-10 mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-6">
 
         {/* Header Elements */}
-        <header className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
+        <header className="mb-6 flex flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
               <GraduationCap className="h-5.5 w-5.5 text-neutral-950" strokeWidth={2} />
             </div>
-            <div>
-              <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none">Akyos</h1>
-              <p className="text-[12.5px] text-neutral-500 mt-1">Your Answer to Chaos</p>
+            <div className="min-w-0">
+              <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none truncate">Akyos</h1>
+              <p className="text-[12.5px] text-neutral-500 mt-1 truncate">Your Answer to Chaos</p>
             </div>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 shrink-0">
             <StreakFlame streak={currentStreak} />
             <div
               className="hidden sm:flex items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors duration-500"
@@ -4552,10 +4552,10 @@ function AshClockTab() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1 rounded-full border border-purple-800/40 bg-purple-950/30 p-1">
+          <div className="flex items-center gap-1 rounded-full border border-purple-800/40 bg-purple-950/30 p-1 w-full sm:w-auto overflow-x-auto no-scrollbar">
             <RippleButton
               onClick={() => setMode('clock')}
-              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+              className={`cursor-target shrink-0 rounded-full px-3 sm:px-4 py-1.5 text-[10.5px] sm:text-[11.5px] font-bold tracking-wide transition-all ${
                 mode === 'clock' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
               }`}
             >
@@ -4563,7 +4563,7 @@ function AshClockTab() {
             </RippleButton>
             <RippleButton
               onClick={() => setMode('pomodoro')}
-              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+              className={`cursor-target shrink-0 rounded-full px-3 sm:px-4 py-1.5 text-[10.5px] sm:text-[11.5px] font-bold tracking-wide transition-all ${
                 mode === 'pomodoro' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
               }`}
             >
@@ -4571,7 +4571,7 @@ function AshClockTab() {
             </RippleButton>
             <RippleButton
               onClick={() => setMode('alarm')}
-              className={`cursor-target rounded-full px-4 py-1.5 text-[11.5px] font-bold tracking-wide transition-all ${
+              className={`cursor-target shrink-0 rounded-full px-3 sm:px-4 py-1.5 text-[10.5px] sm:text-[11.5px] font-bold tracking-wide transition-all ${
                 mode === 'alarm' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
               }`}
             >
