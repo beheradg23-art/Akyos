@@ -162,6 +162,109 @@ const DIET = {
   ],
 };
 
+// ---------- Dashboard Overview: "Today's Shape" / "Fuel Snapshot" ----------
+// These two Overview cards used to be permanently hardcoded strings, so
+// editing the Timeline in Settings never actually updated them. They now
+// auto-derive from real config (Timeline block types/durations, and the
+// Fuel Matrix target) so a new user sees correct numbers without touching
+// anything — but each row can still be overridden with custom text via
+// Settings > Dashboard Overview if someone wants to say something other
+// than what the schedule implies.
+type OverviewOverrideKey = 'studySessions' | 'training' | 'meals' | 'sleep' | 'calories' | 'protein' | 'hydration';
+
+const OVERVIEW_OVERRIDE_KEYS: OverviewOverrideKey[] = ['studySessions', 'training', 'meals', 'sleep', 'calories', 'protein', 'hydration'];
+
+const DEFAULT_OVERVIEW_OVERRIDES: Record<OverviewOverrideKey, string> = {
+  studySessions: '',
+  training: '',
+  meals: '',
+  sleep: '',
+  calories: '',
+  protein: '',
+  hydration: '',
+};
+
+function hydrateOverviewOverrides(raw: any): Record<OverviewOverrideKey, string> {
+  const out = { ...DEFAULT_OVERVIEW_OVERRIDES };
+  if (raw && typeof raw === 'object') {
+    for (const k of OVERVIEW_OVERRIDE_KEYS) {
+      if (typeof raw[k] === 'string') out[k] = raw[k];
+    }
+  }
+  return out;
+}
+
+// 'HH:MM' -> minutes since midnight. Tolerant of missing/malformed values
+// so a half-edited timeline block doesn't blow up the summary card.
+function timeStrToMinutes(hhmm: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+  if (!m) return 0;
+  return Math.max(0, Math.min(23, parseInt(m[1], 10))) * 60 + Math.max(0, Math.min(59, parseInt(m[2], 10)));
+}
+
+function slotDurationMinutes(slot: { start: string; end: string }): number {
+  const start = timeStrToMinutes(slot.start);
+  const end = timeStrToMinutes(slot.end);
+  // Overnight-safe: if the block's end time is earlier than its start
+  // (e.g. crosses midnight), treat it as continuing into the next day.
+  return end >= start ? end - start : (24 * 60 - start) + end;
+}
+
+function formatMinutesDuration(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function formatClock12(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');
+  if (!m) return '—';
+  let h = parseInt(m[1], 10);
+  const min = m[2];
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${min} ${suffix}`;
+}
+
+// Reads the live Timeline + Fuel Matrix target to build every auto value —
+// this is what each Overview row shows unless the person has typed a
+// custom override for that specific row in Settings > Dashboard Overview.
+function computeOverviewAutoValues(timeline: any[]): Record<OverviewOverrideKey, string> {
+  const studySlots = (timeline || []).filter((s) => s.type === 'study');
+  const gymSlots = (timeline || []).filter((s) => s.type === 'gym');
+  const mealSlots = (timeline || []).filter((s) => s.type === 'meal');
+  const sleepSlot = (timeline || []).find((s) => s.type === 'sleep');
+
+  const studyMinutes = studySlots.reduce((sum, s) => sum + slotDurationMinutes(s), 0);
+  const gymMinutes = gymSlots.reduce((sum, s) => sum + slotDurationMinutes(s), 0);
+
+  return {
+    studySessions: studySlots.length
+      ? `${studySlots.length} block${studySlots.length === 1 ? '' : 's'} · ~${formatMinutesDuration(studyMinutes)}`
+      : 'Not scheduled',
+    training: gymSlots.length ? `${formatMinutesDuration(gymMinutes)} window` : 'Rest day',
+    meals: mealSlots.length ? `${mealSlots.length} fuel window${mealSlots.length === 1 ? '' : 's'}` : 'Not scheduled',
+    sleep: sleepSlot ? `${formatClock12(sleepSlot.start)} sharp` : 'Not scheduled',
+    calories: DIET.target.split('·')[0].trim(),
+    protein: DIET.protein.split('·')[0].trim(),
+    hydration: DIET.hydration,
+  };
+}
+
+// Merges auto-computed values with whatever the person has overridden —
+// an empty override string means "stay on auto" for that row.
+function resolveOverviewValues(timeline: any[], overrides: Record<OverviewOverrideKey, string>) {
+  const auto = computeOverviewAutoValues(timeline);
+  const resolved = {} as Record<OverviewOverrideKey, string>;
+  for (const k of OVERVIEW_OVERRIDE_KEYS) {
+    resolved[k] = overrides?.[k] ? overrides[k] : auto[k];
+  }
+  return { auto, resolved };
+}
+
 const DEFAULT_TRAINING = [
   { day: 'Monday', focus: 'Gym Upper Body (Pull Focus)', exercises: [{ name: 'Lat Pulldowns', sets: '4×12' }, { name: 'Seated Cable Rows', sets: '3×12' }, { name: 'DB Lateral Raises', sets: '4×20' }, { name: 'Behind-the-Back Wrist Curls', sets: '4×20 (high pump)' }], mode: 'gym' },
   { day: 'Tuesday', focus: 'Calisthenics Pull & Push Basics', exercises: [{ name: 'Dead-hang holds', sets: '4×Max' }, { name: 'Negative Pull-ups', sets: '4×5 (5-sec slow descent)' }, { name: 'Standard Push-ups', sets: '4×12' }], mode: 'calisthenics' },
@@ -312,7 +415,7 @@ function hydrateTimeline(rawList: any[]): any[] {
   }));
 }
 
-function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[] }) {
+function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[]; overviewOverrides: Record<OverviewOverrideKey, string> }) {
   return {
     trackerItems: config.trackerItems,
     training: config.training,
@@ -321,6 +424,7 @@ function serializeConfig(config: { trackerItems: any[]; timeline: any[]; trainin
     subjects: config.subjects,
     syllabus: config.syllabus,
     countdowns: config.countdowns,
+    overviewOverrides: config.overviewOverrides,
   };
 }
 
@@ -369,6 +473,7 @@ function deserializeConfig(raw: any) {
     countdowns: Array.isArray(raw?.countdowns)
       ? raw.countdowns.map((cd: any, i: number) => hydrateCountdown(cd, i))
       : (migratedCountdowns ?? DEFAULT_COUNTDOWNS),
+    overviewOverrides: hydrateOverviewOverrides(raw?.overviewOverrides),
   };
 }
 
@@ -382,8 +487,9 @@ const ConfigContext = React.createContext<{
   subjects: any[];
   syllabus: any[];
   countdowns: CountdownItem[];
+  overviewOverrides: Record<OverviewOverrideKey, string>;
   updateConfig: (partial: Record<string, any>) => void;
-  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns') => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides') => void;
 }>({
   trackerItems: DEFAULT_TRACKER_ITEMS,
   timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
@@ -392,6 +498,7 @@ const ConfigContext = React.createContext<{
   subjects: DEFAULT_SUBJECTS,
   syllabus: DEFAULT_SYLLABUS,
   countdowns: DEFAULT_COUNTDOWNS,
+  overviewOverrides: DEFAULT_OVERVIEW_OVERRIDES,
   updateConfig: () => {},
   resetConfigSection: () => {},
 });
@@ -1731,7 +1838,7 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
 // ---------- Tab Subcomponent: Overview ----------
 
 function OverviewTab({ setModal }) {
-  const { profile, syllabus } = React.useContext(ConfigContext);
+  const { profile, syllabus, timeline, overviewOverrides } = React.useContext(ConfigContext);
   const latestWeight = useMemo(() => {
     try {
       const saved = localStorage.getItem(WEIGHT_LOG_KEY);
@@ -1742,6 +1849,11 @@ function OverviewTab({ setModal }) {
       return null;
     }
   }, []);
+
+  // Auto-derives from the live Timeline + Fuel Matrix target, unless the
+  // person has typed a custom override for a given row in
+  // Settings > Dashboard Overview.
+  const { resolved: shapeValues } = useMemo(() => resolveOverviewValues(timeline, overviewOverrides), [timeline, overviewOverrides]);
 
   const colorClass = (color: string) =>
     color === 'blue'
@@ -1804,10 +1916,10 @@ function OverviewTab({ setModal }) {
           <SectionHeading icon={Clock3} title="Today's Shape" subtitle="Session load map summary" />
           <div className="space-y-2">
             {[
-              { label: 'Study Sessions', value: '5 blocks · ~13h 40m', icon: BookOpen },
-              { label: 'Gym / Training', value: '1h 30m window', icon: Dumbbell },
-              { label: 'Meals', value: '6 fuel windows', icon: Utensils },
-              { label: 'Sleep Lock', value: '11:00 PM sharp', icon: Moon },
+              { label: 'Study Sessions', value: shapeValues.studySessions, icon: BookOpen },
+              { label: 'Gym / Training', value: shapeValues.training, icon: Dumbbell },
+              { label: 'Meals', value: shapeValues.meals, icon: Utensils },
+              { label: 'Sleep Lock', value: shapeValues.sleep, icon: Moon },
             ].map((r) => (
               <div key={r.label} className="flex items-center justify-between rounded-lg border border-neutral-800/70 bg-neutral-950/40 px-3 py-2.5">
                 <div className="flex items-center gap-2">
@@ -1818,15 +1930,21 @@ function OverviewTab({ setModal }) {
               </div>
             ))}
           </div>
+          <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
+            Auto-built from Settings → Timeline. Override any row in Settings → Dashboard Overview.
+          </p>
         </Card>
 
         <Card>
           <SectionHeading icon={Flame} title="Fuel Snapshot" subtitle="V-Taper matrix ratios" />
           <div className="space-y-2.5">
-            <StatPill icon={Flame} label="Calories" value={DIET.target.split('·')[0].trim()} accent="amber" />
-            <StatPill icon={Activity} label="Protein" value="165–175g+" accent="violet" />
-            <StatPill icon={Droplets} label="Hydration" value="4–4.5 L / day" accent="blue" />
+            <StatPill icon={Flame} label="Calories" value={shapeValues.calories} accent="amber" />
+            <StatPill icon={Activity} label="Protein" value={shapeValues.protein} accent="violet" />
+            <StatPill icon={Droplets} label="Hydration" value={shapeValues.hydration} accent="blue" />
           </div>
+          <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
+            Edit these in Settings → Dashboard Overview.
+          </p>
         </Card>
 
         <Card>
@@ -3740,6 +3858,110 @@ function CountdownEditor() {
 
 const SUBJECT_COLOR_NAMES = Object.keys(SUBJECT_COLOR_PALETTE);
 
+// Each row is auto-computed from Timeline/Fuel Matrix by default (see
+// computeOverviewAutoValues) — this editor just lets someone override any
+// single row with their own text, or flip it back to "Auto" any time.
+const OVERVIEW_OVERRIDE_ROWS: { key: OverviewOverrideKey; label: string; icon: any; hint: string }[] = [
+  { key: 'studySessions', label: 'Study Sessions', icon: BookOpen, hint: 'Auto-counted from Settings → Timeline' },
+  { key: 'training', label: 'Gym / Training', icon: Dumbbell, hint: 'Auto-counted from Settings → Timeline' },
+  { key: 'meals', label: 'Meals', icon: Utensils, hint: 'Auto-counted from Settings → Timeline' },
+  { key: 'sleep', label: 'Sleep Lock', icon: Moon, hint: 'Auto-read from your Sleep block in Settings → Timeline' },
+  { key: 'calories', label: 'Calories', icon: Flame, hint: 'From your Fuel Matrix target' },
+  { key: 'protein', label: 'Protein', icon: Activity, hint: 'From your Fuel Matrix target' },
+  { key: 'hydration', label: 'Hydration', icon: Droplets, hint: 'From your Fuel Matrix target' },
+];
+
+function OverviewSummaryEditor() {
+  const { timeline, overviewOverrides, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [draft, setDraft] = useState<Record<OverviewOverrideKey, string>>(overviewOverrides);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { setDraft(overviewOverrides); setDirty(false); }, [overviewOverrides]);
+
+  const auto = useMemo(() => computeOverviewAutoValues(timeline), [timeline]);
+
+  const setRow = (key: OverviewOverrideKey, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+  const useAuto = (key: OverviewOverrideKey) => {
+    setDraft((prev) => ({ ...prev, [key]: '' }));
+    setDirty(true);
+  };
+  const useCustom = (key: OverviewOverrideKey) => {
+    // Seed the field with the current auto value so someone is tweaking
+    // real text instead of starting from a blank box.
+    setDraft((prev) => ({ ...prev, [key]: prev[key] || auto[key] }));
+    setDirty(true);
+  };
+  const save = () => {
+    updateConfig({ overviewOverrides: draft });
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading
+          icon={LayoutGrid}
+          title="Dashboard Overview"
+          subtitle="Today's Shape and Fuel Snapshot fill themselves in from your Timeline & Fuel Matrix — override any row here if you want it to say something else."
+        />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('overviewOverrides'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        {OVERVIEW_OVERRIDE_ROWS.map((row) => {
+          const isCustom = !!draft[row.key];
+          return (
+            <div key={row.key} className="rounded-lg border border-neutral-800 bg-neutral-950/40 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <row.icon className="h-3.5 w-3.5 text-neutral-500 shrink-0" strokeWidth={1.75} />
+                  <span className="text-[12.5px] font-medium text-neutral-300 truncate">{row.label}</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-full border border-neutral-800 bg-neutral-900 p-0.5 shrink-0">
+                  <button
+                    onClick={() => useAuto(row.key)}
+                    className={`cursor-target rounded-full px-2.5 py-1 text-[10.5px] font-bold tracking-wide transition-colors ${
+                      !isCustom ? 'bg-violet-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'
+                    }`}
+                  >
+                    AUTO
+                  </button>
+                  <button
+                    onClick={() => useCustom(row.key)}
+                    className={`cursor-target rounded-full px-2.5 py-1 text-[10.5px] font-bold tracking-wide transition-colors ${
+                      isCustom ? 'bg-violet-500 text-neutral-950' : 'text-neutral-500 hover:text-neutral-300'
+                    }`}
+                  >
+                    CUSTOM
+                  </button>
+                </div>
+              </div>
+              {isCustom ? (
+                <input value={draft[row.key]} onChange={(e) => setRow(row.key, e.target.value)} placeholder={auto[row.key]} className={fieldInput} />
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] text-neutral-500 italic">{row.hint}</span>
+                  <span className="text-[12px] text-neutral-400 font-medium shrink-0">{auto[row.key]}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
 function SubjectsAndSyllabusEditor() {
   const { subjects, syllabus, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
   const [localSubjects, setLocalSubjects] = useState(subjects);
@@ -3931,6 +4153,7 @@ function ConfigEditorTab() {
       <SectionHeading icon={Settings} title="Settings" subtitle="Every part of the app is editable here — changes apply everywhere instantly, no code required" />
       <ProfileEditor />
       <CountdownEditor />
+      <OverviewSummaryEditor />
       <TrackerItemsEditor />
       <TimelineEditor />
       <TrainingEditor />
@@ -4044,7 +4267,7 @@ export default function JEEDashboard() {
     setConfig((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns') => {
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides') => {
     setConfig((prev) => ({
       ...prev,
       [key]: key === 'timeline'
@@ -4059,6 +4282,8 @@ export default function JEEDashboard() {
         ? DEFAULT_SYLLABUS
         : key === 'countdowns'
         ? DEFAULT_COUNTDOWNS
+        : key === 'overviewOverrides'
+        ? DEFAULT_OVERVIEW_OVERRIDES
         : DEFAULT_TRACKER_ITEMS,
     }));
   };
@@ -4318,6 +4543,7 @@ export default function JEEDashboard() {
         subjects: config.subjects,
         syllabus: config.syllabus,
         countdowns: config.countdowns,
+        overviewOverrides: config.overviewOverrides,
         updateConfig,
         resetConfigSection,
       }}
