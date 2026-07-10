@@ -8,7 +8,7 @@ import {
   ChevronLeft, Lock, Music2, Play, Pause, SkipForward,
   Search, RotateCcw,
   Crown, Swords, Download, Upload, ShieldCheck, ClipboardList, BarChart3, Trash2, Plus, Bell, BellOff,
-  Settings, Save, GripVertical, PenLine, RefreshCcw, Menu as MenuIcon, UserCircle2, KeyRound, LogOut, Loader2
+  Settings, Save, GripVertical, PenLine, RefreshCcw, UserCircle2, KeyRound, LogOut, Loader2
 } from 'lucide-react';
 import AuthGate from './components/AuthGate';
 import OnboardingWizard from './components/OnboardingWizard';
@@ -1204,7 +1204,7 @@ function StreakFlame({ streak }) {
   if (streak <= 0) return null;
 
   return (
-    <div className="hidden sm:flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/[0.06] px-3.5 py-1.5">
+    <div className="hidden lg:flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/[0.06] px-3.5 py-1.5">
       <div className="relative w-4 h-4 flex items-center justify-center overflow-visible">
         <span className={`absolute inset-0 rounded-full blur-md animate-flameGlow ${glowColor}`} />
         {embers.map((e) => (
@@ -1232,6 +1232,90 @@ function StreakFlame({ streak }) {
       <span className="text-[11.5px] font-semibold tabular-nums" style={{ color: coreColor }}>
         {streak}-Day Streak
       </span>
+    </div>
+  );
+}
+
+// Compact, icon-only versions of the streak / hunter rank / execution quotient
+// badges for narrow phone widths where there isn't room for the full pills.
+// Tapping one expands it horizontally to reveal its label; tapping any other
+// badge (or anywhere outside the strip) collapses it again, and only one can
+// be expanded at a time.
+function MobileStatusStrip({ streak, hunterRank, overallPct }) {
+  const [expanded, setExpanded] = useState<null | 'streak' | 'rank' | 'eq'>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setExpanded(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [expanded]);
+
+  const toggle = (key: 'streak' | 'rank' | 'eq') => {
+    setExpanded((prev) => (prev === key ? null : key));
+  };
+
+  return (
+    <div ref={containerRef} className="flex items-center gap-1.5 lg:hidden">
+      {streak > 0 && (
+        <button
+          onClick={() => toggle('streak')}
+          aria-label={`${streak}-day streak`}
+          className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-orange-500/30 bg-orange-500/[0.08] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            expanded === 'streak' ? 'max-w-[140px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+          }`}
+        >
+          <Flame className="h-3.5 w-3.5 shrink-0 text-orange-400" strokeWidth={2.2} fill="#f97316" fillOpacity={0.28} />
+          <span
+            className={`whitespace-nowrap text-[11px] font-semibold text-orange-300 tabular-nums overflow-hidden transition-all duration-200 ${
+              expanded === 'streak' ? 'max-w-[110px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+            }`}
+          >
+            {streak}-Day Streak
+          </span>
+        </button>
+      )}
+
+      <button
+        onClick={() => toggle('rank')}
+        aria-label={hunterRank.label}
+        className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          expanded === 'rank' ? 'max-w-[160px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+        }`}
+        style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
+      >
+        <Swords className="h-3.5 w-3.5 shrink-0" style={{ color: hunterRank.color }} />
+        <span
+          className={`whitespace-nowrap text-[11px] font-medium overflow-hidden transition-all duration-200 ${
+            expanded === 'rank' ? 'max-w-[130px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+          }`}
+          style={{ color: hunterRank.color }}
+        >
+          {hunterRank.label}
+        </span>
+      </button>
+
+      <button
+        onClick={() => toggle('eq')}
+        aria-label={`Execution Quotient ${overallPct}%`}
+        className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-neutral-800 bg-neutral-900/60 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          expanded === 'eq' ? 'max-w-[170px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+        }`}
+      >
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400 animate-pulse" />
+        <span
+          className={`whitespace-nowrap text-[11px] font-medium text-neutral-400 overflow-hidden transition-all duration-200 ${
+            expanded === 'eq' ? 'max-w-[140px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+          }`}
+        >
+          EQ: <span className="text-violet-400 tabular-nums">{overallPct}%</span>
+        </span>
+      </button>
     </div>
   );
 }
@@ -5090,22 +5174,20 @@ export default function JEEDashboard() {
             <button
               onClick={() => setSidebarOpen(true)}
               aria-label="Open navigation"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/60 text-neutral-300 transition-colors hover:border-violet-500/40 hover:text-violet-300 lg:hidden"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20 transition-transform active:scale-95 lg:pointer-events-none lg:cursor-default"
             >
-              <MenuIcon className="h-4 w-4" />
-            </button>
-            <div className="hidden lg:flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
               <GraduationCap className="h-5.5 w-5.5 text-neutral-950" strokeWidth={2} />
-            </div>
-            <div className="min-w-0 hidden sm:block">
+            </button>
+            <div className="min-w-0">
               <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none truncate">Akyos</h1>
               <p className="text-[12.5px] text-neutral-500 mt-1 truncate">Your Answer to Chaos</p>
             </div>
           </div>
           <div className="flex items-center gap-2.5 shrink-0">
+            <MobileStatusStrip streak={currentStreak} hunterRank={hunterRank} overallPct={overallPct} />
             <StreakFlame streak={currentStreak} />
             <div
-              className="hidden sm:flex items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors duration-500"
+              className="hidden lg:flex items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors duration-500"
               style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
             >
               <Swords className="h-3 w-3" style={{ color: hunterRank.color }} />
@@ -5113,7 +5195,7 @@ export default function JEEDashboard() {
                 {hunterRank.label}
               </span>
             </div>
-            <div className="hidden sm:flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5">
+            <div className="hidden lg:flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
               <span className="text-[11.5px] font-medium text-neutral-400">Execution Quotient: <span className="text-violet-400 tabular-nums">{overallPct}%</span></span>
             </div>
