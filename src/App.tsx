@@ -811,35 +811,35 @@ function hydrateTabIcons(raw: any): Record<TabLabelKey, string> {
 // 'mt_' = Mock Tests, 'ac_' = Account, 'hist_' = History, 'clk_' = Clock) so
 // every tab's sub-sections can share this one map without id collisions.
 // `group` is display-only metadata used to cluster rows by tab in Settings.
-const SECTION_LABEL_ROWS: { key: string; defaultLabel: string; defaultIcon: string; group: string }[] = [
+const SECTION_LABEL_ROWS: { key: string; defaultLabel: string; defaultIcon: string; group: string; tabKey: TabLabelKey }[] = [
   // Dashboard Overview
-  { key: 'ov_countdown', defaultLabel: 'Countdown', defaultIcon: 'target', group: 'Dashboard Overview' },
-  { key: 'ov_profile', defaultLabel: 'Profile', defaultIcon: 'graduationCap', group: 'Dashboard Overview' },
-  { key: 'ov_targets', defaultLabel: 'Targets', defaultIcon: 'target', group: 'Dashboard Overview' },
-  { key: 'ov_shape', defaultLabel: "Today's Shape", defaultIcon: 'clock3', group: 'Dashboard Overview' },
-  { key: 'ov_fuel', defaultLabel: 'Fuel Snapshot', defaultIcon: 'flame', group: 'Dashboard Overview' },
-  { key: 'ov_syllabus', defaultLabel: 'Syllabus Runway', defaultIcon: 'calendar', group: 'Dashboard Overview' },
+  { key: 'ov_countdown', defaultLabel: 'Countdown', defaultIcon: 'target', group: 'Dashboard Overview', tabKey: 'overview' },
+  { key: 'ov_profile', defaultLabel: 'Profile', defaultIcon: 'graduationCap', group: 'Dashboard Overview', tabKey: 'overview' },
+  { key: 'ov_targets', defaultLabel: 'Targets', defaultIcon: 'target', group: 'Dashboard Overview', tabKey: 'overview' },
+  { key: 'ov_shape', defaultLabel: "Today's Shape", defaultIcon: 'clock3', group: 'Dashboard Overview', tabKey: 'overview' },
+  { key: 'ov_fuel', defaultLabel: 'Fuel Snapshot', defaultIcon: 'flame', group: 'Dashboard Overview', tabKey: 'overview' },
+  { key: 'ov_syllabus', defaultLabel: 'Syllabus Runway', defaultIcon: 'calendar', group: 'Dashboard Overview', tabKey: 'overview' },
   // Timeline
-  { key: 'tl_master', defaultLabel: 'Master Timeline', defaultIcon: 'clock3', group: 'Timeline' },
-  { key: 'tl_weight', defaultLabel: 'Body Weight Trend', defaultIcon: 'trendingUp', group: 'Timeline' },
+  { key: 'tl_master', defaultLabel: 'Master Timeline', defaultIcon: 'clock3', group: 'Timeline', tabKey: 'timeline' },
+  { key: 'tl_weight', defaultLabel: 'Body Weight Trend', defaultIcon: 'trendingUp', group: 'Timeline', tabKey: 'timeline' },
   // Training & Fuel
-  { key: 'tf_workout', defaultLabel: 'Hybrid Vascularity Workout Split', defaultIcon: 'dumbbell', group: 'Training & Fuel' },
-  { key: 'tf_fuel', defaultLabel: 'Fuel Matrix', defaultIcon: 'flame', group: 'Training & Fuel' },
+  { key: 'tf_workout', defaultLabel: 'Hybrid Vascularity Workout Split', defaultIcon: 'dumbbell', group: 'Training & Fuel', tabKey: 'training' },
+  { key: 'tf_fuel', defaultLabel: 'Fuel Matrix', defaultIcon: 'flame', group: 'Training & Fuel', tabKey: 'training' },
   // Syllabus
-  { key: 'syl_runway', defaultLabel: 'Syllabus Runway', defaultIcon: 'bookOpen', group: 'Syllabus' },
-  { key: 'syl_revision', defaultLabel: 'Revision Due', defaultIcon: 'rotateCcw', group: 'Syllabus' },
+  { key: 'syl_runway', defaultLabel: 'Syllabus Runway', defaultIcon: 'bookOpen', group: 'Syllabus', tabKey: 'syllabus' },
+  { key: 'syl_revision', defaultLabel: 'Revision Due', defaultIcon: 'rotateCcw', group: 'Syllabus', tabKey: 'syllabus' },
   // Mock Tests
-  { key: 'mt_log', defaultLabel: 'Log a Mock Test', defaultIcon: 'clipboardList', group: 'Mock Tests' },
-  { key: 'mt_trend', defaultLabel: 'Score Trend', defaultIcon: 'barChart3', group: 'Mock Tests' },
-  { key: 'mt_weak', defaultLabel: 'Weak Topic Priority', defaultIcon: 'alertTriangle', group: 'Mock Tests' },
-  { key: 'mt_testlog', defaultLabel: 'Test Log', defaultIcon: 'clipboardList', group: 'Mock Tests' },
+  { key: 'mt_log', defaultLabel: 'Log a Mock Test', defaultIcon: 'clipboardList', group: 'Mock Tests', tabKey: 'mocktests' },
+  { key: 'mt_trend', defaultLabel: 'Score Trend', defaultIcon: 'barChart3', group: 'Mock Tests', tabKey: 'mocktests' },
+  { key: 'mt_weak', defaultLabel: 'Weak Topic Priority', defaultIcon: 'alertTriangle', group: 'Mock Tests', tabKey: 'mocktests' },
+  { key: 'mt_testlog', defaultLabel: 'Test Log', defaultIcon: 'clipboardList', group: 'Mock Tests', tabKey: 'mocktests' },
   // Clock
-  { key: 'clk_subjecthours', defaultLabel: 'Subject Hours', defaultIcon: 'barChart3', group: 'Clock' },
+  { key: 'clk_subjecthours', defaultLabel: 'Subject Hours', defaultIcon: 'barChart3', group: 'Clock', tabKey: 'ashclock' },
   // History
-  { key: 'hist_heatmap', defaultLabel: 'Execution Heatmap Analytics', defaultIcon: 'calendar', group: 'History' },
+  { key: 'hist_heatmap', defaultLabel: 'Execution Heatmap Analytics', defaultIcon: 'calendar', group: 'History', tabKey: 'history' },
   // Account
-  { key: 'ac_account', defaultLabel: 'Account', defaultIcon: 'userCircle2', group: 'Account' },
-  { key: 'ac_backup', defaultLabel: 'Data Backup & Restore', defaultIcon: 'shieldCheck', group: 'Account' },
+  { key: 'ac_account', defaultLabel: 'Account', defaultIcon: 'userCircle2', group: 'Account', tabKey: 'account' },
+  { key: 'ac_backup', defaultLabel: 'Data Backup & Restore', defaultIcon: 'shieldCheck', group: 'Account', tabKey: 'account' },
 ];
 
 const DEFAULT_SECTION_LABELS: Record<string, { label: string; icon: string }> = SECTION_LABEL_ROWS.reduce(
@@ -4962,10 +4962,10 @@ function TabLabelsEditor() {
 // Training & Fuel, Syllabus, Mock Tests, Clock, History, Account) so the
 // editor reads as one list per tab rather than one long undifferentiated
 // stack of 19+ rows.
-const SECTION_LABEL_GROUPS: string[] = Array.from(new Set(SECTION_LABEL_ROWS.map((r) => r.group)));
+const SECTION_LABEL_GROUP_TAB_KEYS: TabLabelKey[] = Array.from(new Set(SECTION_LABEL_ROWS.map((r) => r.tabKey)));
 
 function SectionLabelsEditor() {
-  const { sectionLabels, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const { sectionLabels, tabLabels, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
   const [draft, setDraft] = useState<Record<string, { label: string; icon: string }>>(sectionLabels);
   const [dirty, setDirty] = useState(false);
 
@@ -5006,11 +5006,11 @@ function SectionLabelsEditor() {
         </div>
       </div>
       <div className="space-y-5">
-        {SECTION_LABEL_GROUPS.map((group) => (
-          <div key={group}>
-            <h4 className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{group}</h4>
+        {SECTION_LABEL_GROUP_TAB_KEYS.map((tabKey) => (
+          <div key={tabKey}>
+            <h4 className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{tabLabels[tabKey] || DEFAULT_TAB_LABELS[tabKey]}</h4>
             <div className="space-y-2">
-              {SECTION_LABEL_ROWS.filter((r) => r.group === group).map(({ key }) => (
+              {SECTION_LABEL_ROWS.filter((r) => r.tabKey === tabKey).map(({ key }) => (
                 <div key={key} className="flex items-center gap-2">
                   <IconPickerButton value={draft[key]?.icon} onChange={(v) => setIcon(key, v)} />
                   <input
