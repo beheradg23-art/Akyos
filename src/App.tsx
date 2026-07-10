@@ -110,18 +110,25 @@ type CountdownItem = {
   // progress bar (full at startMs, empty at the target). Auto-set whenever
   // the target date/time is (re)saved; null falls back to a generic span.
   startMs: number | null;
+  // Name from COUNTDOWN_COLOR_PALETTE — lets each countdown stand apart
+  // visually when several are ticking side by side in the same card.
+  color: string;
 };
 
 const DEFAULT_COUNTDOWNS: CountdownItem[] = [];
 
 const makeCountdownId = () => `cd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-const makeBlankCountdown = (): CountdownItem => ({
+// `existingCount` rotates through the palette so each newly-added countdown
+// defaults to a different color than the ones already there, instead of
+// everything piling up on the same 'sky' every time.
+const makeBlankCountdown = (existingCount = 0): CountdownItem => ({
   id: makeCountdownId(),
   label: '',
   targetDate: '',
   targetTime: '00:00',
   startMs: null,
+  color: COUNTDOWN_COLOR_NAMES[existingCount % COUNTDOWN_COLOR_NAMES.length],
 });
 
 const DEFAULT_TIMELINE = [
@@ -317,13 +324,18 @@ function serializeConfig(config: { trackerItems: any[]; timeline: any[]; trainin
   };
 }
 
-function hydrateCountdown(raw: any): CountdownItem {
+function hydrateCountdown(raw: any, fallbackIndex = 0): CountdownItem {
   return {
     id: typeof raw?.id === 'string' && raw.id ? raw.id : makeCountdownId(),
     label: typeof raw?.label === 'string' ? raw.label : '',
     targetDate: typeof raw?.targetDate === 'string' ? raw.targetDate : '',
     targetTime: typeof raw?.targetTime === 'string' ? raw.targetTime : '00:00',
     startMs: typeof raw?.startMs === 'number' ? raw.startMs : null,
+    // Older saves (before colors existed) get one assigned by rotation
+    // rather than everything defaulting to the same 'sky'.
+    color: typeof raw?.color === 'string' && COUNTDOWN_COLOR_PALETTE[raw.color]
+      ? raw.color
+      : COUNTDOWN_COLOR_NAMES[fallbackIndex % COUNTDOWN_COLOR_NAMES.length],
   };
 }
 
@@ -355,7 +367,7 @@ function deserializeConfig(raw: any) {
     subjects: Array.isArray(raw?.subjects) && raw.subjects.length ? raw.subjects : DEFAULT_SUBJECTS,
     syllabus: Array.isArray(raw?.syllabus) && raw.syllabus.length ? raw.syllabus : DEFAULT_SYLLABUS,
     countdowns: Array.isArray(raw?.countdowns)
-      ? raw.countdowns.map(hydrateCountdown)
+      ? raw.countdowns.map((cd: any, i: number) => hydrateCountdown(cd, i))
       : (migratedCountdowns ?? DEFAULT_COUNTDOWNS),
   };
 }
@@ -474,6 +486,30 @@ const SUBJECT_COLOR_HEX: Record<string, string> = {
 function getSubjectHex(key: string, subjects: { key: string; color: string }[]) {
   const found = subjects.find((s) => s.key === key);
   return SUBJECT_COLOR_HEX[found?.color || 'sky'];
+}
+
+// Same 'stored as a name' convention as SUBJECT_COLOR_PALETTE, but with a
+// wider set — countdowns often sit side by side in one card, so more
+// variants means less chance two active targets look identical.
+const COUNTDOWN_COLOR_PALETTE: Record<string, { text: string; tileBg: string; tileBorder: string; barBg: string; dot: string }> = {
+  sky:      { text: 'text-sky-400',      tileBg: 'bg-sky-500/[0.03]',      tileBorder: 'border-sky-500/20',      barBg: 'bg-sky-500/60',      dot: 'bg-sky-400' },
+  violet:   { text: 'text-violet-400',   tileBg: 'bg-violet-500/[0.03]',   tileBorder: 'border-violet-500/20',   barBg: 'bg-violet-500/60',   dot: 'bg-violet-400' },
+  fuchsia:  { text: 'text-fuchsia-400',  tileBg: 'bg-fuchsia-500/[0.03]',  tileBorder: 'border-fuchsia-500/20',  barBg: 'bg-fuchsia-500/60',  dot: 'bg-fuchsia-400' },
+  amber:    { text: 'text-amber-400',    tileBg: 'bg-amber-500/[0.03]',    tileBorder: 'border-amber-500/20',    barBg: 'bg-amber-500/60',    dot: 'bg-amber-400' },
+  emerald:  { text: 'text-emerald-400',  tileBg: 'bg-emerald-500/[0.03]',  tileBorder: 'border-emerald-500/20',  barBg: 'bg-emerald-500/60',  dot: 'bg-emerald-400' },
+  rose:     { text: 'text-rose-400',     tileBg: 'bg-rose-500/[0.03]',     tileBorder: 'border-rose-500/20',     barBg: 'bg-rose-500/60',     dot: 'bg-rose-400' },
+  cyan:     { text: 'text-cyan-400',     tileBg: 'bg-cyan-500/[0.03]',     tileBorder: 'border-cyan-500/20',     barBg: 'bg-cyan-500/60',     dot: 'bg-cyan-400' },
+  orange:   { text: 'text-orange-400',   tileBg: 'bg-orange-500/[0.03]',   tileBorder: 'border-orange-500/20',   barBg: 'bg-orange-500/60',   dot: 'bg-orange-400' },
+  lime:     { text: 'text-lime-400',     tileBg: 'bg-lime-500/[0.03]',     tileBorder: 'border-lime-500/20',     barBg: 'bg-lime-500/60',     dot: 'bg-lime-400' },
+  pink:     { text: 'text-pink-400',     tileBg: 'bg-pink-500/[0.03]',     tileBorder: 'border-pink-500/20',     barBg: 'bg-pink-500/60',     dot: 'bg-pink-400' },
+  indigo:   { text: 'text-indigo-400',   tileBg: 'bg-indigo-500/[0.03]',   tileBorder: 'border-indigo-500/20',   barBg: 'bg-indigo-500/60',   dot: 'bg-indigo-400' },
+  teal:     { text: 'text-teal-400',     tileBg: 'bg-teal-500/[0.03]',     tileBorder: 'border-teal-500/20',     barBg: 'bg-teal-500/60',     dot: 'bg-teal-400' },
+};
+
+const COUNTDOWN_COLOR_NAMES = Object.keys(COUNTDOWN_COLOR_PALETTE);
+
+function getCountdownColor(name?: string) {
+  return COUNTDOWN_COLOR_PALETTE[name || 'sky'] || COUNTDOWN_COLOR_PALETTE.sky;
 }
 
 // ---------- Helper Functions for Date & LocalStorage ----------
@@ -977,8 +1013,9 @@ function StatPill({ icon: Icon, label, value, accent = 'neutral' }) {
 // second-by-second "HH:MM:SS" once under 24 hours remain.
 // Renders every countdown the user has set up in Settings > Countdown.
 // A single shared 1s ticker drives all of them (one interval, not N) —
-// each countdown is rendered by CountdownCard below. Zero configured
-// countdowns falls back to a single prompt card.
+// each countdown is rendered by CountdownEntry below, all inside one shared
+// card, sorted so the countdown ending soonest is always first. Zero
+// configured countdowns falls back to a single prompt card.
 function CountdownMatrix() {
   const { countdowns } = React.useContext(ConfigContext);
   const hasAny = Array.isArray(countdowns) && countdowns.length > 0;
@@ -1003,35 +1040,65 @@ function CountdownMatrix() {
     );
   }
 
+  // Every countdown lives inside this single card — resolve each one's
+  // live result first, then sort so whichever ends soonest always sits
+  // first, next-soonest right after, and so on. Anything expired sinks to
+  // the bottom (it already happened), and anything still missing a target
+  // date sinks under that, since there's nothing to rank it by yet.
+  const resolved = countdowns.map((cd) => {
+    const targetDate: string = cd?.targetDate || '';
+    const targetTime: string = cd?.targetTime || '00:00';
+    const result = targetDate ? getPreciseCountdown(targetDate, targetTime, nowMs) : null;
+    return { cd, result };
+  });
+
+  const sorted = [...resolved].sort((a, b) => {
+    if (!a.result && !b.result) return 0;
+    if (!a.result) return 1;
+    if (!b.result) return -1;
+    if (a.result.expired !== b.result.expired) return a.result.expired ? 1 : -1;
+    return a.result.diffMs - b.result.diffMs;
+  });
+
+  const count = sorted.length;
+  // Fluid tile sizing: fewer countdowns get more breathing room, more of
+  // them squeeze down and wrap via auto-fit so the row always fills the
+  // available width instead of leaving gaps or forcing a fixed column count.
+  const minTileWidth = count === 1 ? 240 : count === 2 ? 200 : count === 3 ? 165 : 140;
+
   return (
-    <div className={countdowns.length > 1 ? 'grid sm:grid-cols-2 xl:grid-cols-3 gap-4' : ''}>
-      {countdowns.map((cd) => (
-        <CountdownCard key={cd.id} countdown={cd} nowMs={nowMs} />
-      ))}
-    </div>
+    <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
+      <SectionHeading
+        icon={Target}
+        title="Countdown"
+        subtitle={count > 1 ? `${count} targets, nearest first` : 'Time remaining toward your target'}
+      />
+      <div
+        className="grid gap-3 items-stretch"
+        style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${minTileWidth}px, 1fr))` }}
+      >
+        {sorted.map(({ cd, result }) => (
+          <CountdownEntry key={cd.id} countdown={cd} result={result} compact={count > 2} />
+        ))}
+      </div>
+    </Card>
   );
 }
 
-function CountdownCard({ countdown, nowMs }: { countdown: CountdownItem; nowMs: number }) {
-  const targetDate: string = countdown?.targetDate || '';
-  const targetTime: string = countdown?.targetTime || '00:00';
+function CountdownEntry({ countdown, result, compact }: { countdown: CountdownItem; result: ReturnType<typeof getPreciseCountdown> | null; compact: boolean }) {
   const label = countdown?.label || 'Your Countdown';
+  const palette = getCountdownColor(countdown?.color);
 
-  const result = useMemo(
-    () => (targetDate ? getPreciseCountdown(targetDate, targetTime, nowMs) : null),
-    [targetDate, targetTime, nowMs]
-  );
-
-  if (!targetDate || !result) {
+  if (!countdown?.targetDate || !result) {
     // An incomplete entry (label set but no date yet, etc.) — don't hide it
     // entirely, just nudge back to Settings rather than showing bad math.
     return (
-      <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-        <SectionHeading icon={Target} title={label} subtitle="Missing a target date" />
-        <p className="text-[12.5px] text-neutral-500">
-          Finish setting this up in <span className="text-neutral-300 font-medium">Settings &gt; Countdown</span>.
+      <div className={`rounded-xl border ${palette.tileBorder} ${palette.tileBg} p-3.5 flex flex-col justify-between min-w-0`}>
+        <div className="text-[10px] uppercase font-bold tracking-widest text-neutral-500 mb-1 truncate">{label}</div>
+        <p className="text-[11.5px] text-neutral-500 leading-snug">
+          Missing a target date — finish it in <span className="text-neutral-300 font-medium">Settings &gt; Countdown</span>.
         </p>
-      </Card>
+      </div>
     );
   }
 
@@ -1048,24 +1115,21 @@ function CountdownCard({ countdown, nowMs }: { countdown: CountdownItem; nowMs: 
   const remainingPct = result.expired ? 0 : Math.max(0, Math.min(100, (result.diffMs / totalSpanMs) * 100));
 
   return (
-    <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-      <SectionHeading icon={Target} title="Countdown" subtitle={result.expired ? 'Target reached' : 'Time remaining toward your target'} />
-      <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.02] p-4 flex flex-col justify-between">
-        <div>
-          <div className="text-[10px] uppercase font-bold tracking-widest text-sky-400/80 mb-1">Target</div>
-          <div className="text-[14px] font-semibold text-neutral-200 truncate">{label}</div>
-        </div>
-        <div className="mt-4">
-          <span className={`text-3xl font-bold font-mono tracking-tight tabular-nums ${result.expired ? 'text-neutral-500' : 'text-sky-400'}`}>
-            {result.text}
-          </span>
-        </div>
-        <div className="mt-1 text-[10px] tracking-widest text-neutral-600 font-medium">{result.expired ? 'ARRIVED' : unitLabels}</div>
-        <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-          <div className="h-full bg-sky-500/60 rounded-full transition-[width] duration-1000 ease-linear" style={{ width: `${remainingPct}%` }} />
-        </div>
+    <div className={`rounded-xl border ${palette.tileBorder} ${palette.tileBg} p-3.5 flex flex-col justify-between min-w-0`}>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${palette.dot}`} />
+        <div className={`text-[10px] uppercase font-bold tracking-widest ${palette.text}/80 truncate`}>{label}</div>
       </div>
-    </Card>
+      <div className={compact ? 'mt-2.5' : 'mt-4'}>
+        <span className={`${compact ? 'text-xl' : 'text-3xl'} font-bold font-mono tracking-tight tabular-nums ${result.expired ? 'text-neutral-500' : palette.text}`}>
+          {result.text}
+        </span>
+      </div>
+      <div className="mt-1 text-[9.5px] tracking-widest text-neutral-600 font-medium truncate">{result.expired ? 'ARRIVED' : unitLabels}</div>
+      <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-[width] duration-1000 ease-linear ${palette.barBg}`} style={{ width: `${remainingPct}%` }} />
+      </div>
+    </div>
   );
 }
 
@@ -3580,7 +3644,7 @@ function CountdownEditor() {
     setDirty(true);
   };
   const addItem = () => {
-    setDraft((prev) => [...prev, makeBlankCountdown()]);
+    setDraft((prev) => [...prev, makeBlankCountdown(prev.length)]);
     setDirty(true);
   };
   const save = () => {
@@ -3641,6 +3705,26 @@ function CountdownEditor() {
               <div>
                 <label className={fieldLabel}>Target Time</label>
                 <input type="time" value={cd.targetTime || '00:00'} onChange={(e) => patchItem(cd.id, { targetTime: e.target.value })} className={fieldInput} />
+              </div>
+            </div>
+            <div>
+              <label className={fieldLabel}>Color</label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {COUNTDOWN_COLOR_NAMES.map((name) => {
+                  const swatch = COUNTDOWN_COLOR_PALETTE[name];
+                  const active = (cd.color || 'sky') === name;
+                  return (
+                    <button
+                      key={name}
+                      type="button"
+                      title={name}
+                      onClick={() => patchItem(cd.id, { color: name })}
+                      className={`cursor-target h-6 w-6 rounded-full ${swatch.dot} transition-all ${
+                        active ? 'ring-2 ring-offset-2 ring-offset-neutral-950 ring-neutral-200 scale-105' : 'opacity-60 hover:opacity-100'
+                      }`}
+                    />
+                  );
+                })}
               </div>
             </div>
           </div>
