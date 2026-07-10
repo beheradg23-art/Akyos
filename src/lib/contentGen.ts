@@ -88,3 +88,84 @@ export function generateHealthPlan(issue: string, context?: string) {
     { plan: string; details: string[]; tag: string } | null
   >;
 }
+
+// ---------- Onboarding content generation ----------
+// Powers the first-run questionnaire (OnboardingWizard). Same generate() +
+// cache pattern as everything above — each "kind" below needs a matching
+// branch in the generate-content Edge Function. Every one of these is keyed
+// by the user's own goal description, so two different accounts typing two
+// different goals get two entirely different results; nothing here is
+// shared or hardcoded per account.
+//
+// Icon names must come from the app's ICON_LIBRARY (defined in App.tsx).
+// Kept as a duplicate list here — rather than importing from App.tsx, which
+// would create a circular import — the same way SYNC_KEYS above is kept in
+// manual sync with DataBackupCard's export list. If ICON_LIBRARY ever
+// changes, update this too.
+export const TIMELINE_ICON_OPTIONS = [
+  'Sunrise', 'Sun', 'Moon', 'BookOpen', 'Utensils', 'Dumbbell', 'Timer',
+  'Sparkles', 'Target', 'Flame', 'Activity', 'Droplets', 'Bell',
+  'ClipboardList', 'Music2',
+] as const;
+
+/**
+ * Generates the "Daily Checklist Items" list (the tracker sidebar) from a
+ * free-text goal description. Returns objects without an `id` — the caller
+ * assigns ids (e.g. `custom_${i}`) since these need to be stable across
+ * saves, not something a generation call should own.
+ */
+export function generateChecklist(goalDescription: string, context?: string) {
+  return generate('onboarding-checklist', goalDescription, context) as Promise<
+    { items: { label: string }[] } | null
+  >;
+}
+
+/**
+ * Generates a full day's timeline (wake to sleep) matching the shape the
+ * Master Timeline tab and its editor already expect. `context` should carry
+ * the user's stated wake/sleep times and any other constraints so blocks
+ * land inside their actual day rather than a generic one.
+ */
+export function generateDailyTimeline(goalDescription: string, context?: string) {
+  return generate('onboarding-timeline', goalDescription, context) as Promise<
+    {
+      blocks: {
+        start: string; end: string; label: string; detail: string;
+        type: 'study' | 'gym' | 'meal' | 'prep' | 'sleep';
+        subject?: string; longDesc: string; iconName: string;
+      }[];
+    } | null
+  >;
+}
+
+/**
+ * Generates a weekly training split matching the Training & Fuel tab's
+ * shape. If the person's goal has nothing to do with physical training,
+ * the caller should skip this entirely rather than force a workout plan
+ * on someone who never asked for one.
+ */
+export function generateWeeklyTraining(goalDescription: string, context?: string) {
+  return generate('onboarding-training', goalDescription, context) as Promise<
+    {
+      days: {
+        day: string; focus: string; mode: 'gym' | 'calisthenics' | 'rest';
+        exercises: { name: string; sets: string }[];
+      }[];
+    } | null
+  >;
+}
+
+/**
+ * Generates a subject roadmap (subjects + month-by-month phases + topics
+ * per subject) for whatever the person is studying toward — not assumed to
+ * be any particular exam. Used by the Syllabus Roadmap tab. If the goal
+ * has no "subjects to study" component at all, the caller should skip this.
+ */
+export function generateSyllabus(goalDescription: string, context?: string) {
+  return generate('onboarding-syllabus', goalDescription, context) as Promise<
+    {
+      subjects: { key: string; label: string; color: string }[];
+      phases: { phase: number; month: string; label: string; subjects: Record<string, string[]> }[];
+    } | null
+  >;
+}

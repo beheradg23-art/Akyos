@@ -11,6 +11,7 @@ import {
   Settings, Save, GripVertical, PenLine, RefreshCcw, Menu as MenuIcon, UserCircle2, KeyRound, LogOut, Loader2
 } from 'lucide-react';
 import AuthGate from './components/AuthGate';
+import OnboardingWizard from './components/OnboardingWizard';
 import { useCloudAutoSync } from './lib/cloudSync';
 import CloudSyncCard from './components/CloudSyncCard';
 import PushNotificationsCard from './components/PushNotificationsCard';
@@ -19,6 +20,11 @@ import { supabase } from './lib/supabaseClient';
 import { generateTopicDetails, generateExerciseGuide, generateProfileTargets } from './lib/contentGen';
 import { subscribeToPush, messageServiceWorker } from './lib/pushNotifications';
 import { startActiveTimer, clearActiveTimer } from './lib/activeTimers';
+
+// Every account gets asked this exactly once, right after their first
+// passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
+// SYNC_KEYS so finishing it on one device doesn't re-trigger it on another.
+const ONBOARDING_STORAGE_KEY = 'akyos_onboarding_completed_v1';
 
 
 
@@ -71,20 +77,25 @@ const EXERCISE_GUIDE = {
 // `profile` yet (i.e. every existing account today, since this field is new),
 // so nothing changes visually for anyone until they actually edit it in
 // Settings > Profile & Goals. It's also the "Reset to default" target there.
+// This is a neutral placeholder, not any one person's real identity — the
+// onboarding wizard writes a real profile immediately after signup, so this
+// only ever shows briefly (or as the "Reset to default" target in Settings).
 const DEFAULT_PROFILE = {
-  name: 'Ashutosh Behera',
-  goalLabel: 'JEE 2027, Drop Year',
+  name: 'Your Name',
+  goalLabel: 'Add your goal',
   age: 18,
-  height: 188,
-  weight: 76,
-  category: 'OBC-NCL',
-  baseline: 83,
-  baselineLabel: 'JEE Main Baseline',
-  boards: 82,
+  height: 170,
+  weight: 65,
+  category: '',
+  baseline: 0,
+  baselineLabel: 'Baseline Score',
+  boards: 0,
+  // Optional, user-set — drives the Overview tab's countdown widget. Left
+  // empty by default rather than defaulting to any real date; a countdown
+  // to nothing isn't shown (see CountdownMatrix).
+  targetDate: '',
   targets: [
-    { rank: 1, name: 'IIT Bombay', course: 'Aerospace Engineering', tag: 'Absolute Top Priority', color: 'blue', desc: 'Closing Rank Target: Under AIR 800. Main leverage point: Advanced Physics mechanics dominance.' },
-    { rank: 2, name: 'IIT Delhi', course: 'Computer Science / Electrical Engineering', tag: 'Primary Target', color: 'blue', desc: 'Requires balanced sub-1200 rank profile. Excellent infrastructure backup path.' },
-    { rank: 3, name: 'IIIT Delhi', course: 'Computer Science / Electrical Engineering', tag: 'Secondary Target', color: 'amber', desc: 'Safe alternative via JEE Main percentile targets (>99.5%ile). Quality tech campus culture.' },
+    { rank: 1, name: 'Add your first target', course: 'Course / program', tag: 'Top Priority', color: 'blue', desc: 'Edit this in Settings > Profile & Goals — describe what you\'re aiming for and why it matters.' },
   ],
 };
 
@@ -129,7 +140,22 @@ const DEFAULT_TRAINING = [
   { day: 'Sunday', focus: 'Full Rest Day', exercises: [{ name: 'Deep physical stretching', sets: '—' }, { name: 'Zero training load', sets: '—' }, { name: 'Mental recovery', sets: '—' }], mode: 'rest' },
 ];
 
-const SYLLABUS = [
+// ---------- Subjects & Syllabus (now user-editable, see ConfigContext) ----------
+// DEFAULT_SUBJECTS / DEFAULT_SYLLABUS below are the fallback used for any
+// account that hasn't customized its own subject list yet (i.e. every
+// existing account today, since these fields are new) — same convention as
+// DEFAULT_TRACKER_ITEMS / DEFAULT_TIMELINE / DEFAULT_TRAINING / DEFAULT_PROFILE.
+// `color` is a name from SUBJECT_COLOR_PALETTE (a fixed set of Tailwind
+// class strings), not a raw class, since Tailwind can't resolve dynamically
+// built class names like `text-${color}-400`.
+const DEFAULT_SUBJECTS = [
+  { key: 'math', label: 'Mathematics', color: 'sky' },
+  { key: 'physics', label: 'Physics', color: 'violet' },
+  { key: 'chem', label: 'Chemistry', color: 'fuchsia' },
+  { key: 'mixed', label: 'Mixed / PYQ', color: 'amber' },
+];
+
+const DEFAULT_SYLLABUS = [
   { phase: 1, month: 'July', label: 'Core Foundations', subjects: {
     math: ['Basic Maths', 'Logs', 'Quadratics', 'Sequences & Series', 'Trigonometry'],
     physics: ['Units & Dimensions', 'Vectors', 'Kinematics (1D/2D)', 'NLM & Friction', 'WPE'],
@@ -182,17 +208,23 @@ function getRevisionStatus(lastRevisedStr) {
   return { status: 'overdue', days };
 }
 
-const ALL_SYLLABUS_TOPICS = SYLLABUS.flatMap((p) =>
-  (['math', 'physics', 'chem']).flatMap((subject) =>
-    p.subjects[subject].map((topic) => ({
-      key: getTopicRevisionKey(p.phase, subject, topic),
-      topic,
-      subject,
-      phase: p.phase,
-      month: p.month,
-    }))
-  )
-);
+// Was a module-level const built off a hardcoded ['math','physics','chem']
+// list; now a function over whatever subject keys the live syllabus (from
+// ConfigContext) actually contains, so a user's own custom subject list
+// works the same way the original 3 did.
+function getAllSyllabusTopics(syllabus: any[]) {
+  return syllabus.flatMap((p) =>
+    Object.keys(p.subjects).flatMap((subject) =>
+      p.subjects[subject].map((topic: string) => ({
+        key: getTopicRevisionKey(p.phase, subject, topic),
+        topic,
+        subject,
+        phase: p.phase,
+        month: p.month,
+      }))
+    )
+  );
+}
 
 const DEFAULT_TRACKER_ITEMS = [
   { id: 't1', label: '5 AM Wake-Up' },
@@ -248,12 +280,14 @@ function hydrateTimeline(rawList: any[]): any[] {
   }));
 }
 
-function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any }) {
+function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[] }) {
   return {
     trackerItems: config.trackerItems,
     training: config.training,
     timeline: config.timeline.map(({ icon, ...rest }) => rest),
     profile: config.profile,
+    subjects: config.subjects,
+    syllabus: config.syllabus,
   };
 }
 
@@ -263,6 +297,8 @@ function deserializeConfig(raw: any) {
     training: Array.isArray(raw?.training) && raw.training.length ? raw.training : DEFAULT_TRAINING,
     timeline: Array.isArray(raw?.timeline) && raw.timeline.length ? hydrateTimeline(raw.timeline) : hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
     profile: raw?.profile && typeof raw.profile === 'object' ? { ...DEFAULT_PROFILE, ...raw.profile } : DEFAULT_PROFILE,
+    subjects: Array.isArray(raw?.subjects) && raw.subjects.length ? raw.subjects : DEFAULT_SUBJECTS,
+    syllabus: Array.isArray(raw?.syllabus) && raw.syllabus.length ? raw.syllabus : DEFAULT_SYLLABUS,
   };
 }
 
@@ -273,13 +309,17 @@ const ConfigContext = React.createContext<{
   timeline: any[];
   training: any[];
   profile: any;
+  subjects: any[];
+  syllabus: any[];
   updateConfig: (partial: Record<string, any>) => void;
-  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile') => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus') => void;
 }>({
   trackerItems: DEFAULT_TRACKER_ITEMS,
   timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
   training: DEFAULT_TRAINING,
   profile: DEFAULT_PROFILE,
+  subjects: DEFAULT_SUBJECTS,
+  syllabus: DEFAULT_SYLLABUS,
   updateConfig: () => {},
   resetConfigSection: () => {},
 });
@@ -334,25 +374,47 @@ const TABS = [
   { id: 'overview', label: 'Dashboard Overview', icon: LayoutGrid },
   { id: 'timeline', label: 'Master Timeline', icon: Clock3 },
   { id: 'training', label: 'Training & Fuel', icon: Dumbbell },
-  { id: 'syllabus', label: 'JEE Syllabus Roadmap', icon: BookOpen },
+  { id: 'syllabus', label: 'Syllabus Roadmap', icon: BookOpen },
   { id: 'mocktests', label: 'Mock Test Tracker', icon: ClipboardList },
   { id: 'ashclock', label: 'Clock', icon: Timer },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
 ];
 
-const SUBJECT_STYLE = {
-  math: { text: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/30', dot: 'bg-sky-400' },
-  physics: { text: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/30', dot: 'bg-violet-400' },
-  chem: { text: 'text-fuchsia-400', bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/30', dot: 'bg-fuchsia-400' },
-  mixed: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-400' },
+// Subject color is stored as a *name* (e.g. 'sky'), never a raw Tailwind
+// class — Tailwind can't resolve a dynamically built string like
+// `text-${color}-400`, so every place that used to index into a hardcoded
+// SUBJECT_STYLE map now calls getSubjectStyle(key, subjects) instead, which
+// looks the chosen color up in this fixed palette. Same 'color name' idea
+// generateProfileTargets() already uses for targets[].color.
+const SUBJECT_COLOR_PALETTE: Record<string, { text: string; bg: string; border: string; dot: string }> = {
+  sky:      { text: 'text-sky-400',      bg: 'bg-sky-500/10',      border: 'border-sky-500/30',      dot: 'bg-sky-400' },
+  violet:   { text: 'text-violet-400',   bg: 'bg-violet-500/10',   border: 'border-violet-500/30',   dot: 'bg-violet-400' },
+  fuchsia:  { text: 'text-fuchsia-400',  bg: 'bg-fuchsia-500/10',  border: 'border-fuchsia-500/30',  dot: 'bg-fuchsia-400' },
+  amber:    { text: 'text-amber-400',    bg: 'bg-amber-500/10',    border: 'border-amber-500/30',    dot: 'bg-amber-400' },
+  emerald:  { text: 'text-emerald-400',  bg: 'bg-emerald-500/10',  border: 'border-emerald-500/30',  dot: 'bg-emerald-400' },
+  rose:     { text: 'text-rose-400',     bg: 'bg-rose-500/10',     border: 'border-rose-500/30',     dot: 'bg-rose-400' },
 };
 
-const POMODORO_SUBJECTS = [
-  { key: 'math', label: 'Math' },
-  { key: 'physics', label: 'Physics' },
-  { key: 'chem', label: 'Chemistry' },
-  { key: 'mixed', label: 'Mixed / PYQ' },
-];
+function getSubjectStyle(key: string, subjects: { key: string; color: string }[]) {
+  const found = subjects.find((s) => s.key === key);
+  return SUBJECT_COLOR_PALETTE[found?.color || 'sky'];
+}
+
+// Hex counterparts of SUBJECT_COLOR_PALETTE for contexts (raw SVG stroke/fill
+// attributes) where a Tailwind class string doesn't apply.
+const SUBJECT_COLOR_HEX: Record<string, string> = {
+  sky: '#38bdf8',
+  violet: '#a78bfa',
+  fuchsia: '#e879f9',
+  amber: '#fbbf24',
+  emerald: '#34d399',
+  rose: '#fb7185',
+};
+
+function getSubjectHex(key: string, subjects: { key: string; color: string }[]) {
+  const found = subjects.find((s) => s.key === key);
+  return SUBJECT_COLOR_HEX[found?.color || 'sky'];
+}
 
 // ---------- Helper Functions for Date & LocalStorage ----------
 
@@ -826,40 +888,49 @@ function StatPill({ icon: Icon, label, value, accent = 'neutral' }) {
 
 // ---------- Dynamic Engine: Countdown Matrix Widget ----------
 
+// Was hardcoded to two fixed JEE-specific dates ('2026-11-01' mocks,
+// '2027-01-22' JEE Main) shown to every account regardless of their actual
+// goal. Now driven entirely by the user's own profile: `targetDate` (set
+// during onboarding or in Settings > Profile & Goals) and `goalLabel`/
+// `targets[0].name` for the label. If no target date has been set, this
+// shows a prompt to set one rather than fabricating a countdown to a date
+// that isn't theirs.
 function CountdownMatrix() {
-  const daysToMocks = useMemo(() => getDeadlineCountdown('2026-11-01'), []);
-  const daysToJEE = useMemo(() => getDeadlineCountdown('2027-01-22'), []);
+  const { profile } = React.useContext(ConfigContext);
+  const targetDate: string = profile?.targetDate || '';
+  const daysLeft = useMemo(() => (targetDate ? getDeadlineCountdown(targetDate) : null), [targetDate]);
+  const label = profile?.targets?.[0]?.name || profile?.goalLabel || 'Your Goal';
+
+  if (!targetDate || daysLeft === null) {
+    return (
+      <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
+        <SectionHeading icon={Target} title="Countdown" subtitle="Set a target date to see it here" />
+        <p className="text-[12.5px] text-neutral-500">
+          Add a target date in <span className="text-neutral-300 font-medium">Settings &gt; Profile &amp; Goals</span> to track days remaining toward it.
+        </p>
+      </Card>
+    );
+  }
+
+  // A rough total-span estimate purely for the progress bar fill — the bar
+  // is decorative feedback, not a precise measure, so a fixed reasonable
+  // window (6 months) is fine regardless of what the actual goal is.
+  const totalSpanDays = 180;
 
   return (
     <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-      <SectionHeading icon={Target} title="Exam Micro-Horizon" subtitle="Strict spatial countdown telemetry" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.02] p-4 flex flex-col justify-between">
-          <div>
-            <div className="text-[10px] uppercase font-bold tracking-widest text-amber-500/80 mb-1">Target Engine 1</div>
-            <div className="text-[14px] font-semibold text-neutral-200">Days Left for Mocks</div>
-          </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-amber-400 font-mono tracking-tight">{daysToMocks}</span>
-            <span className="text-xs text-neutral-500 font-medium">Days remaining</span>
-          </div>
-          <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-            <div className="h-full bg-amber-500/60 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (daysToMocks/120)*100))}%` }} />
-          </div>
+      <SectionHeading icon={Target} title="Countdown" subtitle="Days remaining toward your target" />
+      <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.02] p-4 flex flex-col justify-between">
+        <div>
+          <div className="text-[10px] uppercase font-bold tracking-widest text-sky-400/80 mb-1">Target</div>
+          <div className="text-[14px] font-semibold text-neutral-200 truncate">{label}</div>
         </div>
-
-        <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.02] p-4 flex flex-col justify-between">
-          <div>
-            <div className="text-[10px] uppercase font-bold tracking-widest text-sky-400/80 mb-1">Target Engine 2</div>
-            <div className="text-[14px] font-semibold text-neutral-200">Days Left for JEE Main</div>
-          </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-sky-400 font-mono tracking-tight">{daysToJEE}</span>
-            <span className="text-xs text-neutral-500 font-medium">Days remaining</span>
-          </div>
-          <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-            <div className="h-full bg-sky-500/60 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (daysToJEE/200)*100))}%` }} />
-          </div>
+        <div className="mt-4 flex items-baseline gap-2">
+          <span className="text-3xl font-bold text-sky-400 font-mono tracking-tight">{Math.max(0, daysLeft)}</span>
+          <span className="text-xs text-neutral-500 font-medium">Days remaining</span>
+        </div>
+        <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
+          <div className="h-full bg-sky-500/60 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (daysLeft / totalSpanDays) * 100))}%` }} />
         </div>
       </div>
     </Card>
@@ -1049,7 +1120,7 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
 
   const collectBackupPayload = () => ({
     _meta: {
-      app: 'Ashutosh — Dynamic Command Center',
+      app: 'Akyos',
       exportedAt: new Date().toISOString(),
       version: 1,
     },
@@ -1464,7 +1535,7 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
 // ---------- Tab Subcomponent: Overview ----------
 
 function OverviewTab({ setModal }) {
-  const { profile } = React.useContext(ConfigContext);
+  const { profile, syllabus } = React.useContext(ConfigContext);
   const latestWeight = useMemo(() => {
     try {
       const saved = localStorage.getItem(WEIGHT_LOG_KEY);
@@ -1565,7 +1636,7 @@ function OverviewTab({ setModal }) {
         <Card>
           <SectionHeading icon={Calendar} title="Syllabus Runway" subtitle="4-month deadline progression" />
           <div className="space-y-2">
-            {SYLLABUS.map((p) => (
+            {syllabus.map((p) => (
               <div key={p.phase} className="flex items-center gap-3 rounded-lg border border-neutral-800/70 bg-neutral-950/40 px-3 py-2">
                 <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-300">
                   {p.phase}
@@ -1585,7 +1656,7 @@ function OverviewTab({ setModal }) {
 // ---------- Tab Subcomponent: Timeline ----------
 
 function TimelineTab({ setModal, notificationsEnabled, notificationPermission, onToggleNotifications }) {
-  const { timeline } = React.useContext(ConfigContext);
+  const { timeline, subjects } = React.useContext(ConfigContext);
   const typeStyle = {
     study: 'border-l-sky-500',
     gym: 'border-l-violet-500',
@@ -1630,7 +1701,7 @@ function TimelineTab({ setModal, notificationsEnabled, notificationPermission, o
       <div className="space-y-2.5">
         {timeline.map((slot, i) => {
           const Icon = slot.icon;
-          const sub = slot.subject ? SUBJECT_STYLE[slot.subject] : null;
+          const sub = slot.subject ? getSubjectStyle(slot.subject, subjects) : null;
           return (
             <div
               key={i}
@@ -2098,8 +2169,10 @@ function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }) {
 // ---------- Tab Subcomponent: Syllabus ----------
 
 function SyllabusTab({ setModal }) {
+  const { subjects, syllabus } = React.useContext(ConfigContext);
+  const allSyllabusTopics = useMemo(() => getAllSyllabusTopics(syllabus), [syllabus]);
   const [activePhase, setActivePhase] = useState(1);
-  const phase = SYLLABUS.find((p) => p.phase === activePhase);
+  const phase = syllabus.find((p) => p.phase === activePhase) || syllabus[0];
 
   const [revisionLog, setRevisionLog] = useState<Record<string, string>>(() => {
     try {
@@ -2126,11 +2199,11 @@ function SyllabusTab({ setModal }) {
   // Topics never touched at all are excluded here (not "overdue", just not
   // started yet); they still get a neutral badge inline in the topic lists.
   const staleTopics = useMemo(() => {
-    return ALL_SYLLABUS_TOPICS
+    return allSyllabusTopics
       .map((t) => ({ ...t, ...getRevisionStatus(revisionLog[t.key]) }))
       .filter((t) => t.status === 'due' || t.status === 'overdue')
       .sort((a, b) => (b.days || 0) - (a.days || 0));
-  }, [revisionLog]);
+  }, [revisionLog, allSyllabusTopics]);
 
   const handleTopicClick = async (topicName) => {
     const defaultMeta = {
@@ -2173,7 +2246,7 @@ function SyllabusTab({ setModal }) {
 
   return (
     <div className="animate-fadeIn">
-      <SectionHeading icon={BookOpen} title="JEE Syllabus Runway" subtitle="4-month absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
+      <SectionHeading icon={BookOpen} title="Syllabus Runway" subtitle="Absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
 
       {staleTopics.length > 0 && (
         <Card className="mb-5 border border-amber-500/20">
@@ -2193,7 +2266,7 @@ function SyllabusTab({ setModal }) {
                   <button onClick={() => handleTopicClick(t.topic)} className="cursor-target text-[13px] text-neutral-200 hover:text-neutral-50 text-left truncate">
                     {t.topic}
                   </button>
-                  <span className={`text-[10.5px] shrink-0 ${SUBJECT_STYLE[t.subject].text}`}>{t.month}</span>
+                  <span className={`text-[10.5px] shrink-0 ${getSubjectStyle(t.subject, subjects).text}`}>{t.month}</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${t.status === 'overdue' ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
@@ -2213,7 +2286,7 @@ function SyllabusTab({ setModal }) {
       )}
 
       <div className="flex flex-wrap gap-2 mb-5">
-        {SYLLABUS.map((p) => (
+        {syllabus.map((p) => (
           <button
             key={p.phase}
             onClick={() => setActivePhase(p.phase)}
@@ -2235,15 +2308,15 @@ function SyllabusTab({ setModal }) {
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        {[
-          { key: 'math', title: 'Mathematics', style: SUBJECT_STYLE.math },
-          { key: 'physics', title: 'Physics', style: SUBJECT_STYLE.physics },
-          { key: 'chem', title: 'Chemistry', style: SUBJECT_STYLE.chem },
-        ].map((s) => (
-          <Card key={s.key} className={`border ${s.style.border}`}>
+        {subjects
+          .filter((s) => Array.isArray(phase.subjects[s.key]))
+          .map((s) => {
+            const style = getSubjectStyle(s.key, subjects);
+            return (
+          <Card key={s.key} className={`border ${style.border}`}>
             <div className="flex items-center gap-2 mb-3.5">
-              <span className={`h-2 w-2 rounded-full ${s.style.dot}`} />
-              <span className={`text-[13px] font-semibold ${s.style.text}`}>{s.title}</span>
+              <span className={`h-2 w-2 rounded-full ${style.dot}`} />
+              <span className={`text-[13px] font-semibold ${style.text}`}>{s.label}</span>
             </div>
             <ul className="space-y-2">
               {phase.subjects[s.key].map((topic) => {
@@ -2294,7 +2367,8 @@ function SyllabusTab({ setModal }) {
               })}
             </ul>
           </Card>
-        ))}
+            );
+          })}
       </div>
     </div>
   );
@@ -2302,7 +2376,7 @@ function SyllabusTab({ setModal }) {
 
 // ---------- Tab Subcomponent: Mock Test Tracker ----------
 // A dependency-free SVG line chart tracing Math/Physics/Chem scores over time.
-function ScoreTrendChart({ tests }) {
+function ScoreTrendChart({ tests, subjects }) {
   const width = 600;
   const height = 220;
   const padding = { top: 10, right: 10, bottom: 24, left: 32 };
@@ -2325,11 +2399,18 @@ function ScoreTrendChart({ tests }) {
   const buildPath = (key) =>
     tests.map((t, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(pctFor(t, key)).toFixed(1)}`).join(' ');
 
-  const series = [
-    { key: 'math', color: '#38bdf8', label: 'Math' },
-    { key: 'physics', color: '#a78bfa', label: 'Physics' },
-    { key: 'chem', color: '#e879f9', label: 'Chemistry' },
-  ];
+  // Old logged tests are always { math, physics, chem }; new ones can have
+  // any subject keys, so read the keys straight off the data rather than
+  // assuming a fixed 3 — that keeps old data rendering unchanged.
+  const scoreKeys = Array.from(new Set(tests.flatMap((t) => Object.keys(t.scores || {}))));
+  const series = scoreKeys.map((key) => {
+    const found = subjects.find((s) => s.key === key);
+    return {
+      key,
+      color: getSubjectHex(key, subjects),
+      label: found?.label || key,
+    };
+  });
 
   return (
     <div>
@@ -2346,6 +2427,7 @@ function ScoreTrendChart({ tests }) {
         {series.map((s) =>
           tests.map((t, i) => {
             const raw = t.scores[s.key];
+            if (!raw) return null;
             return (
               <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" fill={s.color}>
                 <title>{`${s.label}: ${raw.score}/${raw.max} (${pctFor(t, s.key).toFixed(1)}%)`}</title>
@@ -2375,20 +2457,31 @@ function ScoreTrendChart({ tests }) {
 }
 
 function MockTestTab() {
+  const { subjects, syllabus } = React.useContext(ConfigContext);
+  // Subjects worth putting a score box in the test-log form are the ones
+  // that actually have syllabus content (skips a catch-all like 'mixed').
+  const scorableSubjects = useMemo(
+    () => subjects.filter((s) => syllabus.some((p) => Array.isArray(p.subjects[s.key]))),
+    [subjects, syllabus]
+  );
+
   const [tests, setTests] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('mock_test_log');
       const parsed = saved ? JSON.parse(saved) : [];
-      // Back-compat: earlier version stored raw numbers per subject with an
-      // implicit fixed 100 max. Normalize those into { score, max } shape.
-      return parsed.map((t: any) => ({
-        ...t,
-        scores: {
-          math: typeof t.scores?.math === 'number' ? { score: t.scores.math, max: 100 } : t.scores?.math,
-          physics: typeof t.scores?.physics === 'number' ? { score: t.scores.physics, max: 100 } : t.scores?.physics,
-          chem: typeof t.scores?.chem === 'number' ? { score: t.scores.chem, max: 100 } : t.scores?.chem,
-        },
-      }));
+      // Back-compat: earlier versions stored raw numbers per subject with an
+      // implicit fixed 100 max, always under exactly {math,physics,chem}.
+      // Normalize old numeric entries into { score, max } shape, but leave
+      // the key set itself alone — every render path below iterates
+      // Object.keys(test.scores) rather than assuming particular keys, so
+      // old {math,physics,chem} tests keep working unchanged.
+      return parsed.map((t: any) => {
+        const scores: Record<string, { score: number; max: number }> = {};
+        Object.entries(t.scores || {}).forEach(([key, val]: [string, any]) => {
+          scores[key] = typeof val === 'number' ? { score: val, max: 100 } : val;
+        });
+        return { ...t, scores };
+      });
     } catch {
       return [];
     }
@@ -2405,15 +2498,32 @@ function MockTestTab() {
   const [formPhase, setFormPhase] = useState(1);
   const [formDate, setFormDate] = useState(() => getLocalDateString());
   const [formLabel, setFormLabel] = useState('');
-  const [formMath, setFormMath] = useState('');
-  const [formMathMax, setFormMathMax] = useState('100');
-  const [formPhysics, setFormPhysics] = useState('');
-  const [formPhysicsMax, setFormPhysicsMax] = useState('100');
-  const [formChem, setFormChem] = useState('');
-  const [formChemMax, setFormChemMax] = useState('100');
+  // One { score, max } pair per scorable subject key, keyed the same way
+  // as the logged-test shape below.
+  const [formScores, setFormScores] = useState<Record<string, { score: string; max: string }>>(() =>
+    Object.fromEntries(scorableSubjects.map((s) => [s.key, { score: '', max: '100' }]))
+  );
   const [formWeakTopics, setFormWeakTopics] = useState<string[]>([]);
 
-  const activePhaseData = SYLLABUS.find((p) => p.phase === formPhase);
+  // If the user edits their subject list in Settings while this tab is
+  // mounted, keep the form in sync (new subject -> new blank box; removed
+  // subject -> its box disappears) without clobbering scores already typed
+  // into boxes that still exist.
+  useEffect(() => {
+    setFormScores((prev) => {
+      const next: Record<string, { score: string; max: string }> = {};
+      scorableSubjects.forEach((s) => {
+        next[s.key] = prev[s.key] || { score: '', max: '100' };
+      });
+      return next;
+    });
+  }, [scorableSubjects]);
+
+  const setFormScore = (key: string, field: 'score' | 'max', value: string) => {
+    setFormScores((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  };
+
+  const activePhaseData = syllabus.find((p) => p.phase === formPhase);
 
   const toggleWeakTopic = (topic: string) => {
     setFormWeakTopics((prev) => (prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]));
@@ -2421,31 +2531,30 @@ function MockTestTab() {
 
   const resetForm = () => {
     setFormLabel('');
-    setFormMath('');
-    setFormPhysics('');
-    setFormChem('');
     // Max-marks fields deliberately are NOT reset — most students sit a run of
     // tests from the same series with the same marking scheme, so keeping
     // the last-used max marks pre-filled saves re-typing every single time.
+    setFormScores((prev) =>
+      Object.fromEntries(Object.entries(prev).map(([key, v]) => [key, { score: '', max: v.max }]))
+    );
     setFormWeakTopics([]);
   };
 
   const clamp = (value: number, max: number) => Math.max(0, Math.min(value, max));
 
   const handleAddTest = () => {
-    if (!formMath && !formPhysics && !formChem) return;
-    const mathMax = Math.max(1, Number(formMathMax) || 100);
-    const physicsMax = Math.max(1, Number(formPhysicsMax) || 100);
-    const chemMax = Math.max(1, Number(formChemMax) || 100);
+    const hasAnyScore = Object.values(formScores).some((v) => v.score);
+    if (!hasAnyScore) return;
+    const scores: Record<string, { score: number; max: number }> = {};
+    Object.entries(formScores).forEach(([key, v]) => {
+      const max = Math.max(1, Number(v.max) || 100);
+      scores[key] = { score: clamp(Number(v.score) || 0, max), max };
+    });
     const entry = {
       id: `mt_${Date.now()}`,
       date: formDate,
       label: formLabel.trim() || 'Untitled Test',
-      scores: {
-        math: { score: clamp(Number(formMath) || 0, mathMax), max: mathMax },
-        physics: { score: clamp(Number(formPhysics) || 0, physicsMax), max: physicsMax },
-        chem: { score: clamp(Number(formChem) || 0, chemMax), max: chemMax },
-      },
+      scores,
       weakTopics: formWeakTopics,
     };
     setTests((prev) => [...prev, entry]);
@@ -2467,12 +2576,6 @@ function MockTestTab() {
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [tests]);
-
-  const subjectMeta = [
-    { key: 'math', title: 'Mathematics' },
-    { key: 'physics', title: 'Physics' },
-    { key: 'chem', title: 'Chemistry' },
-  ];
 
   return (
     <div className="space-y-5 animate-fadeIn">
@@ -2506,60 +2609,30 @@ function MockTestTab() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
-          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.math.text}`}>Math</label>
-            <div className="flex items-stretch gap-2">
-              <input
-                type="number" inputMode="decimal" min={0} value={formMath}
-                onChange={(e) => setFormMath(e.target.value)}
-                placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
-              />
-              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
-              <input
-                type="number" inputMode="decimal" min={1} value={formMathMax}
-                onChange={(e) => setFormMathMax(e.target.value)}
-                title="Full marks for this subject in this test"
-                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
-              />
-            </div>
-          </div>
-          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.physics.text}`}>Physics</label>
-            <div className="flex items-stretch gap-2">
-              <input
-                type="number" inputMode="decimal" min={0} value={formPhysics}
-                onChange={(e) => setFormPhysics(e.target.value)}
-                placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
-              />
-              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
-              <input
-                type="number" inputMode="decimal" min={1} value={formPhysicsMax}
-                onChange={(e) => setFormPhysicsMax(e.target.value)}
-                title="Full marks for this subject in this test"
-                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
-              />
-            </div>
-          </div>
-          <div className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
-            <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${SUBJECT_STYLE.chem.text}`}>Chem</label>
-            <div className="flex items-stretch gap-2">
-              <input
-                type="number" inputMode="decimal" min={0} value={formChem}
-                onChange={(e) => setFormChem(e.target.value)}
-                placeholder="Score"
-                className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
-              />
-              <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
-              <input
-                type="number" inputMode="decimal" min={1} value={formChemMax}
-                onChange={(e) => setFormChemMax(e.target.value)}
-                title="Full marks for this subject in this test"
-                className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-violet-500/60 focus:ring-1 focus:ring-violet-500/30"
-              />
-            </div>
-          </div>
+          {scorableSubjects.map((s) => {
+            const style = getSubjectStyle(s.key, subjects);
+            const v = formScores[s.key] || { score: '', max: '100' };
+            return (
+              <div key={s.key} className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
+                <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${style.text}`}>{s.label}</label>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="number" inputMode="decimal" min={0} value={v.score}
+                    onChange={(e) => setFormScore(s.key, 'score', e.target.value)}
+                    placeholder="Score"
+                    className="w-full min-w-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-3 sm:py-2 text-base sm:text-[13px] font-semibold text-neutral-50 placeholder:font-normal placeholder:text-neutral-600 focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
+                  />
+                  <span className="flex items-center text-neutral-600 text-[13px] shrink-0">/</span>
+                  <input
+                    type="number" inputMode="decimal" min={1} value={v.max}
+                    onChange={(e) => setFormScore(s.key, 'max', e.target.value)}
+                    title="Full marks for this subject in this test"
+                    className="w-20 sm:w-16 shrink-0 rounded-lg border border-neutral-800 bg-neutral-950/60 px-2 py-3 sm:py-2 text-base sm:text-[13px] font-medium text-neutral-300 text-center focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30"
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
         <p className="text-[10.5px] text-neutral-600 -mt-3.5 mb-5">Enter the actual full marks for each subject — it doesn't need to be 100, and can differ subject to subject or test to test.</p>
 
@@ -2567,7 +2640,7 @@ function MockTestTab() {
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold">Flag Weak Topics (optional)</label>
             <div className="flex gap-1 flex-wrap">
-              {SYLLABUS.map((p) => (
+              {syllabus.map((p) => (
                 <button
                   key={p.phase}
                   onClick={() => setFormPhase(p.phase)}
@@ -2581,11 +2654,11 @@ function MockTestTab() {
             </div>
           </div>
           <div className="grid sm:grid-cols-3 gap-4 rounded-xl border border-neutral-800 bg-neutral-950/40 p-3.5 max-h-56 overflow-y-auto">
-            {subjectMeta.map((s) => (
+            {scorableSubjects.map((s) => (
               <div key={s.key}>
-                <div className={`text-[11px] font-semibold mb-1.5 ${SUBJECT_STYLE[s.key].text}`}>{s.title}</div>
+                <div className={`text-[11px] font-semibold mb-1.5 ${getSubjectStyle(s.key, subjects).text}`}>{s.label}</div>
                 <div className="space-y-1.5">
-                  {activePhaseData?.subjects[s.key].map((topic) => (
+                  {(activePhaseData?.subjects[s.key] || []).map((topic) => (
                     <label key={topic} className="flex items-center gap-1.5 text-[12px] text-neutral-300 cursor-pointer">
                       <input
                         type="checkbox"
@@ -2614,7 +2687,7 @@ function MockTestTab() {
         <Card>
           <SectionHeading icon={BarChart3} title="Score Trend" subtitle={`${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`} />
           <div className="mt-4">
-            <ScoreTrendChart tests={sortedTests} />
+            <ScoreTrendChart tests={sortedTests} subjects={subjects} />
           </div>
         </Card>
       )}
@@ -2651,8 +2724,9 @@ function MockTestTab() {
         ) : (
           <div className="space-y-2 mt-4">
             {[...sortedTests].reverse().map((t) => {
-              const totalScore = t.scores.math.score + t.scores.physics.score + t.scores.chem.score;
-              const totalMax = t.scores.math.max + t.scores.physics.max + t.scores.chem.max;
+              const scoreEntries = Object.entries(t.scores || {}) as [string, { score: number; max: number }][];
+              const totalScore = scoreEntries.reduce((sum, [, v]) => sum + (v?.score || 0), 0);
+              const totalMax = scoreEntries.reduce((sum, [, v]) => sum + (v?.max || 0), 0);
               return (
                 <div key={t.id} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5 flex-wrap">
                   <div>
@@ -2660,9 +2734,15 @@ function MockTestTab() {
                     <div className="text-[11px] text-neutral-500">{getDayName(t.date)}, {t.date}</div>
                   </div>
                   <div className="flex items-center gap-3 text-[12px]">
-                    <span className={SUBJECT_STYLE.math.text}>M {t.scores.math.score}/{t.scores.math.max}</span>
-                    <span className={SUBJECT_STYLE.physics.text}>P {t.scores.physics.score}/{t.scores.physics.max}</span>
-                    <span className={SUBJECT_STYLE.chem.text}>C {t.scores.chem.score}/{t.scores.chem.max}</span>
+                    {scoreEntries.map(([key, v]) => {
+                      const found = subjects.find((s) => s.key === key);
+                      const initial = (found?.label || key).slice(0, 1).toUpperCase();
+                      return (
+                        <span key={key} className={getSubjectStyle(key, subjects).text}>
+                          {initial} {v.score}/{v.max}
+                        </span>
+                      );
+                    })}
                     <span className="font-bold text-neutral-100">{totalScore}/{totalMax}</span>
                     <button
                       onClick={() => handleDeleteTest(t.id)}
@@ -2735,7 +2815,7 @@ function PasswordGate({ onUnlock }) {
 
       <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">Restricted Access</h1>
       <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
-        This command center holds personal data. Enter the passcode to continue.
+        This app holds personal data. Enter the passcode to continue.
       </p>
 
       <div className={`relative flex gap-2.5 ${error ? 'animate-shake' : ''}`}>
@@ -2967,7 +3047,7 @@ function TrackerItemsEditor() {
 }
 
 function TimelineEditor() {
-  const { timeline, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const { timeline, subjects, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
   const [items, setItems] = useState(timeline);
   const [dirty, setDirty] = useState(false);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
@@ -3055,7 +3135,7 @@ function TimelineEditor() {
                       <label className={fieldLabel}>Subject</label>
                       <select value={slot.subject || ''} onChange={(e) => patch(i, { subject: e.target.value || undefined })} className={fieldInput}>
                         <option value="">—</option>
-                        {['math', 'physics', 'chem', 'mixed'].map((s) => <option key={s} value={s}>{s}</option>)}
+                        {subjects.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                       </select>
                     </div>
                     <div>
@@ -3309,6 +3389,10 @@ function ProfileEditor() {
           <label className={fieldLabel}>Baseline Score</label>
           <input type="number" value={draft.baseline} onChange={(e) => patch({ baseline: +e.target.value })} className={fieldInput} />
         </div>
+        <div>
+          <label className={fieldLabel}>Target Date (optional)</label>
+          <input type="date" value={draft.targetDate || ''} onChange={(e) => patch({ targetDate: e.target.value })} className={fieldInput} />
+        </div>
       </div>
 
       <div className="flex items-center justify-between mb-2.5">
@@ -3348,6 +3432,193 @@ function ProfileEditor() {
   );
 }
 
+const SUBJECT_COLOR_NAMES = Object.keys(SUBJECT_COLOR_PALETTE);
+
+function SubjectsAndSyllabusEditor() {
+  const { subjects, syllabus, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [localSubjects, setLocalSubjects] = useState(subjects);
+  const [localSyllabus, setLocalSyllabus] = useState(syllabus);
+  const [dirty, setDirty] = useState(false);
+  const [openPhase, setOpenPhase] = useState<number | null>(null);
+
+  useEffect(() => { setLocalSubjects(subjects); setLocalSyllabus(syllabus); setDirty(false); }, [subjects, syllabus]);
+
+  const markDirty = () => setDirty(true);
+
+  // ---- Subjects ----
+  const patchSubject = (key: string, patch: Record<string, any>) => {
+    setLocalSubjects((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+    markDirty();
+  };
+  const addSubject = () => {
+    const key = `subject_${Date.now()}`;
+    const color = SUBJECT_COLOR_NAMES[localSubjects.length % SUBJECT_COLOR_NAMES.length];
+    setLocalSubjects((prev) => [...prev, { key, label: 'New Subject', color }]);
+    // Give the new subject an empty topic list in every existing phase so
+    // it immediately shows up (empty) in the syllabus editor below instead
+    // of silently missing until a phase happens to be re-saved.
+    setLocalSyllabus((prev) => prev.map((p) => ({ ...p, subjects: { ...p.subjects, [key]: [] } })));
+    markDirty();
+  };
+  const removeSubject = (key: string) => {
+    setLocalSubjects((prev) => prev.filter((s) => s.key !== key));
+    setLocalSyllabus((prev) => prev.map((p) => {
+      const { [key]: _drop, ...rest } = p.subjects;
+      return { ...p, subjects: rest };
+    }));
+    markDirty();
+  };
+
+  // ---- Syllabus phases ----
+  const patchPhase = (phaseNum: number, patch: Record<string, any>) => {
+    setLocalSyllabus((prev) => prev.map((p) => (p.phase === phaseNum ? { ...p, ...patch } : p)));
+    markDirty();
+  };
+  const setPhaseTopics = (phaseNum: number, subjectKey: string, rawText: string) => {
+    const topics = rawText.split('\n').map((t) => t.trim()).filter(Boolean);
+    setLocalSyllabus((prev) => prev.map((p) =>
+      p.phase === phaseNum ? { ...p, subjects: { ...p.subjects, [subjectKey]: topics } } : p
+    ));
+    markDirty();
+  };
+  const addPhase = () => {
+    const nextNum = Math.max(0, ...localSyllabus.map((p) => p.phase)) + 1;
+    setLocalSyllabus((prev) => [
+      ...prev,
+      {
+        phase: nextNum,
+        month: 'Month',
+        label: 'New Phase',
+        subjects: Object.fromEntries(localSubjects.map((s) => [s.key, []])),
+      },
+    ]);
+    setOpenPhase(nextNum);
+    markDirty();
+  };
+  const removePhase = (phaseNum: number) => {
+    setLocalSyllabus((prev) => prev.filter((p) => p.phase !== phaseNum));
+    markDirty();
+  };
+
+  const save = () => {
+    if (!localSubjects.length || !localSyllabus.length) return;
+    updateConfig({ subjects: localSubjects, syllabus: localSyllabus });
+    setDirty(false);
+  };
+  const resetBoth = () => {
+    resetConfigSection('subjects');
+    resetConfigSection('syllabus');
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={BookOpen} title="Subjects & Syllabus" subtitle="What you're studying, and the month-by-month roadmap for each subject" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={resetBoth} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+
+      {/* Subjects list */}
+      <div className="mb-6">
+        <label className={fieldLabel}>Subjects</label>
+        <div className="space-y-2">
+          {localSubjects.map((s) => (
+            <div key={s.key} className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${SUBJECT_COLOR_PALETTE[s.color]?.dot || 'bg-neutral-600'}`} />
+              <input
+                value={s.label}
+                onChange={(e) => patchSubject(s.key, { label: e.target.value })}
+                className={`flex-1 ${fieldInput}`}
+              />
+              <select
+                value={s.color}
+                onChange={(e) => patchSubject(s.key, { color: e.target.value })}
+                className={`w-28 shrink-0 ${fieldInput}`}
+              >
+                {SUBJECT_COLOR_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button
+                onClick={() => removeSubject(s.key)}
+                className="cursor-target shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-500 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <RippleButton onClick={addSubject} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
+          <Plus className="h-3.5 w-3.5" /> Add Subject
+        </RippleButton>
+        <p className="mt-2 text-[11px] text-neutral-600 leading-relaxed">
+          A subject with no syllabus content (e.g. a "Mixed / PYQ" catch-all) is fine — it just won't get its own column in the Syllabus Roadmap or a score box in the Mock Test form.
+        </p>
+      </div>
+
+      {/* Syllabus phases */}
+      <div>
+        <label className={fieldLabel}>Syllabus Phases</label>
+        <div className="space-y-2">
+          {localSyllabus.map((p) => {
+            const isOpen = openPhase === p.phase;
+            return (
+              <div key={p.phase} className="rounded-lg border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+                <button onClick={() => setOpenPhase(isOpen ? null : p.phase)} className="cursor-target w-full flex items-center gap-3 px-3.5 py-2.5 text-left">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-neutral-800 text-[11px] font-semibold text-neutral-300">{p.phase}</span>
+                  <span className="text-[12.5px] text-neutral-200 flex-1 truncate">{p.month} — {p.label}</span>
+                  <ChevronRight className={`h-3.5 w-3.5 text-neutral-600 transition-transform shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {isOpen && (
+                  <div className="px-3.5 pb-3.5 pt-1 space-y-2.5 border-t border-neutral-800/60">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className={fieldLabel}>Month</label>
+                        <input value={p.month} onChange={(e) => patchPhase(p.phase, { month: e.target.value })} className={fieldInput} />
+                      </div>
+                      <div>
+                        <label className={fieldLabel}>Label</label>
+                        <input value={p.label} onChange={(e) => patchPhase(p.phase, { label: e.target.value })} className={fieldInput} />
+                      </div>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-2.5">
+                      {localSubjects.map((s) => (
+                        <div key={s.key}>
+                          <label className={fieldLabel}>{s.label} topics (one per line)</label>
+                          <textarea
+                            value={(p.subjects[s.key] || []).join('\n')}
+                            onChange={(e) => setPhaseTopics(p.phase, s.key, e.target.value)}
+                            rows={4}
+                            className={`${fieldInput} resize-none font-mono`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <RippleButton
+                      onClick={() => removePhase(p.phase)}
+                      className="cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-[11.5px] font-semibold text-neutral-400 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Remove Phase
+                    </RippleButton>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <RippleButton onClick={addPhase} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
+          <Plus className="h-3.5 w-3.5" /> Add Phase
+        </RippleButton>
+      </div>
+    </Card>
+  );
+}
+
 function ConfigEditorTab() {
   return (
     <div className="space-y-5 animate-fadeIn">
@@ -3356,6 +3627,7 @@ function ConfigEditorTab() {
       <TrackerItemsEditor />
       <TimelineEditor />
       <TrainingEditor />
+      <SubjectsAndSyllabusEditor />
     </div>
   );
 }
@@ -3366,6 +3638,21 @@ export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
   useCloudAutoSync(unlocked);
   const [introDone, setIntroDone] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(() => {
+    try {
+      if (localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true') return true;
+      // Backward compatibility: anyone who already has a saved config from
+      // before this wizard existed has clearly already set things up their
+      // own way — don't interrupt them with onboarding retroactively.
+      if (localStorage.getItem(CONFIG_STORAGE_KEY)) {
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  });
   const [activeTab, setActiveTab] = useState('overview');
   const [menuOpen, setMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -3450,7 +3737,7 @@ export default function JEEDashboard() {
     setConfig((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile') => {
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus') => {
     setConfig((prev) => ({
       ...prev,
       [key]: key === 'timeline'
@@ -3459,6 +3746,10 @@ export default function JEEDashboard() {
         ? DEFAULT_TRAINING
         : key === 'profile'
         ? DEFAULT_PROFILE
+        : key === 'subjects'
+        ? DEFAULT_SUBJECTS
+        : key === 'syllabus'
+        ? DEFAULT_SYLLABUS
         : DEFAULT_TRACKER_ITEMS,
     }));
   };
@@ -3671,6 +3962,22 @@ export default function JEEDashboard() {
     return <AuthGate onUnlock={() => setUnlocked(true)} />;
   }
 
+  if (!onboardingDone) {
+    return (
+      <OnboardingWizard
+        onComplete={(generated) => {
+          updateConfig(generated);
+          try {
+            localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+          } catch (e) {
+            console.error('[Onboarding] failed to persist completion flag', e);
+          }
+          setOnboardingDone(true);
+        }}
+      />
+    );
+  }
+
   const renderTab = () => {
     switch (activeTab) {
       case 'overview': return <OverviewTab setModal={setModal} />;
@@ -3699,6 +4006,8 @@ export default function JEEDashboard() {
         timeline: config.timeline,
         training: config.training,
         profile: config.profile,
+        subjects: config.subjects,
+        syllabus: config.syllabus,
         updateConfig,
         resetConfigSection,
       }}
@@ -4119,6 +4428,7 @@ function LiveClockView() {
 }
 
 function PomodoroView({ onSessionComplete }) {
+  const { subjects } = React.useContext(ConfigContext);
   const [focusMinutes, setFocusMinutes] = useState<number>(() => {
     const saved = localStorage.getItem('ash_clock_focus_min');
     return saved ? parseInt(saved, 10) : DEFAULT_FOCUS_MIN;
@@ -4128,7 +4438,7 @@ function PomodoroView({ onSessionComplete }) {
     return saved ? parseInt(saved, 10) : DEFAULT_BREAK_MIN;
   });
 
-  const [subject, setSubject] = useState<string>(() => localStorage.getItem('ash_clock_last_subject') || 'math');
+  const [subject, setSubject] = useState<string>(() => localStorage.getItem('ash_clock_last_subject') || subjects[0]?.key || 'math');
   useEffect(() => { localStorage.setItem('ash_clock_last_subject', subject); }, [subject]);
 
   const [sessionType, setSessionType] = useState<'focus' | 'break'>('focus');
@@ -4335,14 +4645,14 @@ function PomodoroView({ onSessionComplete }) {
 
       {/* Subject tag — which gate is this? */}
       <div className="flex items-center gap-1.5 mb-4 flex-wrap justify-center">
-        {POMODORO_SUBJECTS.map((s) => (
+        {subjects.map((s) => (
           <RippleButton
             key={s.key}
             onClick={() => !isRunning && setSubject(s.key)}
             disabled={isRunning}
             className={`cursor-target rounded-full px-3 py-1 text-[10.5px] font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
               subject === s.key
-                ? `${SUBJECT_STYLE[s.key].bg} ${SUBJECT_STYLE[s.key].text} ${SUBJECT_STYLE[s.key].border}`
+                ? `${getSubjectStyle(s.key, subjects).bg} ${getSubjectStyle(s.key, subjects).text} ${getSubjectStyle(s.key, subjects).border}`
                 : 'bg-neutral-900/60 text-neutral-500 border-neutral-800 hover:text-neutral-300'
             }`}
           >
@@ -4450,12 +4760,12 @@ function PomodoroView({ onSessionComplete }) {
   );
 }
 
-function PomodoroSubjectStats({ log }) {
+function PomodoroSubjectStats({ log, subjects }) {
   const todayStr = getLocalDateString();
 
   const totals = useMemo(() => {
-    const all: Record<string, number> = { math: 0, physics: 0, chem: 0, mixed: 0 };
-    const today: Record<string, number> = { math: 0, physics: 0, chem: 0, mixed: 0 };
+    const all: Record<string, number> = {};
+    const today: Record<string, number> = {};
     log.forEach((entry: any) => {
       all[entry.subject] = (all[entry.subject] || 0) + entry.minutes;
       if (entry.date === todayStr) today[entry.subject] = (today[entry.subject] || 0) + entry.minutes;
@@ -4465,7 +4775,17 @@ function PomodoroSubjectStats({ log }) {
   }, [log]);
 
   const grandTotal: number = Object.values(totals.all).reduce((a: number, b: number) => a + b, 0);
-  const maxSubjectMinutes = Math.max(1, ...Object.values(totals.all));
+  const maxSubjectMinutes = Math.max(1, ...Object.values(totals.all).length ? Object.values(totals.all) : [0]);
+
+  // Show every subject the user has ever logged time against, even if it's
+  // since been removed from config.subjects (their history shouldn't vanish),
+  // union'd with the current subject list (so a brand new subject with 0
+  // minutes still shows a bar at 0).
+  const displaySubjects = useMemo(() => {
+    const known = new Map(subjects.map((s: any) => [s.key, s]));
+    const keys = new Set([...subjects.map((s: any) => s.key), ...Object.keys(totals.all)]);
+    return Array.from(keys).map((key) => known.get(key) || { key, label: key });
+  }, [subjects, totals.all]);
 
   const formatHrs = (mins: number) => {
     if (mins === 0) return '0m';
@@ -4487,20 +4807,21 @@ function PomodoroSubjectStats({ log }) {
         </p>
       ) : (
         <div className="space-y-3 mt-4">
-          {POMODORO_SUBJECTS.map((s) => {
+          {displaySubjects.map((s: any) => {
+            const style = getSubjectStyle(s.key, subjects);
             const allMin = totals.all[s.key] || 0;
             const todayMin = totals.today[s.key] || 0;
             const pct = (allMin / maxSubjectMinutes) * 100;
             return (
               <div key={s.key}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className={`text-[12px] font-semibold ${SUBJECT_STYLE[s.key].text}`}>{s.label}</span>
+                  <span className={`text-[12px] font-semibold ${style.text}`}>{s.label}</span>
                   <span className="text-[11.5px] text-neutral-400 tabular-nums">
                     {formatHrs(allMin)} total{todayMin > 0 ? ` · ${formatHrs(todayMin)} today` : ''}
                   </span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-neutral-900 overflow-hidden">
-                  <div className={`h-full rounded-full ${SUBJECT_STYLE[s.key].dot}`} style={{ width: `${pct}%` }} />
+                  <div className={`h-full rounded-full ${style.dot}`} style={{ width: `${pct}%` }} />
                 </div>
               </div>
             );
@@ -4512,6 +4833,7 @@ function PomodoroSubjectStats({ log }) {
 }
 
 function AshClockTab() {
+  const { subjects } = React.useContext(ConfigContext);
   const [mode, setMode] = useState<'clock' | 'pomodoro' | 'alarm'>('clock');
 
   const [pomodoroLog, setPomodoroLog] = useState<any[]>(() => {
@@ -4591,7 +4913,7 @@ function AshClockTab() {
         </div>
       </div>
 
-      {mode === 'pomodoro' && <PomodoroSubjectStats log={pomodoroLog} />}
+      {mode === 'pomodoro' && <PomodoroSubjectStats log={pomodoroLog} subjects={subjects} />}
     </div>
   );
 }
