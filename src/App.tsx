@@ -5089,7 +5089,7 @@ export default function JEEDashboard() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } ${sidebarExpanded ? 'lg:w-[240px]' : 'lg:w-[68px]'}`}
       >
-        <div className={`flex items-center gap-2.5 px-4 pt-5 pb-4 ${!sidebarExpanded ? 'lg:justify-center lg:px-0' : ''}`}>
+        <div className={`flex items-center gap-2.5 px-4 pt-5 pb-4 ${!sidebarExpanded ? 'lg:justify-center lg:gap-0 lg:px-0' : ''}`}>
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-md shadow-violet-500/20">
             <GraduationCap className="h-4 w-4 text-neutral-950" strokeWidth={2} />
           </div>
