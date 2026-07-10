@@ -2616,7 +2616,7 @@ function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }) {
       <WeightTrackerCard />
 
       <div>
-        <SectionHeading icon={Flame} title="V-Taper Fuel Matrix" subtitle="Meals, targets & icons — fully editable in Settings → Training & Fuel" />
+        <SectionHeading icon={Flame} title="Fuel Matrix" subtitle="Meals, targets & icons" />
         <div className="mb-4 flex flex-wrap gap-2.5">
           <StatPill icon={Flame} label="Calorie Target" value={dietValues.calories} accent="amber" />
           <StatPill icon={Activity} label="Protein Target" value={dietValues.protein} accent="violet" />
