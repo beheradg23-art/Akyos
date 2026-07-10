@@ -341,7 +341,7 @@ function computeDietAutoValues(meals: DietMeal[], profileWeightKg?: number): Rec
   return {
     calories: hasAnyFood ? `~${calRounded} kcal` : 'Add meals below to auto-estimate',
     protein: hasAnyFood ? `~${proteinRounded}g protein` : 'Add meals below to auto-estimate',
-    hydration: `~${totalL.toFixed(1)}L water/day${dietLiquidL > 0.05 ? ` · incl. ~${dietLiquidL.toFixed(1)}L from meals` : ''}`,
+    hydration: `~${totalL.toFixed(1)}L water/day`,
   };
 }
 
