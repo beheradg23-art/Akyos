@@ -473,10 +473,10 @@ const DEFAULT_TRAINING = [
 // class strings), not a raw class, since Tailwind can't resolve dynamically
 // built class names like `text-${color}-400`.
 const DEFAULT_SUBJECTS = [
-  { key: 'math', label: 'Mathematics', color: 'sky' },
-  { key: 'physics', label: 'Physics', color: 'violet' },
-  { key: 'chem', label: 'Chemistry', color: 'fuchsia' },
-  { key: 'mixed', label: 'Mixed / PYQ', color: 'amber' },
+  { key: 'math', label: 'Mathematics', color: 'sky', inMockTest: true },
+  { key: 'physics', label: 'Physics', color: 'violet', inMockTest: true },
+  { key: 'chem', label: 'Chemistry', color: 'fuchsia', inMockTest: true },
+  { key: 'mixed', label: 'Mixed / PYQ', color: 'amber', inMockTest: false },
 ];
 
 const DEFAULT_SYLLABUS = [
@@ -502,7 +502,22 @@ const DEFAULT_SYLLABUS = [
   }},
 ];
 
-// ---------- Spaced-Repetition Revision Tracking ----------
+// A subject's presence in the Mock Test Tracker form used to be inferred
+// silently from whether it had any syllabus content anywhere (a catch-all
+// like "Mixed / PYQ" has none, so it never got a score box). That's now an
+// explicit, user-editable `inMockTest` flag on each subject (see Settings >
+// Subjects & Syllabus). For subjects saved before this flag existed, fall
+// back to that same syllabus-content inference so existing setups don't
+// change until the person actually touches the new toggle.
+function hydrateSubjects(rawSubjects: any, syllabusForInference: any[]): any[] {
+  const list = Array.isArray(rawSubjects) && rawSubjects.length ? rawSubjects : DEFAULT_SUBJECTS;
+  return list.map((s: any) => ({
+    ...s,
+    inMockTest: typeof s.inMockTest === 'boolean'
+      ? s.inMockTest
+      : syllabusForInference.some((p: any) => Array.isArray(p?.subjects?.[s.key])),
+  }));
+}
 // The syllabus roadmap shows *what* to study, but nothing previously tracked
 // *when a topic was last revisited* — the actual mechanism behind forgetting
 // month-1 material by month-4. This gives every topic a "last revised" stamp
@@ -690,7 +705,7 @@ function deserializeConfig(raw: any) {
     training: Array.isArray(raw?.training) && raw.training.length ? raw.training : DEFAULT_TRAINING,
     timeline: Array.isArray(raw?.timeline) && raw.timeline.length ? hydrateTimeline(raw.timeline) : hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
     profile: raw?.profile && typeof raw.profile === 'object' ? { ...DEFAULT_PROFILE, ...raw.profile } : DEFAULT_PROFILE,
-    subjects: Array.isArray(raw?.subjects) && raw.subjects.length ? raw.subjects : DEFAULT_SUBJECTS,
+    subjects: hydrateSubjects(raw?.subjects, Array.isArray(raw?.syllabus) && raw.syllabus.length ? raw.syllabus : DEFAULT_SYLLABUS),
     syllabus: Array.isArray(raw?.syllabus) && raw.syllabus.length ? raw.syllabus : DEFAULT_SYLLABUS,
     countdowns: Array.isArray(raw?.countdowns)
       ? raw.countdowns.map((cd: any, i: number) => hydrateCountdown(cd, i))
@@ -3241,10 +3256,11 @@ function ScoreTrendChart({ tests, subjects }) {
 function MockTestTab() {
   const { subjects, syllabus } = React.useContext(ConfigContext);
   // Subjects worth putting a score box in the test-log form are the ones
-  // that actually have syllabus content (skips a catch-all like 'mixed').
+  // explicitly marked "in Mock Tests" in Settings > Subjects & Syllabus
+  // (default true; undefined only for malformed/very old data).
   const scorableSubjects = useMemo(
-    () => subjects.filter((s) => syllabus.some((p) => Array.isArray(p.subjects[s.key]))),
-    [subjects, syllabus]
+    () => subjects.filter((s) => s.inMockTest !== false),
+    [subjects]
   );
 
   const [tests, setTests] = useState<any[]>(() => {
@@ -4670,7 +4686,7 @@ function SubjectsAndSyllabusEditor() {
   const addSubject = () => {
     const key = `subject_${Date.now()}`;
     const color = SUBJECT_COLOR_NAMES[localSubjects.length % SUBJECT_COLOR_NAMES.length];
-    setLocalSubjects((prev) => [...prev, { key, label: 'New Subject', color }]);
+    setLocalSubjects((prev) => [...prev, { key, label: 'New Subject', color, inMockTest: true }]);
     // Give the new subject an empty topic list in every existing phase so
     // it immediately shows up (empty) in the syllabus editor below instead
     // of silently missing until a phase happens to be re-saved.
@@ -4762,6 +4778,19 @@ function SubjectsAndSyllabusEditor() {
                 {SUBJECT_COLOR_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
               <button
+                type="button"
+                onClick={() => patchSubject(s.key, { inMockTest: !(s.inMockTest !== false) })}
+                title={s.inMockTest !== false ? 'Shows a score box in the Mock Test Tracker — click to remove' : 'Hidden from the Mock Test Tracker — click to include'}
+                className={`cursor-target shrink-0 flex items-center gap-1.5 rounded-lg border px-2.5 h-8 text-[11px] font-medium transition-colors ${
+                  s.inMockTest !== false
+                    ? 'border-violet-500/30 bg-violet-500/[0.08] text-violet-300'
+                    : 'border-neutral-800 bg-neutral-900 text-neutral-500 hover:text-neutral-300 hover:border-neutral-700'
+                }`}
+              >
+                <ClipboardList className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span className="hidden sm:inline">Mock Test</span>
+              </button>
+              <button
                 onClick={() => removeSubject(s.key)}
                 className="cursor-target shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 bg-neutral-900 text-neutral-500 hover:text-rose-400 hover:border-rose-500/30 transition-colors"
               >
@@ -4774,7 +4803,7 @@ function SubjectsAndSyllabusEditor() {
           <Plus className="h-3.5 w-3.5" /> Add Subject
         </RippleButton>
         <p className="mt-2 text-[11px] text-neutral-600 leading-relaxed">
-          A subject with no syllabus content (e.g. a "Mixed / PYQ" catch-all) is fine — it just won't get its own column in the Syllabus Roadmap or a score box in the Mock Test form.
+          The <span className="text-violet-300 font-medium">Mock Test</span> toggle controls whether a subject gets its own score box in the Mock Test Tracker form — turn it off for a catch-all like "Mixed / PYQ", or for any subject you'd rather not log per-test scores for. It's independent of syllabus content, and it never affects the subject's own column in the Syllabus Roadmap above.
         </p>
       </div>
 
