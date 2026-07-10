@@ -90,13 +90,20 @@ const DEFAULT_PROFILE = {
   baseline: 0,
   baselineLabel: 'Baseline Score',
   boards: 0,
-  // Optional, user-set — drives the Overview tab's countdown widget. Left
-  // empty by default rather than defaulting to any real date; a countdown
-  // to nothing isn't shown (see CountdownMatrix).
-  targetDate: '',
   targets: [
     { rank: 1, name: 'Add your first target', course: 'Course / program', tag: 'Top Priority', color: 'blue', desc: 'Edit this in Settings > Profile & Goals — describe what you\'re aiming for and why it matters.' },
   ],
+};
+
+// A standalone personal countdown — deliberately NOT tied to `profile.targets`.
+// Someone might want a live countdown to, say, JEE Main's actual exam date
+// without that date needing to exist as one of their formal priority targets.
+// Fully editable in Settings > Countdown; empty by default so nothing is
+// fabricated until the user sets it themselves.
+const DEFAULT_COUNTDOWN = {
+  label: '',
+  targetDate: '', // 'YYYY-MM-DD'
+  targetTime: '00:00', // 'HH:MM', 24h — defaults to midnight of targetDate
 };
 
 const DEFAULT_TIMELINE = [
@@ -280,7 +287,7 @@ function hydrateTimeline(rawList: any[]): any[] {
   }));
 }
 
-function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[] }) {
+function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdown: any }) {
   return {
     trackerItems: config.trackerItems,
     training: config.training,
@@ -288,10 +295,20 @@ function serializeConfig(config: { trackerItems: any[]; timeline: any[]; trainin
     profile: config.profile,
     subjects: config.subjects,
     syllabus: config.syllabus,
+    countdown: config.countdown,
   };
 }
 
 function deserializeConfig(raw: any) {
+  // One-time migration: earlier versions stored the countdown target date on
+  // `profile.targetDate`. If someone already set that and hasn't got a
+  // `countdown` section yet, carry it over so they don't lose it — but from
+  // here on the two are fully independent.
+  const legacyProfileTargetDate = typeof raw?.profile?.targetDate === 'string' ? raw.profile.targetDate : '';
+  const migratedCountdown = !raw?.countdown && legacyProfileTargetDate
+    ? { ...DEFAULT_COUNTDOWN, targetDate: legacyProfileTargetDate, label: raw?.profile?.targets?.[0]?.name || raw?.profile?.goalLabel || '' }
+    : DEFAULT_COUNTDOWN;
+
   return {
     trackerItems: Array.isArray(raw?.trackerItems) && raw.trackerItems.length ? raw.trackerItems : DEFAULT_TRACKER_ITEMS,
     training: Array.isArray(raw?.training) && raw.training.length ? raw.training : DEFAULT_TRAINING,
@@ -299,6 +316,7 @@ function deserializeConfig(raw: any) {
     profile: raw?.profile && typeof raw.profile === 'object' ? { ...DEFAULT_PROFILE, ...raw.profile } : DEFAULT_PROFILE,
     subjects: Array.isArray(raw?.subjects) && raw.subjects.length ? raw.subjects : DEFAULT_SUBJECTS,
     syllabus: Array.isArray(raw?.syllabus) && raw.syllabus.length ? raw.syllabus : DEFAULT_SYLLABUS,
+    countdown: raw?.countdown && typeof raw.countdown === 'object' ? { ...DEFAULT_COUNTDOWN, ...raw.countdown } : migratedCountdown,
   };
 }
 
@@ -311,8 +329,9 @@ const ConfigContext = React.createContext<{
   profile: any;
   subjects: any[];
   syllabus: any[];
+  countdown: any;
   updateConfig: (partial: Record<string, any>) => void;
-  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus') => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdown') => void;
 }>({
   trackerItems: DEFAULT_TRACKER_ITEMS,
   timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
@@ -320,6 +339,7 @@ const ConfigContext = React.createContext<{
   profile: DEFAULT_PROFILE,
   subjects: DEFAULT_SUBJECTS,
   syllabus: DEFAULT_SYLLABUS,
+  countdown: DEFAULT_COUNTDOWN,
   updateConfig: () => {},
   resetConfigSection: () => {},
 });
@@ -429,14 +449,33 @@ const getDayName = (dateStr) => {
   return date.toLocaleDateString('en-US', { weekday: 'long' });
 };
 
-const getDeadlineCountdown = (targetDateStr) => {
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const target = new Date(targetDateStr + 'T00:00:00');
-  const diffTime = target - today;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays > 0 ? diffDays : 0;
-};
+const pad2 = (n: number) => String(Math.max(0, n)).padStart(2, '0');
+
+// Precise, ticking countdown to an exact date+time (not just a day count).
+// >= 24h remaining  -> "DD:HH:MM" (days:hours:minutes)
+// <  24h remaining  -> "HH:MM:SS" (hours:minutes:seconds), ticks live
+function getPreciseCountdown(targetDateStr: string, targetTimeStr: string, nowMs: number) {
+  const time = /^\d{2}:\d{2}$/.test(targetTimeStr || '') ? targetTimeStr : '00:00';
+  const targetMs = new Date(`${targetDateStr}T${time}:00`).getTime();
+  const diffMs = targetMs - nowMs;
+
+  if (!targetDateStr || Number.isNaN(targetMs)) return null;
+
+  if (diffMs <= 0) {
+    return { expired: true, mode: 'hms' as const, text: '00:00:00', days: 0, hours: 0, minutes: 0, seconds: 0 };
+  }
+
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (diffMs >= 24 * 60 * 60 * 1000) {
+    return { expired: false, mode: 'dhm' as const, text: `${pad2(days)}:${pad2(hours)}:${pad2(minutes)}`, days, hours, minutes, seconds };
+  }
+  return { expired: false, mode: 'hms' as const, text: `${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}`, days, hours, minutes, seconds };
+}
 
 // ---------- Fluid Interaction Engine ----------
 // Dependency-free primitives that give every tap/click a soft expanding
@@ -890,48 +929,59 @@ function StatPill({ icon: Icon, label, value, accent = 'neutral' }) {
 
 // Was hardcoded to two fixed JEE-specific dates ('2026-11-01' mocks,
 // '2027-01-22' JEE Main) shown to every account regardless of their actual
-// goal. Now driven entirely by the user's own profile: `targetDate` (set
-// during onboarding or in Settings > Profile & Goals) and `goalLabel`/
-// `targets[0].name` for the label. If no target date has been set, this
-// shows a prompt to set one rather than fabricating a countdown to a date
-// that isn't theirs.
+// goal, then briefly tied to `profile.targetDate`. Now fully standalone —
+// driven by its own `countdown` config section (Settings > Countdown),
+// deliberately independent of `profile.targets` so someone can track a date
+// that isn't one of their formal priority targets. Ticks live: shows
+// "DD:HH:MM" while more than a day remains, and switches to a live
+// second-by-second "HH:MM:SS" once under 24 hours remain.
 function CountdownMatrix() {
-  const { profile } = React.useContext(ConfigContext);
-  const targetDate: string = profile?.targetDate || '';
-  const daysLeft = useMemo(() => (targetDate ? getDeadlineCountdown(targetDate) : null), [targetDate]);
-  const label = profile?.targets?.[0]?.name || profile?.goalLabel || 'Your Goal';
+  const { countdown } = React.useContext(ConfigContext);
+  const targetDate: string = countdown?.targetDate || '';
+  const targetTime: string = countdown?.targetTime || '00:00';
+  const label = countdown?.label || 'Your Countdown';
 
-  if (!targetDate || daysLeft === null) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!targetDate) return;
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [targetDate, targetTime]);
+
+  const result = useMemo(
+    () => (targetDate ? getPreciseCountdown(targetDate, targetTime, nowMs) : null),
+    [targetDate, targetTime, nowMs]
+  );
+
+  if (!targetDate || !result) {
     return (
       <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
         <SectionHeading icon={Target} title="Countdown" subtitle="Set a target date to see it here" />
         <p className="text-[12.5px] text-neutral-500">
-          Add a target date in <span className="text-neutral-300 font-medium">Settings &gt; Profile &amp; Goals</span> to track days remaining toward it.
+          Set one up in <span className="text-neutral-300 font-medium">Settings &gt; Countdown</span> to track live time remaining toward it.
         </p>
       </Card>
     );
   }
 
-  // A rough total-span estimate purely for the progress bar fill — the bar
-  // is decorative feedback, not a precise measure, so a fixed reasonable
-  // window (6 months) is fine regardless of what the actual goal is.
-  const totalSpanDays = 180;
+  const unitLabels = result.mode === 'dhm' ? 'DAYS : HRS : MINS' : 'HRS : MINS : SECS';
 
   return (
     <Card className="border border-neutral-800/80 bg-gradient-to-br from-neutral-900/90 to-neutral-950/40">
-      <SectionHeading icon={Target} title="Countdown" subtitle="Days remaining toward your target" />
+      <SectionHeading icon={Target} title="Countdown" subtitle={result.expired ? 'Target reached' : 'Time remaining toward your target'} />
       <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.02] p-4 flex flex-col justify-between">
         <div>
           <div className="text-[10px] uppercase font-bold tracking-widest text-sky-400/80 mb-1">Target</div>
           <div className="text-[14px] font-semibold text-neutral-200 truncate">{label}</div>
         </div>
-        <div className="mt-4 flex items-baseline gap-2">
-          <span className="text-3xl font-bold text-sky-400 font-mono tracking-tight">{Math.max(0, daysLeft)}</span>
-          <span className="text-xs text-neutral-500 font-medium">Days remaining</span>
+        <div className="mt-4">
+          <span className={`text-3xl font-bold font-mono tracking-tight tabular-nums ${result.expired ? 'text-neutral-500' : 'text-sky-400'}`}>
+            {result.text}
+          </span>
         </div>
-        <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-          <div className="h-full bg-sky-500/60 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (daysLeft / totalSpanDays) * 100))}%` }} />
-        </div>
+        <div className="mt-1 text-[10px] tracking-widest text-neutral-600 font-medium">{result.expired ? 'ARRIVED' : unitLabels}</div>
       </div>
     </Card>
   );
@@ -3389,10 +3439,6 @@ function ProfileEditor() {
           <label className={fieldLabel}>Baseline Score</label>
           <input type="number" value={draft.baseline} onChange={(e) => patch({ baseline: +e.target.value })} className={fieldInput} />
         </div>
-        <div>
-          <label className={fieldLabel}>Target Date (optional)</label>
-          <input type="date" value={draft.targetDate || ''} onChange={(e) => patch({ targetDate: e.target.value })} className={fieldInput} />
-        </div>
       </div>
 
       <div className="flex items-center justify-between mb-2.5">
@@ -3428,6 +3474,69 @@ function ProfileEditor() {
       <RippleButton onClick={addTarget} className="cursor-target mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-neutral-700 px-3 py-2 text-[12px] font-medium text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors">
         <Plus className="h-3.5 w-3.5" /> Add Target
       </RippleButton>
+    </Card>
+  );
+}
+
+// Standalone Countdown config — deliberately separate from ProfileEditor /
+// Priority Targets above. A person can point this at any date+time they
+// care about (e.g. the actual JEE Main exam date) without it needing to be
+// one of their formal targets.
+function CountdownEditor() {
+  const { countdown, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [draft, setDraft] = useState(countdown);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { setDraft(countdown); setDirty(false); }, [countdown]);
+
+  const patch = (patchObj: Record<string, any>) => {
+    setDraft((prev: any) => ({ ...prev, ...patchObj }));
+    setDirty(true);
+  };
+  const save = () => {
+    updateConfig({ countdown: draft });
+    setDirty(false);
+  };
+  const clear = () => {
+    patch({ label: '', targetDate: '', targetTime: '00:00' });
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={Clock3} title="Countdown" subtitle="A personal countdown for the Overview tab — independent of your Priority Targets" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('countdown'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-2.5 mb-2">
+        <div className="sm:col-span-2">
+          <label className={fieldLabel}>Label</label>
+          <input value={draft.label} onChange={(e) => patch({ label: e.target.value })} placeholder="e.g. JEE Main, Boards Exam, Interview Day" className={fieldInput} />
+        </div>
+        <div>
+          <label className={fieldLabel}>Target Date</label>
+          <input type="date" value={draft.targetDate || ''} onChange={(e) => patch({ targetDate: e.target.value })} className={fieldInput} />
+        </div>
+        <div>
+          <label className={fieldLabel}>Target Time</label>
+          <input type="time" value={draft.targetTime || '00:00'} onChange={(e) => patch({ targetTime: e.target.value })} className={fieldInput} />
+        </div>
+      </div>
+      <p className="text-[11.5px] text-neutral-600 mb-2">
+        Shows on the Overview tab as <span className="text-neutral-400 font-medium">DD:HH:MM</span> while more than a day remains, switching to a live <span className="text-neutral-400 font-medium">HH:MM:SS</span> once under 24 hours are left.
+      </p>
+      {draft.targetDate && (
+        <button onClick={clear} className="cursor-target text-[11.5px] text-neutral-500 hover:text-rose-400 transition-colors underline decoration-dotted underline-offset-2">
+          Clear countdown
+        </button>
+      )}
     </Card>
   );
 }
@@ -3624,6 +3733,7 @@ function ConfigEditorTab() {
     <div className="space-y-5 animate-fadeIn">
       <SectionHeading icon={Settings} title="Settings" subtitle="Every part of the app is editable here — changes apply everywhere instantly, no code required" />
       <ProfileEditor />
+      <CountdownEditor />
       <TrackerItemsEditor />
       <TimelineEditor />
       <TrainingEditor />
@@ -3737,7 +3847,7 @@ export default function JEEDashboard() {
     setConfig((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus') => {
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdown') => {
     setConfig((prev) => ({
       ...prev,
       [key]: key === 'timeline'
@@ -3750,6 +3860,8 @@ export default function JEEDashboard() {
         ? DEFAULT_SUBJECTS
         : key === 'syllabus'
         ? DEFAULT_SYLLABUS
+        : key === 'countdown'
+        ? DEFAULT_COUNTDOWN
         : DEFAULT_TRACKER_ITEMS,
     }));
   };
@@ -4008,6 +4120,7 @@ export default function JEEDashboard() {
         profile: config.profile,
         subjects: config.subjects,
         syllabus: config.syllabus,
+        countdown: config.countdown,
         updateConfig,
         resetConfigSection,
       }}
