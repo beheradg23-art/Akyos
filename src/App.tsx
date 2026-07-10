@@ -632,7 +632,7 @@ function hydrateDiet(rawList: any): DietMeal[] {
   });
 }
 
-function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[]; overviewOverrides: Record<OverviewOverrideKey, string>; diet: DietMeal[]; dietOverrides: Record<DietOverrideKey, string>; tabLabels: Record<TabLabelKey, string> }) {
+function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[]; overviewOverrides: Record<OverviewOverrideKey, string>; diet: DietMeal[]; dietOverrides: Record<DietOverrideKey, string>; tabLabels: Record<TabLabelKey, string>; tabIcons: Record<TabLabelKey, string>; sectionLabels: Record<string, { label: string; icon: string }> }) {
   return {
     trackerItems: config.trackerItems,
     training: config.training,
@@ -645,6 +645,8 @@ function serializeConfig(config: { trackerItems: any[]; timeline: any[]; trainin
     diet: config.diet.map(({ icon, ...rest }) => rest),
     dietOverrides: config.dietOverrides,
     tabLabels: config.tabLabels,
+    tabIcons: config.tabIcons,
+    sectionLabels: config.sectionLabels,
   };
 }
 
@@ -697,16 +699,59 @@ function deserializeConfig(raw: any) {
     diet: hydrateDiet(raw?.diet),
     dietOverrides: hydrateDietOverrides(raw?.dietOverrides),
     tabLabels: hydrateTabLabels(raw?.tabLabels),
+    tabIcons: hydrateTabIcons(raw?.tabIcons),
+    sectionLabels: hydrateSectionLabels(raw?.sectionLabels),
   };
 }
 
 const CONFIG_STORAGE_KEY = 'app_config_v1';
 
-// Tab names shown in the sidebar are user-editable (Settings > Tab Names),
-// same "auto unless overridden" convention as OverviewOverrideKey above.
-// Keyed by every sidebar destination — the 7 TABS entries (defined further
-// below) plus the two pinned Settings/Account buttons, which aren't in TABS
-// since they're rendered separately at the bottom of the rail.
+// Shared icon palette for every "pick an icon" control in Settings — both
+// the sidebar Tab Names & Icons editor and any per-tab sub-section editor
+// (e.g. Dashboard Overview's cards) draw from this same set, referenced by
+// a short string key so it can be stored in localStorage/JSON safely
+// (React components can't be serialized, so we never store the icon itself).
+const ICON_OPTIONS: Record<string, any> = {
+  layoutGrid: LayoutGrid,
+  clock3: Clock3,
+  dumbbell: Dumbbell,
+  bookOpen: BookOpen,
+  clipboardList: ClipboardList,
+  timer: Timer,
+  calendar: Calendar,
+  settings: Settings,
+  userCircle2: UserCircle2,
+  target: Target,
+  graduationCap: GraduationCap,
+  flame: Flame,
+  activity: Activity,
+  trendingUp: TrendingUp,
+  sparkles: Sparkles,
+  crown: Crown,
+  swords: Swords,
+  shieldCheck: ShieldCheck,
+  barChart3: BarChart3,
+  music2: Music2,
+  bell: Bell,
+  checkCircle2: CheckCircle2,
+  sun: Sun,
+  moon: Moon,
+  utensils: Utensils,
+  droplets: Droplets,
+  ruler: Ruler,
+  weight: Weight,
+  smile: Smile,
+  eye: Eye,
+};
+
+const ICON_OPTION_KEYS = Object.keys(ICON_OPTIONS);
+
+// Tab names AND icons shown in the sidebar are user-editable (Settings >
+// Tab Names & Icons), same "auto unless overridden" convention as
+// OverviewOverrideKey above. Keyed by every sidebar destination — the 7
+// TABS entries (defined further below) plus the two pinned Settings/Account
+// buttons, which aren't in TABS since they're rendered separately at the
+// bottom of the rail.
 type TabLabelKey = 'overview' | 'timeline' | 'training' | 'syllabus' | 'mocktests' | 'ashclock' | 'history' | 'settings' | 'account';
 
 const TAB_LABEL_KEYS: TabLabelKey[] = ['overview', 'timeline', 'training', 'syllabus', 'mocktests', 'ashclock', 'history', 'settings', 'account'];
@@ -723,12 +768,66 @@ const DEFAULT_TAB_LABELS: Record<TabLabelKey, string> = {
   account: 'Account',
 };
 
+// Matches each tab's shipped icon (see TABS below, and the pinned
+// Settings/Account buttons in the sidebar).
+const DEFAULT_TAB_ICONS: Record<TabLabelKey, string> = {
+  overview: 'layoutGrid',
+  timeline: 'clock3',
+  training: 'dumbbell',
+  syllabus: 'bookOpen',
+  mocktests: 'clipboardList',
+  ashclock: 'timer',
+  history: 'calendar',
+  settings: 'settings',
+  account: 'userCircle2',
+};
+
 function hydrateTabLabels(raw: any): Record<TabLabelKey, string> {
   const out = { ...DEFAULT_TAB_LABELS };
   if (raw && typeof raw === 'object') {
     for (const k of TAB_LABEL_KEYS) {
       if (typeof raw[k] === 'string' && raw[k].trim()) out[k] = raw[k];
     }
+  }
+  return out;
+}
+
+function hydrateTabIcons(raw: any): Record<TabLabelKey, string> {
+  const out = { ...DEFAULT_TAB_ICONS };
+  if (raw && typeof raw === 'object') {
+    for (const k of TAB_LABEL_KEYS) {
+      if (typeof raw[k] === 'string' && ICON_OPTIONS[raw[k]]) out[k] = raw[k];
+    }
+  }
+  return out;
+}
+
+// Sub-section labels/icons — the cards *inside* a tab (e.g. Dashboard
+// Overview's "Profile", "Targets", "Today's Shape" cards). Each entry is
+// keyed by a stable id prefixed with the tab it lives in ('ov_' = Dashboard
+// Overview) so more tabs' sub-sections can register into this same map
+// later without id collisions.
+const SECTION_LABEL_ROWS: { key: string; defaultLabel: string; defaultIcon: string }[] = [
+  { key: 'ov_profile', defaultLabel: 'Profile', defaultIcon: 'graduationCap' },
+  { key: 'ov_targets', defaultLabel: 'Targets', defaultIcon: 'target' },
+  { key: 'ov_shape', defaultLabel: "Today's Shape", defaultIcon: 'clock3' },
+  { key: 'ov_fuel', defaultLabel: 'Fuel Snapshot', defaultIcon: 'flame' },
+  { key: 'ov_syllabus', defaultLabel: 'Syllabus Runway', defaultIcon: 'calendar' },
+];
+
+const DEFAULT_SECTION_LABELS: Record<string, { label: string; icon: string }> = SECTION_LABEL_ROWS.reduce(
+  (acc, { key, defaultLabel, defaultIcon }) => ({ ...acc, [key]: { label: defaultLabel, icon: defaultIcon } }),
+  {} as Record<string, { label: string; icon: string }>
+);
+
+function hydrateSectionLabels(raw: any): Record<string, { label: string; icon: string }> {
+  const out: Record<string, { label: string; icon: string }> = {};
+  for (const { key, defaultLabel, defaultIcon } of SECTION_LABEL_ROWS) {
+    const r = raw && typeof raw === 'object' ? raw[key] : null;
+    out[key] = {
+      label: r && typeof r.label === 'string' && r.label.trim() ? r.label : defaultLabel,
+      icon: r && typeof r.icon === 'string' && ICON_OPTIONS[r.icon] ? r.icon : defaultIcon,
+    };
   }
   return out;
 }
@@ -745,8 +844,10 @@ const ConfigContext = React.createContext<{
   diet: DietMeal[];
   dietOverrides: Record<DietOverrideKey, string>;
   tabLabels: Record<TabLabelKey, string>;
+  tabIcons: Record<TabLabelKey, string>;
+  sectionLabels: Record<string, { label: string; icon: string }>;
   updateConfig: (partial: Record<string, any>) => void;
-  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels') => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels') => void;
 }>({
   trackerItems: DEFAULT_TRACKER_ITEMS,
   timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
@@ -759,6 +860,8 @@ const ConfigContext = React.createContext<{
   diet: hydrateDiet(DEFAULT_DIET_STORABLE),
   dietOverrides: DEFAULT_DIET_OVERRIDES,
   tabLabels: DEFAULT_TAB_LABELS,
+  tabIcons: DEFAULT_TAB_ICONS,
+  sectionLabels: DEFAULT_SECTION_LABELS,
   updateConfig: () => {},
   resetConfigSection: () => {},
 });
@@ -2151,6 +2254,17 @@ function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }) {
 
 // ---------- Tab Subcomponent: Overview ----------
 
+// Renders a SectionHeading for one of Dashboard Overview's cards, applying
+// any custom label/icon saved in Settings > Dashboard Sub-sections (falling
+// back to the shipped default whenever nothing's been overridden yet).
+function OverviewSectionHeading({ id, defaultTitle, defaultIcon, subtitle }: { id: string; defaultTitle: string; defaultIcon: any; subtitle: string }) {
+  const { sectionLabels } = React.useContext(ConfigContext);
+  const override = sectionLabels[id];
+  const Icon = (override && ICON_OPTIONS[override.icon]) || defaultIcon;
+  const title = (override && override.label) || defaultTitle;
+  return <SectionHeading icon={Icon} title={title} subtitle={subtitle} />;
+}
+
 function OverviewTab({ setModal }) {
   const { profile, syllabus, timeline, overviewOverrides, diet, dietOverrides } = React.useContext(ConfigContext);
   const latestWeight = useMemo(() => {
@@ -2187,7 +2301,7 @@ function OverviewTab({ setModal }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <Card className="md:col-span-2 xl:col-span-2">
-          <SectionHeading icon={GraduationCap} title="Profile" subtitle="Core identity & academic baseline" />
+          <OverviewSectionHeading id="ov_profile" defaultTitle="Profile" defaultIcon={GraduationCap} subtitle="Core identity & academic baseline" />
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mb-4">
             <div>
               <div className="text-[20px] font-semibold text-neutral-100 leading-tight">{profile.name}</div>
@@ -2208,7 +2322,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <SectionHeading icon={Target} title="Targets" subtitle="Ranked by priority (Click to view matrix)" />
+          <OverviewSectionHeading id="ov_targets" defaultTitle="Targets" defaultIcon={Target} subtitle="Ranked by priority (Click to view matrix)" />
           <div className="space-y-2.5">
             {profile.targets.map((t) => (
               <div
@@ -2234,7 +2348,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <SectionHeading icon={Clock3} title="Today's Shape" subtitle="Session load map summary" />
+          <OverviewSectionHeading id="ov_shape" defaultTitle="Today's Shape" defaultIcon={Clock3} subtitle="Session load map summary" />
           <div className="space-y-2">
             {[
               { label: 'Study Sessions', value: shapeValues.studySessions, icon: BookOpen },
@@ -2254,7 +2368,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <SectionHeading icon={Flame} title="Fuel Snapshot" subtitle="V-Taper matrix ratios" />
+          <OverviewSectionHeading id="ov_fuel" defaultTitle="Fuel Snapshot" defaultIcon={Flame} subtitle="V-Taper matrix ratios" />
           <div className="space-y-2.5">
             <StatPill icon={Flame} label="Calories" value={shapeValues.calories} accent="amber" />
             <StatPill icon={Activity} label="Protein" value={shapeValues.protein} accent="violet" />
@@ -2263,7 +2377,7 @@ function OverviewTab({ setModal }) {
         </Card>
 
         <Card>
-          <SectionHeading icon={Calendar} title="Syllabus Runway" subtitle="4-month deadline progression" />
+          <OverviewSectionHeading id="ov_syllabus" defaultTitle="Syllabus Runway" defaultIcon={Calendar} subtitle="4-month deadline progression" />
           <div className="space-y-2">
             {syllabus.map((p) => (
               <div key={p.phase} className="flex items-center gap-3 rounded-lg border border-neutral-800/70 bg-neutral-950/40 px-3 py-2">
@@ -4694,50 +4808,97 @@ function SubjectsAndSyllabusEditor() {
 // "Master Timeline" doesn't require scrolling past Profile, Diet, Training,
 // etc. Only the section the user taps is ever mounted/expanded — everything
 // else stays tucked away as a single-line header.
-// Sidebar destinations in display order — mirrors TABS plus the two pinned
-// Settings/Account buttons rendered separately at the bottom of the rail.
-const TAB_LABEL_ROWS: { key: TabLabelKey; icon: any }[] = [
-  { key: 'overview', icon: LayoutGrid },
-  { key: 'timeline', icon: Clock3 },
-  { key: 'training', icon: Dumbbell },
-  { key: 'syllabus', icon: BookOpen },
-  { key: 'mocktests', icon: ClipboardList },
-  { key: 'ashclock', icon: Timer },
-  { key: 'history', icon: Calendar },
-  { key: 'settings', icon: Settings },
-  { key: 'account', icon: UserCircle2 },
-];
+// A small popover grid for picking one of ICON_OPTIONS. Shared by the Tab
+// Names & Icons editor and any per-tab sub-section editor (e.g. Dashboard
+// Overview's cards) so there's exactly one icon-picking UI in the app.
+function IconPickerButton({ value, onChange }: { value: string; onChange: (key: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const SelectedIcon = ICON_OPTIONS[value] || ICON_OPTIONS[ICON_OPTION_KEYS[0]];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  return (
+    <div ref={wrapRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="cursor-target flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60 hover:border-violet-500/50 transition-colors"
+      >
+        <SelectedIcon className="h-3.5 w-3.5 text-neutral-300" strokeWidth={1.75} />
+      </button>
+      {open && (
+        <div className="absolute z-20 top-full left-0 mt-1.5 grid grid-cols-6 gap-1 rounded-lg border border-neutral-700 bg-neutral-900 p-2 shadow-xl w-[196px]">
+          {ICON_OPTION_KEYS.map((key) => {
+            const Opt = ICON_OPTIONS[key];
+            const isSelected = key === value;
+            return (
+              <button
+                type="button"
+                key={key}
+                onClick={() => { onChange(key); setOpen(false); }}
+                className={`cursor-target flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                  isSelected ? 'bg-violet-500/20 border border-violet-500/50' : 'border border-transparent hover:bg-neutral-800'
+                }`}
+              >
+                <Opt className="h-3.5 w-3.5 text-neutral-300" strokeWidth={1.75} />
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TabLabelsEditor() {
-  const { tabLabels, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
-  const [draft, setDraft] = useState<Record<TabLabelKey, string>>(tabLabels);
+  const { tabLabels, tabIcons, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [draftLabels, setDraftLabels] = useState<Record<TabLabelKey, string>>(tabLabels);
+  const [draftIcons, setDraftIcons] = useState<Record<TabLabelKey, string>>(tabIcons);
   const [dirty, setDirty] = useState(false);
 
-  useEffect(() => { setDraft(tabLabels); setDirty(false); }, [tabLabels]);
+  useEffect(() => { setDraftLabels(tabLabels); setDraftIcons(tabIcons); setDirty(false); }, [tabLabels, tabIcons]);
 
   const setLabel = (key: TabLabelKey, value: string) => {
-    setDraft((prev) => ({ ...prev, [key]: value }));
+    setDraftLabels((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
+  };
+  const setIcon = (key: TabLabelKey, value: string) => {
+    setDraftIcons((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
   };
 
   const save = () => {
     // Never let a tab go out with a blank label — fall back to its shipped
     // default instead of leaving a button with no text in the sidebar.
-    const cleaned = { ...draft };
-    TAB_LABEL_ROWS.forEach(({ key }) => {
+    const cleaned = { ...draftLabels };
+    TAB_LABEL_KEYS.forEach((key) => {
       if (!cleaned[key] || !cleaned[key].trim()) cleaned[key] = DEFAULT_TAB_LABELS[key];
     });
-    updateConfig({ tabLabels: cleaned });
-    setDraft(cleaned);
+    updateConfig({ tabLabels: cleaned, tabIcons: draftIcons });
+    setDraftLabels(cleaned);
+    setDirty(false);
+  };
+
+  const resetAll = () => {
+    resetConfigSection('tabLabels');
+    resetConfigSection('tabIcons');
     setDirty(false);
   };
 
   return (
     <Card className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
-        <SectionHeading icon={PenLine} title="Tab Names" subtitle="Rename the labels shown in the sidebar navigation" />
+        <SectionHeading icon={PenLine} title="Tab Names & Icons" subtitle="Rename and re-icon the sidebar navigation" />
         <div className="flex items-center gap-2 shrink-0">
-          <RippleButton onClick={() => { resetConfigSection('tabLabels'); setDirty(false); }} className={btnGhost}>
+          <RippleButton onClick={resetAll} className={btnGhost}>
             <RefreshCcw className="h-3.5 w-3.5" /> Reset
           </RippleButton>
           <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
@@ -4746,13 +4907,11 @@ function TabLabelsEditor() {
         </div>
       </div>
       <div className="space-y-2">
-        {TAB_LABEL_ROWS.map(({ key, icon: Icon }) => (
+        {TAB_LABEL_KEYS.map((key) => (
           <div key={key} className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60">
-              <Icon className="h-3.5 w-3.5 text-neutral-400" strokeWidth={1.75} />
-            </div>
+            <IconPickerButton value={draftIcons[key]} onChange={(v) => setIcon(key, v)} />
             <input
-              value={draft[key] ?? ''}
+              value={draftLabels[key] ?? ''}
               onChange={(e) => setLabel(key, e.target.value)}
               maxLength={40}
               className={`flex-1 ${fieldInput}`}
@@ -4761,14 +4920,76 @@ function TabLabelsEditor() {
         ))}
       </div>
       <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
-        Renaming a tab only changes its label — the icon, order, and what it opens stay the same. Clear a field and save to restore its default name.
+        Tap an icon to swap it out. Renaming or re-iconing a tab only changes how it looks — its position and what it opens stay the same. Clear a name and save to restore its default.
+      </p>
+    </Card>
+  );
+}
+
+function SectionLabelsEditor() {
+  const { sectionLabels, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
+  const [draft, setDraft] = useState<Record<string, { label: string; icon: string }>>(sectionLabels);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { setDraft(sectionLabels); setDirty(false); }, [sectionLabels]);
+
+  const setLabel = (key: string, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: { ...prev[key], label: value } }));
+    setDirty(true);
+  };
+  const setIcon = (key: string, value: string) => {
+    setDraft((prev) => ({ ...prev, [key]: { ...prev[key], icon: value } }));
+    setDirty(true);
+  };
+
+  const save = () => {
+    const cleaned = { ...draft };
+    SECTION_LABEL_ROWS.forEach(({ key, defaultLabel }) => {
+      if (!cleaned[key]?.label || !cleaned[key].label.trim()) {
+        cleaned[key] = { ...cleaned[key], label: defaultLabel };
+      }
+    });
+    updateConfig({ sectionLabels: cleaned });
+    setDraft(cleaned);
+    setDirty(false);
+  };
+
+  return (
+    <Card className="animate-fadeIn">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-4">
+        <SectionHeading icon={LayoutGrid} title="Dashboard Overview — Sub-sections" subtitle="Rename & re-icon the cards inside Dashboard Overview" />
+        <div className="flex items-center gap-2 shrink-0">
+          <RippleButton onClick={() => { resetConfigSection('sectionLabels'); setDirty(false); }} className={btnGhost}>
+            <RefreshCcw className="h-3.5 w-3.5" /> Reset
+          </RippleButton>
+          <RippleButton onClick={save} disabled={!dirty} className={btnSave(dirty)}>
+            <Save className="h-3.5 w-3.5" /> Save
+          </RippleButton>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {SECTION_LABEL_ROWS.map(({ key }) => (
+          <div key={key} className="flex items-center gap-2">
+            <IconPickerButton value={draft[key]?.icon} onChange={(v) => setIcon(key, v)} />
+            <input
+              value={draft[key]?.label ?? ''}
+              onChange={(e) => setLabel(key, e.target.value)}
+              maxLength={40}
+              className={`flex-1 ${fieldInput}`}
+            />
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
+        Covers the Profile, Targets, Today's Shape, Fuel Snapshot, and Syllabus Runway cards on Dashboard Overview. The same pattern can be extended to other tabs' sub-sections on request.
       </p>
     </Card>
   );
 }
 
 const SETTINGS_SECTIONS = [
-  { key: 'tabLabels', icon: PenLine, title: 'Tab Names', subtitle: 'Rename the sidebar navigation labels', Component: TabLabelsEditor },
+  { key: 'tabLabels', icon: PenLine, title: 'Tab Names & Icons', subtitle: 'Rename and re-icon the sidebar navigation', Component: TabLabelsEditor },
+  { key: 'sectionLabels', icon: LayoutGrid, title: 'Dashboard Sub-sections', subtitle: 'Rename & re-icon the Overview cards', Component: SectionLabelsEditor },
   { key: 'profile', icon: GraduationCap, title: 'Profile & Goals', subtitle: 'Identity, exam/goal & priority targets', Component: ProfileEditor },
   { key: 'countdown', icon: Clock3, title: 'Countdown', subtitle: 'Personal countdowns for the Overview tab', Component: CountdownEditor },
   { key: 'overview', icon: LayoutGrid, title: 'Dashboard Overview', subtitle: "Override Today's Shape & Fuel Snapshot text", Component: OverviewSummaryEditor },
@@ -4942,7 +5163,7 @@ export default function JEEDashboard() {
     setConfig((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels') => {
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels') => {
     setConfig((prev) => ({
       ...prev,
       [key]: key === 'timeline'
@@ -4965,6 +5186,10 @@ export default function JEEDashboard() {
         ? DEFAULT_DIET_OVERRIDES
         : key === 'tabLabels'
         ? DEFAULT_TAB_LABELS
+        : key === 'tabIcons'
+        ? DEFAULT_TAB_ICONS
+        : key === 'sectionLabels'
+        ? DEFAULT_SECTION_LABELS
         : DEFAULT_TRACKER_ITEMS,
     }));
   };
@@ -5229,6 +5454,8 @@ export default function JEEDashboard() {
         diet: config.diet,
         dietOverrides: config.dietOverrides,
         tabLabels: config.tabLabels,
+        tabIcons: config.tabIcons,
+        sectionLabels: config.sectionLabels,
         updateConfig,
         resetConfigSection,
       }}
@@ -5274,7 +5501,7 @@ export default function JEEDashboard() {
         <nav className="flex-1 overflow-y-auto px-3 pb-4 no-scrollbar">
           <div className="space-y-1">
             {TABS.map((tab) => {
-              const Icon = tab.icon;
+              const Icon = ICON_OPTIONS[config.tabIcons[tab.id as TabLabelKey]] || tab.icon;
               const isActive = activeTab === tab.id;
               const label = config.tabLabels[tab.id as TabLabelKey] || tab.label;
               return (
@@ -5311,7 +5538,7 @@ export default function JEEDashboard() {
                 : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
             }`}
           >
-            <Settings className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            {(() => { const SettingsIcon = ICON_OPTIONS[config.tabIcons.settings] || Settings; return <SettingsIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} />; })()}
             <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{config.tabLabels.settings}</span>
           </button>
           <button
@@ -5325,7 +5552,7 @@ export default function JEEDashboard() {
                 : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
             }`}
           >
-            <UserCircle2 className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            {(() => { const AccountIcon = ICON_OPTIONS[config.tabIcons.account] || UserCircle2; return <AccountIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} />; })()}
             <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{config.tabLabels.account}</span>
           </button>
         </div>
