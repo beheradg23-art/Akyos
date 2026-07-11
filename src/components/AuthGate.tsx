@@ -683,8 +683,23 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   }, []);
 
   useEffect(() => {
-    if (stage === 'passcode') pcInputRef.current?.focus();
-    if (stage === 'setPasscode') pcSetupInputRef.current?.focus();
+    // renderStage() — and with it, every input below — only mounts once
+    // the "1% Better Every Day." beat clears (see the render at the bottom
+    // of this component). Focusing before that is a no-op on a ref that's
+    // still null, and since this effect used to only depend on `stage`, it
+    // never got a second chance once the input actually appeared. Keying
+    // it on showOnePercentIntro too means it re-fires the moment the real
+    // content mounts, so the cursor is guaranteed to land in the box
+    // instead of the person needing to click in before they can type.
+    if (showOnePercentIntro) return;
+    if (stage === 'passcode') {
+      const t = setTimeout(() => pcInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+    if (stage === 'setPasscode') {
+      const t = setTimeout(() => pcSetupInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
     if (stage === 'auth') {
       // The email field cascades in with its own entrance animation (see
       // cascadeStyle below) — focusing it timed to land right as that
@@ -695,7 +710,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       const t = setTimeout(() => emailInputRef.current?.focus(), focusDelay);
       return () => clearTimeout(t);
     }
-  }, [stage]);
+  }, [stage, showOnePercentIntro]);
 
   // --- returning-user passcode check ---
   useEffect(() => {
