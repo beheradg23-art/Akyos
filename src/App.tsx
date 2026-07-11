@@ -1615,15 +1615,22 @@ function MobileStatusStrip({ streak, hunterRank, overallPct }) {
 // ---------- Standardized Scannable Structural UI Elements ----------
 
 function SectionHeading({ icon: Icon, title, subtitle }) {
+  // `subtitle` is intentionally no longer rendered — every card used to
+  // carry a small descriptive line under its title ("Core identity &
+  // academic baseline", "V-Taper matrix ratios", etc.) that added visual
+  // noise without adding information the icon + title didn't already
+  // convey. The prop is kept (rather than stripped from every call site)
+  // so nothing upstream needs to change — it's just quietly unused here.
+  // With the second line gone, the icon badge no longer needs the old
+  // items-start + mt-0.5 nudge to line up with where the title used to
+  // sit above the subtitle — it centers naturally against the single line.
+  void subtitle;
   return (
-    <div className="flex items-start gap-3 mb-5">
-      <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60">
+    <div className="flex items-center gap-3 mb-5">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60">
         <Icon className="h-4.5 w-4.5 text-neutral-300" strokeWidth={1.75} />
       </div>
-      <div>
-        <h2 className="text-[15px] font-semibold tracking-tight text-neutral-100">{title}</h2>
-        {subtitle && <p className="text-[13px] text-neutral-500 mt-0.5">{subtitle}</p>}
-      </div>
+      <h2 className="text-[15px] font-semibold tracking-tight text-neutral-100">{title}</h2>
     </div>
   );
 }
