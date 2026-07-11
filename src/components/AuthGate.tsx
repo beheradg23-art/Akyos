@@ -220,15 +220,15 @@ const ONE_PCT_KEYFRAMES = `
 
   @keyframes akyos-odometer-roll {
     0%   { transform: translateY(0); }
-    9%   { transform: translateY(-100%); }
-    18%  { transform: translateY(-200%); }
-    27%  { transform: translateY(-300%); }
-    36%  { transform: translateY(-400%); }
-    45%  { transform: translateY(-500%); }
-    54%  { transform: translateY(-600%); }
-    64%  { transform: translateY(-700%); }
-    78%  { transform: translateY(-800%); }
-    100% { transform: translateY(-800%); }
+    9%   { transform: translateY(-1.15em); }
+    18%  { transform: translateY(-2.3em); }
+    27%  { transform: translateY(-3.45em); }
+    36%  { transform: translateY(-4.6em); }
+    45%  { transform: translateY(-5.75em); }
+    54%  { transform: translateY(-6.9em); }
+    64%  { transform: translateY(-8.05em); }
+    78%  { transform: translateY(-9.2em); }
+    100% { transform: translateY(-9.2em); }
   }
 
   @keyframes akyos-liquid-gradient {
