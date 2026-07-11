@@ -147,14 +147,6 @@ const INTRO_STROKE_PATH =
   'C 470 226, 430 340, 340 380 C 250 420, 300 500, 400 520 ' +
   'C 460 533, 420 620, 340 650 C 260 680, 220 760, 320 800';
 
-const INTRO_PULSE_KEYFRAMES = `
-  @keyframes akyos-intro-pulse {
-    0% { transform: scale(0.85); opacity: 0.5; }
-    70% { transform: scale(1.35); opacity: 0; }
-    100% { transform: scale(1.35); opacity: 0; }
-  }
-`;
-
 // A one-time, full-screen branded reveal shown on mount, before the real
 // AuthGate content underneath is visible — a Strava-post-run-style beat:
 // a wandering line traces itself across the screen while the badge and
