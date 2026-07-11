@@ -112,6 +112,115 @@ function SignInVisualPanel() {
   );
 }
 
+const INTRO_PULSE_KEYFRAMES = `
+  @keyframes akyos-intro-pulse {
+    0% { transform: scale(0.85); opacity: 0.5; }
+    70% { transform: scale(1.35); opacity: 0; }
+    100% { transform: scale(1.35); opacity: 0; }
+  }
+`;
+
+// How long each phase of the intro holds, in ms. Kept in one place so the
+// timers below and the CSS transition durations stay honest with each
+// other — if you change ENTER/HOLD, the transition durations inline in
+// the JSX are what actually need to match.
+const INTRO_ENTER_MS = 550; // badge + wordmark fade/scale in
+const INTRO_HOLD_MS = 750; // sits fully visible
+const INTRO_EXIT_MS = 750; // curtain slides apart + branding fades out
+
+// A one-time, full-screen branded reveal shown on mount, before the real
+// AuthGate content underneath is visible to the user — think Strava's
+// post-run reveal screen: branding builds up center-stage first, holds
+// for a beat, then the whole thing splits open to hand off to the actual
+// UI, rather than just cutting straight to a bare loading spinner.
+//
+// Structurally this sits in its own fixed layer at a higher z-index than
+// every AuthGate stage screen (which are all z-[999]), so whatever stage
+// has actually resolved underneath (checking/auth/passcode/etc.) is
+// already there and ready the instant the curtain opens — no flash of
+// unstyled content, no waiting on the reveal to finish before real work
+// starts.
+function IntroReveal({ onComplete }: { onComplete: () => void }) {
+  const [visible, setVisible] = useState(false);
+  const [exiting, setExiting] = useState(false);
+
+  useEffect(() => {
+    // Double rAF so the browser commits the initial (hidden) styles on
+    // one frame before we flip to the visible styles on the next — skip
+    // this and some browsers coalesce both states into a single paint
+    // and the "fade in" never actually animates.
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setVisible(true));
+    });
+
+    const exitTimer = setTimeout(() => setExiting(true), INTRO_ENTER_MS + INTRO_HOLD_MS);
+    const doneTimer = setTimeout(onComplete, INTRO_ENTER_MS + INTRO_HOLD_MS + INTRO_EXIT_MS);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      clearTimeout(exitTimer);
+      clearTimeout(doneTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className={`fixed inset-0 z-[1000] flex ${exiting ? 'pointer-events-none' : ''}`}
+      aria-hidden="true"
+    >
+      <style>{INTRO_PULSE_KEYFRAMES}</style>
+
+      {/* Two-panel "curtain" — splits apart on exit to hand off to
+          whatever's underneath (fittingly, the real sign-in screen is
+          itself a two-panel layout). */}
+      <div
+        className="h-full w-1/2 bg-zinc-950 transition-transform ease-[cubic-bezier(0.65,0,0.35,1)]"
+        style={{
+          transitionDuration: `${INTRO_EXIT_MS}ms`,
+          transform: exiting ? 'translateX(-100%)' : 'translateX(0)',
+        }}
+      />
+      <div
+        className="h-full w-1/2 bg-zinc-950 transition-transform ease-[cubic-bezier(0.65,0,0.35,1)]"
+        style={{
+          transitionDuration: `${INTRO_EXIT_MS}ms`,
+          transform: exiting ? 'translateX(100%)' : 'translateX(0)',
+        }}
+      />
+
+      {/* Centered branding, layered over both curtain halves. */}
+      <div
+        className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 transition-all ease-out"
+        style={{
+          transitionDuration: `${exiting ? INTRO_EXIT_MS : INTRO_ENTER_MS}ms`,
+          opacity: exiting ? 0 : visible ? 1 : 0,
+          transform: exiting ? 'scale(1.12)' : visible ? 'scale(1)' : 'scale(0.85)',
+        }}
+      >
+        {/* Soft expanding ripple behind the badge, echoing a completed-
+            activity celebration beat rather than decoration for its own
+            sake. Runs continuously while the intro is on screen. */}
+        {!exiting && (
+          <div className="absolute h-24 w-24 rounded-full bg-violet-600/25 blur-2xl animate-[akyos-intro-pulse_1.6s_ease-out_infinite]" />
+        )}
+
+        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500 shadow-lg shadow-violet-500/30">
+          <GraduationCap className="h-7 w-7 text-neutral-950" strokeWidth={2} />
+        </div>
+
+        <div className="text-center">
+          <p className="text-[17px] font-semibold tracking-tight text-neutral-50">Akyos</p>
+          <p className="mt-1 text-[12.5px] text-neutral-500">Your Answer to Chaos</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Once cloud data is pulled into localStorage, every piece of state in
 // JEEDashboard that reads localStorage.getItem(...) inside a useState
 // initializer already ran BEFORE the pull finished (those initializers only
@@ -126,6 +235,10 @@ type Stage = 'checking' | 'auth' | 'syncing' | 'setPasscode' | 'passcode' | 'for
 export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [stage, setStage] = useState<Stage>('checking');
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+  // Plays once on mount: a full-screen branded reveal (logo, then a split
+  // "curtain" opening) that sits above whatever stage resolves underneath
+  // it, so the app never flashes straight into a bare loading spinner.
+  const [showIntro, setShowIntro] = useState(true);
 
   // --- email/password form state ---
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -382,6 +495,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   // ---------------- render ----------------
 
+  const renderStage = (): React.ReactNode => {
   if (stage === 'checking' || stage === 'syncing') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 gap-3">
@@ -706,5 +820,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         Not you? Sign out
       </button>
     </div>
+  );
+  }; // end renderStage
+
+  return (
+    <>
+      {renderStage()}
+      {showIntro && <IntroReveal onComplete={() => setShowIntro(false)} />}
+    </>
   );
 }
