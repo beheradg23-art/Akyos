@@ -132,27 +132,11 @@ const INTRO_EXIT_MS = 600; // whole overlay fades out
 // boxes' cascade-in below so the two are timed to happen together.
 const INTRO_REVEAL_AT_MS = INTRO_ENTER_MS + INTRO_HOLD_MS;
 
-// A wandering, hand-drawn-looking line that traces itself across the
-// screen behind the badge as it reveals — the same beat as Strava's
-// post-run screen, where a route line draws itself in before settling
-// into the summary. Coordinates are just a fixed organic-looking
-// squiggle (not literally randomized — a fresh-random path would look
-// different, and possibly worse, on every load) across a 400x800
-// viewBox; `preserveAspectRatio="none"` stretches it to fill whatever
-// the real screen size is.
-const INTRO_STROKE_PATH =
-  'M -20 620 C 60 560, 40 460, 130 430 C 230 395, 190 300, 270 250 ' +
-  'C 350 200, 300 110, 190 100 C 100 92, 150 20, 260 40 ' +
-  'C 340 55, 400 130, 330 190 C 260 250, 340 300, 410 260 ' +
-  'C 470 226, 430 340, 340 380 C 250 420, 300 500, 400 520 ' +
-  'C 460 533, 420 620, 340 650 C 260 680, 220 760, 320 800';
-
 // A one-time, full-screen branded reveal shown on mount, before the real
 // AuthGate content underneath is visible — a Strava-post-run-style beat:
-// a wandering line traces itself across the screen while the badge and
-// wordmark build up center-stage, holds for a moment, then the whole
-// overlay fades away to hand off to the real screen underneath (which
-// animates its own elements in — see cascadeStyle() below).
+// the badge and wordmark build up center-stage, hold for a moment, then
+// the whole overlay fades away to hand off to the real screen underneath
+// (which animates its own elements in — see cascadeStyle() below).
 //
 // Structurally this sits in its own fixed layer at a higher z-index than
 // every AuthGate stage screen (all z-[999]), so whatever stage has
@@ -161,16 +145,12 @@ const INTRO_STROKE_PATH =
 function IntroReveal({ onComplete }: { onComplete: () => void }) {
   const [visible, setVisible] = useState(false);
   const [exiting, setExiting] = useState(false);
-  const pathRef = useRef<SVGPathElement>(null);
-  const [pathLength, setPathLength] = useState<number | null>(null);
 
   useEffect(() => {
-    if (pathRef.current) setPathLength(pathRef.current.getTotalLength());
-
-    // Double rAF so the browser commits the initial (hidden/undrawn)
-    // styles on one frame before flipping to the visible styles on the
-    // next — skip this and some browsers coalesce both states into a
-    // single paint and nothing actually animates.
+    // Double rAF so the browser commits the initial (hidden) styles on
+    // one frame before flipping to the visible styles on the next — skip
+    // this and some browsers coalesce both states into a single paint
+    // and nothing actually animates.
     let raf1 = 0;
     let raf2 = 0;
     raf1 = requestAnimationFrame(() => {
@@ -196,40 +176,6 @@ function IntroReveal({ onComplete }: { onComplete: () => void }) {
       aria-hidden="true"
     >
       <style>{INTRO_PULSE_KEYFRAMES}</style>
-
-      {/* The wandering stroke. Drawn via the classic dash-offset trick:
-          the dash length is set to the path's own length so it starts as
-          one long gap (invisible), then the offset animates to 0 so the
-          "gap" retreats and reveals the line as if it were being drawn
-          in real time. */}
-      <svg
-        className="pointer-events-none absolute inset-0 h-full w-full"
-        viewBox="0 0 400 800"
-        preserveAspectRatio="none"
-        fill="none"
-      >
-        <defs>
-          <linearGradient id="introStrokeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#4f46e5" />
-            <stop offset="55%" stopColor="#7c3aed" />
-            <stop offset="100%" stopColor="#d946ef" />
-          </linearGradient>
-        </defs>
-        <path
-          ref={pathRef}
-          d={INTRO_STROKE_PATH}
-          stroke="url(#introStrokeGradient)"
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-          style={{
-            strokeDasharray: pathLength ?? 0,
-            strokeDashoffset: pathLength === null ? 0 : visible ? 0 : pathLength,
-            transition: pathLength === null ? undefined : `stroke-dashoffset ${INTRO_ENTER_MS + INTRO_HOLD_MS * 0.4}ms cubic-bezier(0.65,0,0.35,1)`,
-            opacity: 0.55,
-          }}
-        />
-      </svg>
 
       {/* Centered branding. */}
       <div
