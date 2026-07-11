@@ -24,6 +24,7 @@ import { Toaster, toast } from './lib/toast';
 import { haptic } from './lib/haptics';
 import PasswordField from './components/PasswordField';
 import PasscodeChangeCard from './components/PasscodeChangeCard';
+import { NO_SELECT_CSS } from './styles/noSelect';
 
 // Every account gets asked this exactly once, right after their first
 // passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
@@ -3717,6 +3718,7 @@ function PasswordGate({ onUnlock }) {
       }`}
       onClick={() => inputRef.current && inputRef.current.focus()}
     >
+      <style>{NO_SELECT_CSS}</style>
       <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
         <Lock className="h-5 w-5 text-neutral-950" strokeWidth={2} />
       </div>
@@ -5680,6 +5682,7 @@ export default function JEEDashboard() {
       }}
     >
     <div className="min-h-screen w-full bg-zinc-950 text-neutral-200 font-sans antialiased relative lg:flex">
+      <style>{NO_SELECT_CSS}</style>
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         <div className="absolute -top-40 -left-40 h-[32rem] w-[32rem] rounded-full bg-fuchsia-500/10 blur-[120px]" />
         <div className="absolute top-1/3 -right-40 h-[28rem] w-[28rem] rounded-full bg-violet-600/10 blur-[120px]" />

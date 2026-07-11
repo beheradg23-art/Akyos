@@ -10,6 +10,7 @@ import {
   PASSCODE_HASH_KEY,
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
+import { NO_SELECT_CSS } from '../styles/noSelect';
 
 const PASSCODE_LENGTH = 6;
 
@@ -1219,6 +1220,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   return (
     <>
+      <style>{NO_SELECT_CSS}</style>
       <style>{LIQUID_GRADIENT_KEYFRAMES}</style>
       {/* Stage content (and its cascade-in) only mounts once the "1%
           Better Every Day." beat has cleared, so its cascade timers —

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { NO_SELECT_CSS } from '../styles/noSelect';
 import {
   Sparkles, Loader2, RefreshCcw, ArrowRight, ClipboardList,
   Clock3, Dumbbell, Target, CheckCircle2, BookOpen,
@@ -254,6 +255,7 @@ export default function OnboardingWizard({
   if (stage === 'intro') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+        <style>{NO_SELECT_CSS}</style>
         <div className="w-full max-w-md">
           <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
             <Sparkles className="h-5 w-5 text-neutral-950" strokeWidth={2} />
@@ -334,6 +336,7 @@ export default function OnboardingWizard({
   if (stage === 'generating') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 gap-4">
+        <style>{NO_SELECT_CSS}</style>
         <Loader2 className="h-7 w-7 text-violet-400 animate-spin" strokeWidth={2} />
         <p className="text-[13px] text-neutral-400">{loadingMessages[loadingMsgIdx]}</p>
       </div>
@@ -374,6 +377,7 @@ export default function OnboardingWizard({
 
   return (
     <div className="fixed inset-0 z-[999] flex flex-col items-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+      <style>{NO_SELECT_CSS}</style>
       <div className="w-full max-w-lg">
         <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50">Here's what we built</h1>
         <p className="mb-6 text-[12.5px] leading-relaxed text-neutral-500">
