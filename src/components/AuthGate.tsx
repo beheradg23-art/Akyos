@@ -12,6 +12,119 @@ import {
 
 const PASSCODE_LENGTH = 6;
 
+// Soft blurred color fields that make up the animated liquid gradient on
+// the left half of the desktop sign-in screen. Colors match the app's
+// existing sky -> violet -> fuchsia brand gradient used on every button
+// and icon badge in this file, so the panel feels native rather than
+// bolted on. Each blob drifts on its own lazy sine path and gently
+// "breathes" (scales up/down); base positions/sizes are percentages of
+// the panel so it reflows cleanly at any height.
+const LIQUID_BLOBS = [
+  { baseXPct: 30, baseYPct: 30, sizeVmin: 46, color: 'bg-sky-400', opacity: 'opacity-70', speed: 0.00017, driftX: 70, driftY: 50, pulseSpeed: 0.0009, phase: 0 },
+  { baseXPct: 72, baseYPct: 24, sizeVmin: 54, color: 'bg-violet-500', opacity: 'opacity-70', speed: 0.00013, driftX: 90, driftY: 60, pulseSpeed: 0.0007, phase: 2.1 },
+  { baseXPct: 60, baseYPct: 72, sizeVmin: 60, color: 'bg-fuchsia-500', opacity: 'opacity-60', speed: 0.00011, driftX: 80, driftY: 70, pulseSpeed: 0.0006, phase: 4.2 },
+  { baseXPct: 20, baseYPct: 78, sizeVmin: 42, color: 'bg-indigo-500', opacity: 'opacity-60', speed: 0.0002, driftX: 60, driftY: 45, pulseSpeed: 0.001, phase: 1.3 },
+];
+
+// The left-half "liquid gradient" panel for the desktop sign-in layout.
+// Pure CSS blur + a small rAF loop — no canvas needed. The blobs drift on
+// their own slow paths and also lean toward the cursor (a cheap lerp
+// toward normalized mouse position gives a "reacting to you" feel
+// without anything twitchy). Only animates on lg+ screens; stays fully
+// inert (no listeners, no rAF) below that since it's hidden there anyway.
+function LiquidGradientPanel() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const blobElRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const targetMouse = useRef({ x: 0.5, y: 0.5 });
+  const smoothMouse = useRef({ x: 0.5, y: 0.5 });
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    let raf = 0;
+    let active = mq.matches;
+    const startTime = performance.now();
+
+    const tick = (now: number) => {
+      if (!active) return;
+      const elapsed = now - startTime;
+
+      // Ease the raw cursor position toward a smoothed one so the panel
+      // glides rather than snaps.
+      smoothMouse.current.x += (targetMouse.current.x - smoothMouse.current.x) * 0.035;
+      smoothMouse.current.y += (targetMouse.current.y - smoothMouse.current.y) * 0.035;
+      const mx = (smoothMouse.current.x - 0.5) * 2; // -1..1
+      const my = (smoothMouse.current.y - 0.5) * 2;
+
+      LIQUID_BLOBS.forEach((b, i) => {
+        const el = blobElRefs.current[i];
+        if (!el) return;
+        const dx = Math.sin(elapsed * b.speed + b.phase) * b.driftX + mx * (b.driftX * 0.9);
+        const dy = Math.cos(elapsed * b.speed * 0.85 + b.phase) * b.driftY + my * (b.driftY * 0.9);
+        const scale = 1 + Math.sin(elapsed * b.pulseSpeed + b.phase) * 0.12;
+        el.style.transform = `translate3d(${dx}px, ${dy}px, 0) translate(-50%, -50%) scale(${scale})`;
+      });
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    const start = () => {
+      if (!active || raf) return;
+      raf = requestAnimationFrame(tick);
+    };
+    const stop = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
+    const handleChange = (e: MediaQueryListEvent) => {
+      active = e.matches;
+      if (active) start(); else stop();
+    };
+    mq.addEventListener('change', handleChange);
+    if (active) start();
+
+    return () => {
+      mq.removeEventListener('change', handleChange);
+      stop();
+    };
+  }, []);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    targetMouse.current = {
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    };
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      className="relative hidden h-full overflow-hidden bg-zinc-950 lg:block lg:w-1/2"
+    >
+      {LIQUID_BLOBS.map((b, i) => (
+        <div
+          key={i}
+          ref={(el) => { blobElRefs.current[i] = el; }}
+          className={`pointer-events-none absolute rounded-full blur-[90px] mix-blend-screen ${b.color} ${b.opacity}`}
+          style={{
+            left: `${b.baseXPct}%`,
+            top: `${b.baseYPct}%`,
+            width: `${b.sizeVmin}vmin`,
+            height: `${b.sizeVmin}vmin`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+      ))}
+      {/* Keeps the blobs from washing out to pure white where they overlap,
+          and grounds the panel back to the app's near-black base. */}
+      <div className="pointer-events-none absolute inset-0 bg-zinc-950/35" />
+    </div>
+  );
+}
+
 // Once cloud data is pulled into localStorage, every piece of state in
 // JEEDashboard that reads localStorage.getItem(...) inside a useState
 // initializer already ran BEFORE the pull finished (those initializers only
@@ -295,77 +408,81 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   if (stage === 'auth') {
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
-          <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
-        </div>
+      <div className="fixed inset-0 z-[999] flex bg-zinc-950">
+        <LiquidGradientPanel />
 
-        <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">
-          {authMode === 'signin' ? 'Sign In' : 'Create Account'}
-        </h1>
-        <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
-          {authMode === 'signin'
-            ? 'Sign in to sync your command center across devices.'
-            : "You'll pick your own passcode right after this."}
-        </p>
+        <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
+          <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
+            <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+          </div>
 
-        <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-          />
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password (min 6 characters)"
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-          />
+          <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">
+            {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+          </h1>
+          <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+            {authMode === 'signin'
+              ? 'Sign in to sync your command center across devices.'
+              : "You'll pick your own passcode right after this."}
+          </p>
 
-          {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
-          {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
+          <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email"
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+            />
+            <input
+              type="password"
+              required
+              minLength={6}
+              autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password (min 6 characters)"
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+            />
 
-          <button
-            type="submit"
-            disabled={authBusy}
-            className="w-full rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
-          >
-            {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
-          </button>
-        </form>
+            {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
+            {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
 
-        {authMode === 'signin' && (
+            <button
+              type="submit"
+              disabled={authBusy}
+              className="w-full rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+            >
+              {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+            </button>
+          </form>
+
+          {authMode === 'signin' && (
+            <button
+              onClick={() => {
+                setResetEmail(email);
+                setResetError('');
+                setResetSent(false);
+                setStage('forgotPassword');
+              }}
+              className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+            >
+              Forgot password?
+            </button>
+          )}
+
           <button
             onClick={() => {
-              setResetEmail(email);
-              setResetError('');
-              setResetSent(false);
-              setStage('forgotPassword');
+              setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
+              setAuthError('');
+              setSignupNotice('');
             }}
-            className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+            className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
           >
-            Forgot password?
+            {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
-        )}
-
-        <button
-          onClick={() => {
-            setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
-            setAuthError('');
-            setSignupNotice('');
-          }}
-          className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
-        >
-          {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-        </button>
+        </div>
       </div>
     );
   }
