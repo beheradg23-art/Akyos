@@ -265,9 +265,20 @@ function IntroReveal({ onComplete }: { onComplete: () => void }) {
 // counter moves — rather than snapping between discrete values, rendered
 // as an animated liquid gradient with a soft glow for a premium feel.
 // "Better Every Day." then drifts in one word at a time, slowly, starting
-// from "Better". After a short hold, the whole line fades out and hands
-// off to whatever was already sitting underneath (IntroReveal, then the
-// real stage).
+// from "Better".
+//
+// The exit is its own multi-beat sequence rather than a single fade:
+//   1. "Better Every Day." collapses away (fade + shrink), which lets "1%"
+//      glide back to dead-center as the row re-centers around it.
+//   2. "1%" itself dissolves as a liquid gradient blob grows from that same
+//      spot, stretching outward with a springy, fluid overshoot until it
+//      fully covers the screen.
+//   3. The blob then squeezes back down — sleek and controlled this time —
+//      into the exact size/shape of the badge.
+//   4. Once it's settled into that badge shape, the logo mark and wordmark
+//      fade in inside it — the "reveal" — before the whole thing hands off
+//      to whatever was already sitting underneath (IntroReveal, then the
+//      real stage).
 const ONE_PCT_KEYFRAMES = `
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
 
@@ -298,14 +309,23 @@ const ONE_PCT_COUNT_PAUSE_MS = 350; // "1%" sits settled before the words start
 const ONE_PCT_WORD_START_MS = ONE_PCT_COUNT_MS + ONE_PCT_COUNT_PAUSE_MS;
 const ONE_PCT_WORD_STAGGER_MS = 420; // gap between each word starting its drift-in — slow and deliberate
 const ONE_PCT_WORD_FADE_MS = 1150; // how long a single word takes to fully resolve — long, slow, cinematic
-const ONE_PCT_HOLD_MS = 550; // full line sits fully visible before exiting
-const ONE_PCT_EXIT_MS = 650; // whole line fades out
+const ONE_PCT_HOLD_MS = 550; // full line sits fully visible before the exit sequence begins
 const ONE_PCT_WORDS = ['Better', 'Every', 'Day.'];
 const ONE_PCT_TOTAL_MS =
   ONE_PCT_WORD_START_MS +
   (ONE_PCT_WORDS.length - 1) * ONE_PCT_WORD_STAGGER_MS +
   ONE_PCT_WORD_FADE_MS +
   ONE_PCT_HOLD_MS;
+
+// --- exit sequence timings (each beat described above) ---
+const ONE_PCT_WORDS_OUT_MS = 420; // "Better Every Day." collapses, "1%" glides to center
+const ONE_PCT_ZOOM_FILL_MS = 720; // blob stretches out from "1%" to cover the whole screen
+const ONE_PCT_ZOOM_HOLD_MS = 200; // brief hold at full-screen coverage
+const ONE_PCT_ZOOM_BADGE_MS = 620; // blob squeezes back down into the badge shape
+const ONE_PCT_BADGE_REVEAL_MS = 320; // logo mark + wordmark fade in inside the settled badge
+const ONE_PCT_BADGE_HOLD_MS = 380; // badge sits revealed for a beat
+const ONE_PCT_FINAL_FADE_MS = 380; // whole overlay fades, handing off to IntroReveal
+type OnePctPhase = 'intro' | 'wordsOut' | 'zoomFill' | 'zoomBadge' | 'badgeReveal' | 'finalFade';
 
 // Standard "ease out cubic" — fast start, long smooth deceleration into
 // the landing value, same shape most real counters/progress bars use.
@@ -318,8 +338,39 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 // narrow phone widths instead of wrapping.
 const ONE_PCT_TEXT_CLASS = 'text-[clamp(1.4rem,6.8vw,4.75rem)] leading-[1.15]';
 
+// Style for the liquid blob that grows from "1%" to fill the screen, then
+// squeezes back down into the badge. Sized in absolute px (badge state) vs
+// vmax (full-screen state) so the browser can still interpolate between
+// them smoothly — a plain width/height transition, no scale-factor math
+// needed to guarantee full coverage on any screen size. The grow phase uses
+// a springy, overshooting easing for the "stretchy fluid" feel; the squeeze
+// back down uses the app's standard smooth-deceleration curve for a sleek,
+// controlled landing into the badge shape.
+function onePctBlobStyle(phase: OnePctPhase): React.CSSProperties {
+  const filling = phase === 'zoomFill';
+  const settled = phase === 'zoomBadge' || phase === 'badgeReveal' || phase === 'finalFade';
+  const duration = filling ? ONE_PCT_ZOOM_FILL_MS : ONE_PCT_ZOOM_BADGE_MS;
+  const easing = filling ? 'cubic-bezier(0.34, 1.56, 0.64, 1)' : 'cubic-bezier(0.16, 1, 0.3, 1)';
+  const size = filling ? '300vmax' : '56px';
+  const radius = filling ? '50%' : '16px';
+  return {
+    ...liquidFillStyle(),
+    position: 'fixed',
+    left: '50%',
+    top: '50%',
+    width: size,
+    height: size,
+    borderRadius: radius,
+    transform: 'translate(-50%, -50%)',
+    opacity: filling || settled ? 1 : 0,
+    boxShadow: settled ? '0 10px 30px -6px rgba(124,58,237,0.45)' : 'none',
+    transition: `width ${duration}ms ${easing}, height ${duration}ms ${easing}, border-radius ${duration}ms ${easing}, opacity 220ms ease-out, box-shadow 300ms ease-out`,
+    zIndex: 2,
+  };
+}
+
 function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
-  const [exiting, setExiting] = useState(false);
+  const [phase, setPhase] = useState<OnePctPhase>('intro');
   const [countLabel, setCountLabel] = useState('0.0%');
   // How many of ONE_PCT_WORDS are currently mounted. Words are only added
   // to the DOM when it's their turn to appear — NOT rendered up front with
@@ -359,20 +410,72 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
       );
     });
 
-    timers.push(setTimeout(() => setExiting(true), ONE_PCT_TOTAL_MS));
-    timers.push(setTimeout(onComplete, ONE_PCT_TOTAL_MS + ONE_PCT_EXIT_MS));
+    // Exit sequence — each beat scheduled off the end of the last.
+    const wordsOutAt = ONE_PCT_TOTAL_MS;
+    const zoomFillAt = wordsOutAt + ONE_PCT_WORDS_OUT_MS;
+    const zoomBadgeAt = zoomFillAt + ONE_PCT_ZOOM_FILL_MS + ONE_PCT_ZOOM_HOLD_MS;
+    const badgeRevealAt = zoomBadgeAt + ONE_PCT_ZOOM_BADGE_MS;
+    const finalFadeAt = badgeRevealAt + ONE_PCT_BADGE_REVEAL_MS + ONE_PCT_BADGE_HOLD_MS;
+    const completeAt = finalFadeAt + ONE_PCT_FINAL_FADE_MS;
+
+    timers.push(setTimeout(() => setPhase('wordsOut'), wordsOutAt));
+    timers.push(setTimeout(() => setPhase('zoomFill'), zoomFillAt));
+    timers.push(setTimeout(() => setPhase('zoomBadge'), zoomBadgeAt));
+    timers.push(setTimeout(() => setPhase('badgeReveal'), badgeRevealAt));
+    timers.push(setTimeout(() => setPhase('finalFade'), finalFadeAt));
+    timers.push(setTimeout(onComplete, completeAt));
 
     return () => timers.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const wordsCollapsing = phase !== 'intro';
+  const onePctVisible = phase === 'intro' || phase === 'wordsOut';
+  const badgeContentVisible = phase === 'badgeReveal' || phase === 'finalFade';
+
   return (
     <div
-      className={`fixed inset-0 z-[1001] flex items-center justify-center bg-zinc-950 px-4 sm:px-6 transition-opacity ease-out ${exiting ? 'pointer-events-none' : ''}`}
-      style={{ transitionDuration: `${ONE_PCT_EXIT_MS}ms`, opacity: exiting ? 0 : 1 }}
+      className={`fixed inset-0 z-[1001] flex items-center justify-center bg-zinc-950 px-4 sm:px-6 transition-opacity ease-out ${phase !== 'intro' ? 'pointer-events-none' : ''}`}
+      style={{ transitionDuration: `${ONE_PCT_FINAL_FADE_MS}ms`, opacity: phase === 'finalFade' ? 0 : 1 }}
       aria-hidden="true"
     >
       <style>{ONE_PCT_KEYFRAMES}</style>
+      <style>{INTRO_PULSE_KEYFRAMES}</style>
+
+      {/* Soft glow echoing IntroReveal's own pulse, so the reveal feels
+          continuous with what's coming next rather than a hard cut. */}
+      <div
+        className="fixed left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/25 blur-2xl animate-[akyos-intro-pulse_1.6s_ease-out_infinite] pointer-events-none"
+        style={{ opacity: badgeContentVisible ? 1 : 0, transition: 'opacity 320ms ease-out', zIndex: 1 }}
+      />
+
+      {/* The liquid blob: grows from "1%" to fill the whole screen, then
+          squeezes back down into the badge. Its own background is the same
+          moving/shining liquid gradient used everywhere else. */}
+      <div style={onePctBlobStyle(phase)}>
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out` }}
+        >
+          <GraduationCap className="h-7 w-7 text-neutral-950" strokeWidth={2} />
+        </div>
+      </div>
+
+      {/* Wordmark, revealed alongside the badge once it's settled — lands
+          in the exact spot IntroReveal's own wordmark sits below its badge. */}
+      <div
+        className="fixed left-1/2 text-center"
+        style={{
+          top: 'calc(50% + 44px)',
+          transform: 'translateX(-50%)',
+          opacity: badgeContentVisible ? 1 : 0,
+          transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out 90ms`,
+          zIndex: 2,
+        }}
+      >
+        <p className="text-[17px] font-semibold tracking-tight text-neutral-50">Akyos</p>
+        <p className="mt-1 text-[12.5px] text-neutral-500">Your Answer to Chaos</p>
+      </div>
 
       <div
         className="flex flex-nowrap items-baseline justify-center gap-x-1.5 sm:gap-x-3 text-center whitespace-nowrap"
@@ -381,10 +484,15 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
         {/* "1%" — smooth eased count-up, rendered as a liquid, glowing
             animated gradient. Text content just updates in place each
             frame — nothing remounts, so there's no per-frame pop, only
-            the number itself gliding forward. */}
+            the number itself gliding forward. Dissolves away right as the
+            blob above starts growing from the same spot. */}
         <span
           className="relative inline-block align-baseline"
-          style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
+          style={{
+            animation: 'akyos-glow-pulse 2.2s ease-in-out infinite',
+            opacity: onePctVisible ? 1 : 0,
+            transition: 'opacity 180ms ease-out',
+          }}
         >
           <span
             className={`inline-block min-w-[3ch] text-center tabular-nums font-extrabold ${ONE_PCT_TEXT_CLASS}`}
@@ -405,16 +513,28 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
 
         {/* "Better Every Day." — each word mounts and slowly drifts/
             dissolves into view, one at a time, so words not yet due
-            don't reserve any space. */}
-        {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
-          <span
-            key={word}
-            className={`inline-block text-white font-semibold ${ONE_PCT_TEXT_CLASS}`}
-            style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
-          >
-            {word}
-          </span>
-        ))}
+            don't reserve any space. On exit the whole row collapses
+            (fades + shrinks to 0 width) together, rather than each word
+            fading independently, which is what lets "1%" glide smoothly
+            back to dead-center as this shrinks beside it. */}
+        <div
+          className="flex items-baseline gap-x-1.5 sm:gap-x-3 overflow-hidden"
+          style={{
+            maxWidth: wordsCollapsing ? '0px' : '900px',
+            opacity: wordsCollapsing ? 0 : 1,
+            transition: `max-width ${ONE_PCT_WORDS_OUT_MS}ms cubic-bezier(0.65,0,0.35,1), opacity ${ONE_PCT_WORDS_OUT_MS}ms ease-in`,
+          }}
+        >
+          {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
+            <span
+              key={word}
+              className={`inline-block text-white font-semibold ${ONE_PCT_TEXT_CLASS}`}
+              style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
