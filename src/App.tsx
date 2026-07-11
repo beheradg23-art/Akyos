@@ -1214,7 +1214,8 @@ function MagneticCursor() {
 
   useEffect(() => {
     const isFine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
-    if (!isFine) return;
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!isFine || reducedMotion) return;
     setActive(true);
 
     const handleMove = (e) => {
@@ -5727,7 +5728,7 @@ export default function JEEDashboard() {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 pb-4 no-scrollbar">
+        <nav className="flex-1 overflow-y-auto px-3 pb-4 no-scrollbar" role="tablist" aria-label="Main sections">
           <div className="space-y-1">
             {TABS.map((tab) => {
               const Icon = ICON_OPTIONS[config.tabIcons[tab.id as TabLabelKey]] || tab.icon;
@@ -5738,6 +5739,10 @@ export default function JEEDashboard() {
                   key={tab.id}
                   onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
                   title={label}
+                  aria-label={label}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`cursor-target group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
                     !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
                   } ${
@@ -5759,6 +5764,10 @@ export default function JEEDashboard() {
           <button
             onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
             title={config.tabLabels.settings}
+            aria-label={config.tabLabels.settings}
+            role="tab"
+            aria-selected={activeTab === 'settings'}
+            aria-current={activeTab === 'settings' ? 'page' : undefined}
             className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
               !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
             } ${
@@ -5773,6 +5782,10 @@ export default function JEEDashboard() {
           <button
             onClick={() => { setActiveTab('account'); setSidebarOpen(false); }}
             title={config.tabLabels.account}
+            aria-label={config.tabLabels.account}
+            role="tab"
+            aria-selected={activeTab === 'account'}
+            aria-current={activeTab === 'account' ? 'page' : undefined}
             className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
               !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
             } ${
@@ -5881,6 +5894,33 @@ export default function JEEDashboard() {
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Branded keyboard-focus ring, app-wide. Several inputs already
+           swap outline-none for a border-color change on focus (a fine
+           substitute), but every button, link, and nav item was falling
+           back to the browser's unstyled default outline — inconsistent
+           and off-brand. One rule here covers all of them at once. Scoped
+           to :focus-visible so mouse/touch clicks stay exactly as before;
+           only actual keyboard navigation gets the ring. */
+        :focus-visible {
+          outline: 2px solid rgba(167, 139, 250, 0.75);
+          outline-offset: 2px;
+          border-radius: 4px;
+        }
+
+        /* Respect the OS-level "reduce motion" preference. Nothing here
+           is deleted, just collapsed to near-instant, so people sensitive
+           to motion (or vestibular conditions) still get every state
+           change, just without the drifting gradients, ripples, tilts,
+           and cursor-follow loop. */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
         ${LIQUID_GRADIENT_KEYFRAMES}
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }
