@@ -206,6 +206,138 @@ function IntroReveal({ onComplete }: { onComplete: () => void }) {
   );
 }
 
+// --- "1% Better Every Day." pre-intro ------------------------------------
+//
+// Plays first, before IntroReveal / the sign-in page itself. "1%" spins
+// through a quick slot-machine / odometer digit roll that decelerates into
+// a settled stop (the "lucky draw pause"), rendered as an animated liquid
+// gradient with a soft glow for a premium feel. "Better Every Day." then
+// fades in one word at a time, in plain white, starting from "Better".
+// After a short hold, the whole line fades out and hands off to whatever
+// was already sitting underneath (IntroReveal, then the real stage).
+const ONE_PCT_KEYFRAMES = `
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
+
+  @keyframes akyos-odometer-roll {
+    0%   { transform: translateY(0); }
+    9%   { transform: translateY(-100%); }
+    18%  { transform: translateY(-200%); }
+    27%  { transform: translateY(-300%); }
+    36%  { transform: translateY(-400%); }
+    45%  { transform: translateY(-500%); }
+    54%  { transform: translateY(-600%); }
+    64%  { transform: translateY(-700%); }
+    78%  { transform: translateY(-800%); }
+    100% { transform: translateY(-800%); }
+  }
+
+  @keyframes akyos-liquid-gradient {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  @keyframes akyos-glow-pulse {
+    0%, 100% { filter: drop-shadow(0 0 14px rgba(167,139,250,0.55)) drop-shadow(0 0 30px rgba(129,140,248,0.35)); }
+    50%      { filter: drop-shadow(0 0 24px rgba(217,70,239,0.65)) drop-shadow(0 0 44px rgba(167,139,250,0.45)); }
+  }
+
+  @keyframes akyos-word-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+`;
+
+// Decoy values the odometer flicks through before landing on the real "1%"
+// — the last entry MUST be the true value since the roll animation ends
+// holding on the final list item.
+const ODOMETER_DECOY_VALUES = ['7%', '4%', '9%', '2%', '6%', '3%', '8%', '5%', '1%'];
+
+const ONE_PCT_SPIN_MS = 1300; // odometer roll + settle/pause, baked into the keyframes above
+const ONE_PCT_WORD_STAGGER_MS = 220; // gap between each word starting its fade-in
+const ONE_PCT_WORD_FADE_MS = 500; // how long a single word takes to fade in
+const ONE_PCT_HOLD_MS = 650; // full line sits fully visible before exiting
+const ONE_PCT_EXIT_MS = 550; // whole line fades out
+const ONE_PCT_WORDS = ['Better', 'Every', 'Day.'];
+const ONE_PCT_TOTAL_MS =
+  ONE_PCT_SPIN_MS + (ONE_PCT_WORDS.length - 1) * ONE_PCT_WORD_STAGGER_MS + ONE_PCT_WORD_FADE_MS + ONE_PCT_HOLD_MS;
+
+function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
+  const [exiting, setExiting] = useState(false);
+
+  useEffect(() => {
+    const exitTimer = setTimeout(() => setExiting(true), ONE_PCT_TOTAL_MS);
+    const doneTimer = setTimeout(onComplete, ONE_PCT_TOTAL_MS + ONE_PCT_EXIT_MS);
+    return () => {
+      clearTimeout(exitTimer);
+      clearTimeout(doneTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div
+      className={`fixed inset-0 z-[1001] flex items-center justify-center bg-zinc-950 px-6 transition-opacity ease-out ${exiting ? 'pointer-events-none' : ''}`}
+      style={{ transitionDuration: `${ONE_PCT_EXIT_MS}ms`, opacity: exiting ? 0 : 1 }}
+      aria-hidden="true"
+    >
+      <style>{ONE_PCT_KEYFRAMES}</style>
+
+      <div
+        className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 text-center"
+        style={{ fontFamily: "'Poppins', sans-serif" }}
+      >
+        {/* "1%" — odometer-style digit roll settling into a liquid,
+            glowing animated gradient. */}
+        <span
+          className="relative inline-block align-baseline"
+          style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
+        >
+          <span className="relative inline-block h-[1.15em] overflow-hidden align-baseline">
+            <span
+              className="flex flex-col items-center"
+              style={{ animation: `akyos-odometer-roll ${ONE_PCT_SPIN_MS}ms cubic-bezier(0.15,0.85,0.2,1) both` }}
+            >
+              {ODOMETER_DECOY_VALUES.map((v, i) => (
+                <span
+                  key={i}
+                  className="block text-[clamp(2.75rem,7vw,4.75rem)] font-extrabold leading-[1.15]"
+                  style={{
+                    backgroundImage:
+                      'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
+                    backgroundSize: '250% 100%',
+                    WebkitBackgroundClip: 'text',
+                    backgroundClip: 'text',
+                    color: 'transparent',
+                    animation: 'akyos-liquid-gradient 3s ease-in-out infinite',
+                  }}
+                >
+                  {v}
+                </span>
+              ))}
+            </span>
+          </span>
+        </span>
+
+        {/* "Better Every Day." — each word fades in, one after another. */}
+        {ONE_PCT_WORDS.map((word, i) => (
+          <span
+            key={word}
+            className="inline-block text-[clamp(2.75rem,7vw,4.75rem)] font-extrabold leading-[1.15] text-white opacity-0"
+            style={{
+              animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.16,1,0.3,1) ${
+                ONE_PCT_SPIN_MS + i * ONE_PCT_WORD_STAGGER_MS
+              }ms both`,
+            }}
+          >
+            {word}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Keyframes + helper for the sign-in screen's own reveal: each box
 // (badge, heading, inputs, button, links) slides in from the left with a
 // short delay stacked on top of the previous one — a "staircase" cascade
@@ -244,6 +376,11 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   // "curtain" opening) that sits above whatever stage resolves underneath
   // it, so the app never flashes straight into a bare loading spinner.
   const [showIntro, setShowIntro] = useState(true);
+  // Plays first, before IntroReveal — the "1% Better Every Day." beat.
+  // Only once this clears does IntroReveal (and the stage cascade behind
+  // it) start its own clock, so the two intros play back to back rather
+  // than racing each other underneath an opaque screen.
+  const [showOnePercentIntro, setShowOnePercentIntro] = useState(true);
 
   // --- email/password form state ---
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -839,8 +976,16 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   return (
     <>
-      {renderStage()}
-      {showIntro && <IntroReveal onComplete={() => setShowIntro(false)} />}
+      {/* Stage content (and its cascade-in) only mounts once the "1%
+          Better Every Day." beat has cleared, so its cascade timers —
+          and IntroReveal's — start together right after, instead of
+          silently finishing underneath an opaque screen. */}
+      {!showOnePercentIntro && renderStage()}
+      {showOnePercentIntro ? (
+        <OnePercentIntro onComplete={() => setShowOnePercentIntro(false)} />
+      ) : (
+        showIntro && <IntroReveal onComplete={() => setShowIntro(false)} />
+      )}
     </>
   );
 }
