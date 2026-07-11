@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, GraduationCap } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import {
   pullFromCloud,
@@ -12,242 +12,102 @@ import {
 
 const PASSCODE_LENGTH = 6;
 
-// Colors for the liquid layer, in the app's existing sky -> violet ->
-// fuchsia brand gradient (same one used on every button/icon badge in
-// this file). More, smaller blobs than a typical "ambient glow" panel —
-// that's what gives the goo filter below enough shapes to actually melt
-// into and split apart from each other as they drift.
-const LIQUID_BLOBS = [
-  { baseXPct: 20, baseYPct: 22, sizeVmin: 26, color: '#38bdf8', speed: 0.00023, driftX: 60, driftY: 46, pulseSpeed: 0.0012, phase: 0.0 },
-  { baseXPct: 52, baseYPct: 14, sizeVmin: 22, color: '#60a5fa', speed: 0.0002, driftX: 50, driftY: 60, pulseSpeed: 0.0009, phase: 1.1 },
-  { baseXPct: 78, baseYPct: 28, sizeVmin: 30, color: '#818cf8', speed: 0.00017, driftX: 68, driftY: 50, pulseSpeed: 0.0008, phase: 2.3 },
-  { baseXPct: 30, baseYPct: 52, sizeVmin: 30, color: '#a78bfa', speed: 0.00015, driftX: 62, driftY: 56, pulseSpeed: 0.0007, phase: 3.4 },
-  { baseXPct: 64, baseYPct: 58, sizeVmin: 34, color: '#c084fc', speed: 0.00013, driftX: 76, driftY: 58, pulseSpeed: 0.0006, phase: 4.1 },
-  { baseXPct: 46, baseYPct: 80, sizeVmin: 28, color: '#e879f9', speed: 0.00022, driftX: 54, driftY: 44, pulseSpeed: 0.0011, phase: 5.0 },
-  { baseXPct: 16, baseYPct: 78, sizeVmin: 22, color: '#22d3ee', speed: 0.0002, driftX: 44, driftY: 40, pulseSpeed: 0.0013, phase: 0.6 },
-  { baseXPct: 86, baseYPct: 74, sizeVmin: 24, color: '#d946ef', speed: 0.00018, driftX: 50, driftY: 48, pulseSpeed: 0.001, phase: 2.9 },
-];
+// A quiet grain texture (classic Linear/Vercel/Stripe touch) — a tiny
+// inline SVG turbulence filter turned into a repeating background image,
+// kept at very low opacity so it just adds a bit of tooth to the flat
+// dark panel instead of reading as pure noise.
+const GRAIN_DATA_URI =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E";
 
-// How long a point in the mouse trail stays visible before it's fully
-// faded out and dropped, in ms. Tuned so a fast flick across the panel
-// leaves a comet-like tail rather than a lingering scribble.
-const TRAIL_MAX_AGE_MS = 750;
-// Minimum pixel distance between recorded points — keeps the trail from
-// flooding with near-duplicate points when the mouse moves slowly.
-const TRAIL_MIN_DIST = 3;
+// Keyframes for the two ambient glows below — defined once, referenced
+// via Tailwind's arbitrary `animate-[name_time_...]` syntax. The browser
+// resolves the keyframe name from any stylesheet on the page, so this
+// plain <style> tag is all that's needed (no tailwind.config changes).
+const AMBIENT_DRIFT_KEYFRAMES = `
+  @keyframes akyos-drift-a { 0% { transform: translate(0, 0); } 100% { transform: translate(-4%, 3%); } }
+  @keyframes akyos-drift-b { 0% { transform: translate(0, 0); } 100% { transform: translate(3%, -4%); } }
+`;
 
-type TrailPoint = { x: number; y: number; t: number };
-
-// The left-half liquid panel for the desktop sign-in layout.
+// The left-half visual panel for the desktop sign-in layout.
 //
-// Two effects layered together:
-//  1. A "goo" liquid — several solid-color circles drifting/pulsing on
-//     their own slow paths (plus leaning toward the cursor), rendered
-//     inside a container with `blur + contrast` CSS filters. That combo
-//     is the classic trick behind melting/morphing blob effects (soften
-//     the edges with blur, then crank contrast back up so anywhere two
-//     blurred shapes overlap gets pulled solid while the thin blurred
-//     halo outside them gets crushed to nothing) — shapes visibly fuse
-//     and split as they move, like the fluid blobs on lusion.co, all in
-//     CSS with no WebGL.
-//  2. A canvas-drawn cursor trail modeled on Strava's post-run route
-//     reveal: every recent mouse position is kept for a short window and
-//     drawn as a glowing line that tapers in width and fades in opacity
-//     the older it gets, then is dropped once it expires.
-// Both are driven by one shared rAF loop, gated to only run on lg+
-// screens (checked via matchMedia) since the panel is hidden below that.
-function LiquidGradientPanel() {
+// Deliberately calm rather than busy: a near-black panel with a faint
+// grain texture, a dim dot grid, and two very soft, slow-drifting brand-
+// colored glows in the corners for a hint of color and depth. The one
+// interactive touch is a "spotlight" — a brighter patch of the same dot
+// grid, masked to a soft circle that follows the cursor — the same
+// technique behind the hero backgrounds on sites like Linear and Vercel.
+// No animation loop is needed for the spotlight: a single CSS custom
+// property is written directly on mousemove and a CSS mask does the rest,
+// so this whole panel costs nothing when the mouse isn't moving.
+function SignInVisualPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ambientRef = useRef<HTMLDivElement>(null);
-  const blobElRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  const targetMouse = useRef({ x: 0.5, y: 0.5 }); // normalized 0..1
-  const smoothMouse = useRef({ x: 0.5, y: 0.5 });
-  const trailPoints = useRef<TrailPoint[]>([]);
-  const lastTrailPoint = useRef<{ x: number; y: number } | null>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const mq = window.matchMedia('(min-width: 1024px)');
-    let raf = 0;
-    let active = mq.matches;
-    const startTime = performance.now();
-
-    // Canvas needs to match the container's actual pixel size (and be
-    // scaled for device pixel ratio) or the trail will look soft/blurry
-    // on high-DPI screens and misaligned with the cursor otherwise.
-    const resizeCanvas = () => {
-      const rect = container.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
-      canvas.style.width = `${rect.width}px`;
-      canvas.style.height = `${rect.height}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resizeCanvas();
-    const ro = new ResizeObserver(resizeCanvas);
-    ro.observe(container);
-
-    const tick = (now: number) => {
-      if (!active) return;
-      const elapsed = now - startTime;
-
-      // Ease the raw cursor position toward a smoothed one so the goo
-      // layer glides toward the pointer rather than snapping to it.
-      smoothMouse.current.x += (targetMouse.current.x - smoothMouse.current.x) * 0.035;
-      smoothMouse.current.y += (targetMouse.current.y - smoothMouse.current.y) * 0.035;
-      const mx = (smoothMouse.current.x - 0.5) * 2; // -1..1
-      const my = (smoothMouse.current.y - 0.5) * 2;
-
-      LIQUID_BLOBS.forEach((b, i) => {
-        const el = blobElRefs.current[i];
-        if (!el) return;
-        const dx = Math.sin(elapsed * b.speed + b.phase) * b.driftX + mx * (b.driftX * 1.1);
-        const dy = Math.cos(elapsed * b.speed * 0.85 + b.phase) * b.driftY + my * (b.driftY * 1.1);
-        const scale = 1 + Math.sin(elapsed * b.pulseSpeed + b.phase) * 0.22;
-        el.style.transform = `translate3d(${dx}px, ${dy}px, 0) translate(-50%, -50%) scale(${scale})`;
-      });
-
-      if (ambientRef.current) {
-        const gx = smoothMouse.current.x * 100;
-        const gy = smoothMouse.current.y * 100;
-        ambientRef.current.style.background = `radial-gradient(38% 45% at ${gx}% ${gy}%, rgba(196,132,252,0.22), rgba(56,189,248,0.08) 55%, transparent 75%)`;
-      }
-
-      // --- cursor trail ---
-      const cutoff = now - TRAIL_MAX_AGE_MS;
-      while (trailPoints.current.length && trailPoints.current[0].t < cutoff) {
-        trailPoints.current.shift();
-      }
-      const rect = container.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      const pts = trailPoints.current;
-      if (pts.length > 1) {
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        for (let i = 1; i < pts.length; i++) {
-          const p0 = pts[i - 1];
-          const p1 = pts[i];
-          const age = now - p1.t;
-          const life = Math.max(0, 1 - age / TRAIL_MAX_AGE_MS); // 1 = fresh, 0 = expired
-          if (life <= 0) continue;
-          const hue = 190 + (1 - life) * 130; // sky -> violet -> fuchsia as it ages
-          ctx.strokeStyle = `hsla(${hue}, 92%, 68%, ${life * 0.9})`;
-          ctx.lineWidth = 0.5 + life * 5.5;
-          ctx.shadowColor = `hsla(${hue}, 95%, 62%, ${life})`;
-          ctx.shadowBlur = 16 * life;
-          ctx.beginPath();
-          ctx.moveTo(p0.x, p0.y);
-          ctx.lineTo(p1.x, p1.y);
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    const start = () => {
-      if (!active || raf) return;
-      resizeCanvas();
-      raf = requestAnimationFrame(tick);
-    };
-    const stop = () => {
-      if (raf) cancelAnimationFrame(raf);
-      raf = 0;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    };
-
-    const handleChange = (e: MediaQueryListEvent) => {
-      active = e.matches;
-      if (active) start(); else stop();
-    };
-    mq.addEventListener('change', handleChange);
-    if (active) start();
-
-    return () => {
-      mq.removeEventListener('change', handleChange);
-      ro.disconnect();
-      stop();
-    };
-  }, []);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    targetMouse.current = { x: x / rect.width, y: y / rect.height };
-
-    const last = lastTrailPoint.current;
-    if (!last || Math.hypot(x - last.x, y - last.y) >= TRAIL_MIN_DIST) {
-      trailPoints.current.push({ x, y, t: performance.now() });
-      lastTrailPoint.current = { x, y };
-      // Cap the buffer defensively — the age-based cutoff in the rAF
-      // loop normally keeps this short, but a very fast mouse could
-      // otherwise queue up more points per frame than it drops.
-      if (trailPoints.current.length > 200) trailPoints.current.shift();
-    }
-  };
-
-  const handleMouseLeave = () => {
-    lastTrailPoint.current = null;
+    const el = containerRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    el.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
+    el.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
   };
 
   return (
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      className="relative hidden h-full overflow-hidden bg-zinc-950 lg:block lg:w-1/2"
+      className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center"
+      style={{ ['--spot-x' as any]: '50%', ['--spot-y' as any]: '50%' }}
     >
-      {/* Soft ambient light that leans toward the cursor — sits behind the
-          goo layer so it reads as light bouncing off the liquid rather
-          than a shape of its own. */}
-      <div ref={ambientRef} className="pointer-events-none absolute inset-0" />
+      <style>{AMBIENT_DRIFT_KEYFRAMES}</style>
 
-      {/* The goo/metaball liquid: solid blobs blended together, then
-          blurred and pushed back to hard contrast so overlapping shapes
-          visibly fuse into one fluid mass and split apart as they drift.
-          `isolate` keeps the blend modes scoped to this layer instead of
-          bleeding into the page behind it. */}
+      {/* Two soft, mostly-static brand-colored glows for a touch of color
+          and depth. Slow enough that they read as "alive" without being
+          distracting next to a login form. */}
+      <div className="pointer-events-none absolute -top-1/4 left-1/4 h-[55vmin] w-[55vmin] rounded-full bg-violet-600/[0.10] blur-[130px] animate-[akyos-drift-a_24s_ease-in-out_infinite_alternate]" />
+      <div className="pointer-events-none absolute bottom-[-10%] right-[-5%] h-[48vmin] w-[48vmin] rounded-full bg-sky-500/[0.09] blur-[130px] animate-[akyos-drift-b_28s_ease-in-out_infinite_alternate]" />
+
+      {/* Faint grain for texture. */}
       <div
-        className="pointer-events-none absolute inset-0 isolate"
-        style={{ filter: 'blur(38px) contrast(26) saturate(1.35)' }}
-      >
-        {LIQUID_BLOBS.map((b, i) => (
-          <div
-            key={i}
-            ref={(el) => { blobElRefs.current[i] = el; }}
-            className="absolute rounded-full mix-blend-screen"
-            style={{
-              left: `${b.baseXPct}%`,
-              top: `${b.baseYPct}%`,
-              width: `${b.sizeVmin}vmin`,
-              height: `${b.sizeVmin}vmin`,
-              backgroundColor: b.color,
-              transform: 'translate(-50%, -50%)',
-            }}
-          />
-        ))}
+        className="pointer-events-none absolute inset-0 opacity-[0.05] mix-blend-overlay"
+        style={{ backgroundImage: `url("${GRAIN_DATA_URI}")` }}
+      />
+
+      {/* Dim base dot grid. */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px)', backgroundSize: '26px 26px' }}
+      />
+
+      {/* Brighter dot grid, masked to a soft circle that tracks the
+          cursor — the "spotlight" reveal. */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(196,181,253,0.85) 1px, transparent 1px)',
+          backgroundSize: '26px 26px',
+          WebkitMaskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
+          maskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
+        }}
+      />
+
+      {/* Oversized, near-invisible wordmark in the corner — a quiet
+          branding touch borrowed from the same minimal-auth-page school
+          (Linear, Raycast) rather than decoration for its own sake. */}
+      <span className="pointer-events-none absolute -bottom-10 -left-4 select-none text-[210px] font-black leading-none tracking-tighter text-white/[0.035]">
+        Akyos
+      </span>
+
+      {/* The actual brand mark, centered — same icon badge + name used in
+          the app's own header, so this panel reads as unmistakably
+          "this app" rather than generic decoration. */}
+      <div className="relative flex flex-col items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
+          <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+        </div>
+        <div className="text-center">
+          <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
+          <p className="text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
+        </div>
       </div>
-
-      {/* Grounds the panel back to the app's near-black base — the goo
-          filter's contrast boost otherwise blows the blob edges out
-          toward white. */}
-      <div className="pointer-events-none absolute inset-0 bg-zinc-950/30" />
-
-      {/* Strava-style trail: a glowing line following recent cursor
-          history that tapers and fades as each point ages out. */}
-      <canvas ref={canvasRef} className="pointer-events-none absolute inset-0" />
     </div>
   );
 }
@@ -536,7 +396,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'auth') {
     return (
       <div className="fixed inset-0 z-[999] flex bg-zinc-950">
-        <LiquidGradientPanel />
+        <SignInVisualPanel />
 
         <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
           <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
