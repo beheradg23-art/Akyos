@@ -5,7 +5,7 @@ import {
   Droplets, Sunrise, Sun, Moon, Utensils, Flame,
   AlertTriangle, ChevronRight, ChevronDown, Eye, Smile, Scissors, Wind,
   TrendingUp, Activity, Timer, Calendar, X, ArrowUpRight, FlameKindling,
-  ChevronLeft, Lock, Music2, Play, Pause, SkipForward,
+  ChevronLeft, Music2, Play, Pause, SkipForward,
   Search, RotateCcw,
   Crown, Swords, Download, Upload, ShieldCheck, ClipboardList, BarChart3, Trash2, Plus, Bell, BellOff,
   Settings, Save, GripVertical, PenLine, RefreshCcw, UserCircle2, KeyRound, LogOut, Loader2
@@ -24,7 +24,9 @@ import { Toaster, toast } from './lib/toast';
 import { haptic } from './lib/haptics';
 import PasswordField from './components/PasswordField';
 import PasscodeChangeCard from './components/PasscodeChangeCard';
+import ErrorBoundary from './components/ErrorBoundary';
 import { NO_SELECT_CSS } from './styles/noSelect';
+import { SYNC_KEYS } from './lib/cloudSync';
 
 // Every account gets asked this exactly once, right after their first
 // passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
@@ -2028,25 +2030,26 @@ function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }) {
 function DataBackupCard({ globalHistory, setGlobalHistory }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const collectBackupPayload = () => ({
-    _meta: {
-      app: 'Akyos',
-      exportedAt: new Date().toISOString(),
-      version: 1,
-    },
-    jee_command_history_v2: globalHistory,
-    mock_test_log: localStorage.getItem('mock_test_log'),
-    topic_revision_log: localStorage.getItem('topic_revision_log'),
-    diet_log_v1: localStorage.getItem('diet_log_v1'),
-    weight_log_v1: localStorage.getItem('weight_log_v1'),
-    ash_clock_focus_min: localStorage.getItem('ash_clock_focus_min'),
-    ash_clock_break_min: localStorage.getItem('ash_clock_break_min'),
-    ash_clock_hunter_level: localStorage.getItem('ash_clock_hunter_level'),
-    ash_clock_quests_cleared: localStorage.getItem('ash_clock_quests_cleared'),
-    pomodoro_subject_log: localStorage.getItem('pomodoro_subject_log'),
-    ash_clock_last_subject: localStorage.getItem('ash_clock_last_subject'),
-    app_config_v1: localStorage.getItem('app_config_v1'),
-  });
+  // Built from cloudSync's SYNC_KEYS — the same list that already has to be
+  // kept up to date for cloud sync to work — instead of a second,
+  // independently hand-maintained list. Add a key to SYNC_KEYS once and both
+  // cloud sync *and* backup/restore pick it up automatically.
+  const collectBackupPayload = () => {
+    const payload: Record<string, unknown> = {
+      _meta: {
+        app: 'Akyos',
+        exportedAt: new Date().toISOString(),
+        version: 1,
+      },
+    };
+    SYNC_KEYS.forEach((key) => {
+      // globalHistory is the live in-memory copy of jee_command_history_v2 —
+      // prefer it over localStorage so an export always reflects what's on
+      // screen, not whatever was last flushed to disk.
+      payload[key] = key === 'jee_command_history_v2' ? globalHistory : localStorage.getItem(key);
+    });
+    return payload;
+  };
 
   const handleExport = () => {
     try {
@@ -2083,13 +2086,12 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
 
         setGlobalHistory(parsed.jee_command_history_v2);
 
-        const passthroughKeys = [
-          'mock_test_log', 'topic_revision_log', 'diet_log_v1', 'weight_log_v1',
-          'ash_clock_focus_min', 'ash_clock_break_min', 'ash_clock_hunter_level',
-          'ash_clock_quests_cleared', 'pomodoro_subject_log', 'ash_clock_last_subject',
-          'app_config_v1',
-        ];
-        passthroughKeys.forEach((key) => {
+        // Restore every other SYNC_KEYS entry present in the file. Driven by
+        // the same list as the export above (and as cloud sync), so a backup
+        // taken after a new feature ships restores that feature's data too,
+        // without this card needing a matching manual update.
+        SYNC_KEYS.forEach((key) => {
+          if (key === 'jee_command_history_v2') return; // handled above
           if (parsed[key] !== undefined && parsed[key] !== null) {
             localStorage.setItem(key, parsed[key]);
           }
@@ -3667,104 +3669,6 @@ function MockTestTab() {
           </div>
         )}
       </Card>
-    </div>
-  );
-}
-
-// ---------- Access Gate ----------
-// A simple client-side passcode screen. Note: this only hides the UI from
-// casual access — the code lives in the frontend bundle, so it is not real
-// security against someone who inspects the source.
-
-const APP_PASSCODE = '091224';
-
-function PasswordGate({ onUnlock }) {
-  const [value, setValue] = useState('');
-  const [error, setError] = useState(false);
-  const [exiting, setExiting] = useState(false);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.focus();
-  }, []);
-
-  useEffect(() => {
-    if (value.length !== APP_PASSCODE.length) return;
-    if (value === APP_PASSCODE) {
-      setExiting(true);
-      const t = setTimeout(() => onUnlock(), 320);
-      return () => clearTimeout(t);
-    }
-    setError(true);
-    const t = setTimeout(() => {
-      setValue('');
-      setError(false);
-      if (inputRef.current) inputRef.current.focus();
-    }, 500);
-    return () => clearTimeout(t);
-  }, [value, onUnlock]);
-
-  const handleChange = (e) => {
-    const digits = e.target.value.replace(/\D/g, '').slice(0, APP_PASSCODE.length);
-    setValue(digits);
-  };
-
-  const boxes = Array.from({ length: APP_PASSCODE.length });
-
-  return (
-    <div
-      className={`fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 transition-all duration-300 ease-out ${
-        exiting ? 'opacity-0 scale-[0.97]' : 'opacity-100 scale-100'
-      }`}
-      onClick={() => inputRef.current && inputRef.current.focus()}
-    >
-      <style>{NO_SELECT_CSS}</style>
-      <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
-        <Lock className="h-5 w-5 text-neutral-950" strokeWidth={2} />
-      </div>
-
-      <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">Restricted Access</h1>
-      <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
-        This app holds personal data. Enter the passcode to continue.
-      </p>
-
-      <div className={`relative flex gap-2.5 ${error ? 'animate-shake' : ''}`}>
-        {boxes.map((_, i) => {
-          const filled = i < value.length;
-          const isCurrent = i === value.length;
-          return (
-            <div
-              key={i}
-              className={`flex h-12 w-10 items-center justify-center rounded-xl border text-lg font-semibold tabular-nums transition-colors duration-150 ${
-                error
-                  ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300'
-                  : isCurrent
-                  ? 'border-indigo-500/50 bg-neutral-900/80 text-neutral-100'
-                  : filled
-                  ? 'border-neutral-700 bg-neutral-900/80 text-neutral-100'
-                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-700'
-              }`}
-            >
-              {filled ? '•' : ''}
-            </div>
-          );
-        })}
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={handleChange}
-          type="password"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          autoComplete="off"
-          aria-label="Passcode"
-          className="absolute inset-0 h-full w-full cursor-default opacity-0"
-        />
-      </div>
-
-      <p className={`mt-5 h-4 text-[12px] font-medium text-rose-400 transition-opacity duration-150 ${error ? 'opacity-100' : 'opacity-0'}`}>
-        Incorrect passcode
-      </p>
     </div>
   );
 }
@@ -5620,22 +5524,28 @@ export default function JEEDashboard() {
   }, [overallPct, currentDateStr, clearedDaysCount]);
 
   if (!unlocked) {
-    return <AuthGate onUnlock={() => setUnlocked(true)} />;
+    return (
+      <ErrorBoundary label="Sign in">
+        <AuthGate onUnlock={() => setUnlocked(true)} />
+      </ErrorBoundary>
+    );
   }
 
   if (!onboardingDone) {
     return (
-      <OnboardingWizard
-        onComplete={(generated) => {
-          updateConfig(generated);
-          try {
-            localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
-          } catch (e) {
-            console.error('[Onboarding] failed to persist completion flag', e);
-          }
-          setOnboardingDone(true);
-        }}
-      />
+      <ErrorBoundary label="Onboarding">
+        <OnboardingWizard
+          onComplete={(generated) => {
+            updateConfig(generated);
+            try {
+              localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+            } catch (e) {
+              console.error('[Onboarding] failed to persist completion flag', e);
+            }
+            setOnboardingDone(true);
+          }}
+        />
+      </ErrorBoundary>
     );
   }
 
@@ -5861,7 +5771,11 @@ export default function JEEDashboard() {
             <ChevronRight className="h-4 w-4 text-neutral-300" />
           </div>
 
-          <main>{renderTab()}</main>
+          <main>
+            <ErrorBoundary key={activeTab} label={TABS.find((t) => t.id === activeTab)?.label}>
+              {renderTab()}
+            </ErrorBoundary>
+          </main>
           <aside>
             <DailyTracker currentDayStr={currentDateStr} checked={checked} onToggle={toggleCheck} setActiveTab={setActiveTab} />
           </aside>
