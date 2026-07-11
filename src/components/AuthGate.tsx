@@ -270,11 +270,12 @@ function IntroReveal({ onComplete }: { onComplete: () => void }) {
 // The exit is its own multi-beat sequence rather than a single fade:
 //   1. "Better Every Day." collapses away (fade + shrink), which lets "1%"
 //      glide back to dead-center as the row re-centers around it.
-//   2. "1%" itself dissolves as a liquid gradient blob grows from that same
-//      spot, stretching outward with a springy, fluid overshoot until it
-//      fully covers the screen.
-//   3. The blob then squeezes back down — sleek and controlled this time —
-//      into the exact size/shape of the badge.
+//   2. "1%" dissolves as the same liquid gradient quietly fades into view,
+//      already covering the whole screen — a plain crossfade, no scaling,
+//      so there's no sudden "zoom in" moment.
+//   3. After a brief hold at full screen, that same gradient eases smoothly
+//      all the way down — one unhurried "zoom out" — into the exact
+//      size/shape of the badge.
 //   4. Once it's settled into that badge shape, the logo mark and wordmark
 //      fade in inside it — the "reveal" — before the whole thing hands off
 //      to whatever was already sitting underneath (IntroReveal, then the
@@ -318,14 +319,20 @@ const ONE_PCT_TOTAL_MS =
   ONE_PCT_HOLD_MS;
 
 // --- exit sequence timings (each beat described above) ---
-const ONE_PCT_WORDS_OUT_MS = 420; // "Better Every Day." collapses, "1%" glides to center
-const ONE_PCT_ZOOM_FILL_MS = 720; // blob stretches out from "1%" to cover the whole screen
-const ONE_PCT_ZOOM_HOLD_MS = 200; // brief hold at full-screen coverage
-const ONE_PCT_ZOOM_BADGE_MS = 620; // blob squeezes back down into the badge shape
-const ONE_PCT_BADGE_REVEAL_MS = 320; // logo mark + wordmark fade in inside the settled badge
-const ONE_PCT_BADGE_HOLD_MS = 380; // badge sits revealed for a beat
-const ONE_PCT_FINAL_FADE_MS = 380; // whole overlay fades, handing off to IntroReveal
-type OnePctPhase = 'intro' | 'wordsOut' | 'zoomFill' | 'zoomBadge' | 'badgeReveal' | 'finalFade';
+// No more "grow from 1% to cover the screen" beat — that scale-up read as
+// a bulky, sudden zoom-in. Instead the full-bleed gradient simply
+// dissolves into view (a plain opacity crossfade — it's already sitting
+// at full size underneath, just invisible), holds for a breath, then the
+// whole thing eases smoothly back down — a single unhurried "zoom out" —
+// into the badge shape. One continuous deceleration, no grow-then-shrink.
+const ONE_PCT_WORDS_OUT_MS = 520; // "Better Every Day." collapses, "1%" glides to center
+const ONE_PCT_GRADIENT_IN_MS = 780; // full-screen gradient quietly dissolves into view (opacity only — no scaling)
+const ONE_PCT_GRADIENT_HOLD_MS = 260; // brief hold at full-screen coverage before easing out
+const ONE_PCT_ZOOM_OUT_MS = 900; // gradient eases smoothly back down into the badge shape
+const ONE_PCT_BADGE_REVEAL_MS = 420; // logo mark + wordmark fade in inside the settled badge
+const ONE_PCT_BADGE_HOLD_MS = 480; // badge sits revealed for a beat
+const ONE_PCT_FINAL_FADE_MS = 480; // whole overlay fades, handing off to IntroReveal
+type OnePctPhase = 'intro' | 'wordsOut' | 'gradientIn' | 'zoomOut' | 'badgeReveal' | 'finalFade';
 
 // Standard "ease out cubic" — fast start, long smooth deceleration into
 // the landing value, same shape most real counters/progress bars use.
@@ -338,21 +345,23 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 // narrow phone widths instead of wrapping.
 const ONE_PCT_TEXT_CLASS = 'text-[clamp(1.4rem,6.8vw,4.75rem)] leading-[1.15]';
 
-// Style for the liquid blob that grows from "1%" to fill the screen, then
-// squeezes back down into the badge. Sized in absolute px (badge state) vs
-// vmax (full-screen state) so the browser can still interpolate between
-// them smoothly — a plain width/height transition, no scale-factor math
-// needed to guarantee full coverage on any screen size. The grow phase uses
-// a springy, overshooting easing for the "stretchy fluid" feel; the squeeze
-// back down uses the app's standard smooth-deceleration curve for a sleek,
-// controlled landing into the badge shape.
+// Style for the liquid blob. It no longer grows from "1%" to cover the
+// screen — that scale-up read as a bulky, sudden zoom-in. Instead it sits
+// at full-screen size the whole time and simply dissolves into view via
+// opacity (see the 'gradientIn' phase below); the one real motion left is
+// a single, smooth "zoom out" — easing all the way down from full-screen
+// to the compact badge shape. Sized in absolute px (badge state) vs vmax
+// (full-screen state) so the browser can still interpolate between them
+// smoothly — a plain width/height transition, no scale-factor math needed
+// to guarantee full coverage on any screen size. Both the fade-in and the
+// zoom-out share the same gentle, no-overshoot deceleration curve so
+// nothing snaps or springs.
+const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 function onePctBlobStyle(phase: OnePctPhase): React.CSSProperties {
-  const filling = phase === 'zoomFill';
-  const settled = phase === 'zoomBadge' || phase === 'badgeReveal' || phase === 'finalFade';
-  const duration = filling ? ONE_PCT_ZOOM_FILL_MS : ONE_PCT_ZOOM_BADGE_MS;
-  const easing = filling ? 'cubic-bezier(0.34, 1.56, 0.64, 1)' : 'cubic-bezier(0.16, 1, 0.3, 1)';
-  const size = filling ? '300vmax' : '56px';
-  const radius = filling ? '50%' : '16px';
+  const visible = phase === 'gradientIn' || phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
+  const settled = phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
+  const size = settled ? '56px' : '300vmax';
+  const radius = settled ? '16px' : '50%';
   return {
     ...liquidFillStyle(),
     position: 'fixed',
@@ -362,9 +371,9 @@ function onePctBlobStyle(phase: OnePctPhase): React.CSSProperties {
     height: size,
     borderRadius: radius,
     transform: 'translate(-50%, -50%)',
-    opacity: filling || settled ? 1 : 0,
+    opacity: visible ? 1 : 0,
     boxShadow: settled ? '0 10px 30px -6px rgba(124,58,237,0.45)' : 'none',
-    transition: `width ${duration}ms ${easing}, height ${duration}ms ${easing}, border-radius ${duration}ms ${easing}, opacity 220ms ease-out, box-shadow 300ms ease-out`,
+    transition: `width ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, height ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, border-radius ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, opacity ${ONE_PCT_GRADIENT_IN_MS}ms ease-in-out, box-shadow 380ms ease-out`,
     zIndex: 2,
   };
 }
@@ -410,17 +419,19 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
       );
     });
 
-    // Exit sequence — each beat scheduled off the end of the last.
+    // Exit sequence — each beat scheduled off the end of the last. No grow
+    // beat anymore: the gradient just dissolves in at full size, holds for
+    // a breath, then eases straight down into the badge.
     const wordsOutAt = ONE_PCT_TOTAL_MS;
-    const zoomFillAt = wordsOutAt + ONE_PCT_WORDS_OUT_MS;
-    const zoomBadgeAt = zoomFillAt + ONE_PCT_ZOOM_FILL_MS + ONE_PCT_ZOOM_HOLD_MS;
-    const badgeRevealAt = zoomBadgeAt + ONE_PCT_ZOOM_BADGE_MS;
+    const gradientInAt = wordsOutAt + ONE_PCT_WORDS_OUT_MS;
+    const zoomOutAt = gradientInAt + ONE_PCT_GRADIENT_IN_MS + ONE_PCT_GRADIENT_HOLD_MS;
+    const badgeRevealAt = zoomOutAt + ONE_PCT_ZOOM_OUT_MS;
     const finalFadeAt = badgeRevealAt + ONE_PCT_BADGE_REVEAL_MS + ONE_PCT_BADGE_HOLD_MS;
     const completeAt = finalFadeAt + ONE_PCT_FINAL_FADE_MS;
 
     timers.push(setTimeout(() => setPhase('wordsOut'), wordsOutAt));
-    timers.push(setTimeout(() => setPhase('zoomFill'), zoomFillAt));
-    timers.push(setTimeout(() => setPhase('zoomBadge'), zoomBadgeAt));
+    timers.push(setTimeout(() => setPhase('gradientIn'), gradientInAt));
+    timers.push(setTimeout(() => setPhase('zoomOut'), zoomOutAt));
     timers.push(setTimeout(() => setPhase('badgeReveal'), badgeRevealAt));
     timers.push(setTimeout(() => setPhase('finalFade'), finalFadeAt));
     timers.push(setTimeout(onComplete, completeAt));
@@ -446,12 +457,13 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
           continuous with what's coming next rather than a hard cut. */}
       <div
         className="fixed left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/25 blur-2xl animate-[akyos-intro-pulse_1.6s_ease-out_infinite] pointer-events-none"
-        style={{ opacity: badgeContentVisible ? 1 : 0, transition: 'opacity 320ms ease-out', zIndex: 1 }}
+        style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out`, zIndex: 1 }}
       />
 
-      {/* The liquid blob: grows from "1%" to fill the whole screen, then
-          squeezes back down into the badge. Its own background is the same
-          moving/shining liquid gradient used everywhere else. */}
+      {/* The liquid blob: dissolves into view already full-screen, then
+          eases smoothly down (zooms out) into the badge shape. Its own
+          background is the same moving/shining liquid gradient used
+          everywhere else. */}
       <div style={onePctBlobStyle(phase)}>
         <div
           className="absolute inset-0 flex items-center justify-center"
@@ -551,13 +563,13 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
 // which happens in the same initial render as the overlay itself.
 const CASCADE_KEYFRAMES = `
   @keyframes akyos-cascade-in {
-    from { opacity: 0; transform: translateX(-28px); }
+    from { opacity: 0; transform: translateX(-22px); }
     to { opacity: 1; transform: translateX(0); }
   }
 `;
-const CASCADE_STEP_MS = 90;
+const CASCADE_STEP_MS = 130; // was 90 — more breathing room between each element's turn
 const cascadeStyle = (index: number): React.CSSProperties => ({
-  animation: `akyos-cascade-in 550ms cubic-bezier(0.16,1,0.3,1) ${INTRO_REVEAL_AT_MS + index * CASCADE_STEP_MS}ms both`,
+  animation: `akyos-cascade-in 750ms cubic-bezier(0.16,1,0.3,1) ${INTRO_REVEAL_AT_MS + index * CASCADE_STEP_MS}ms both`,
 });
 
 // Once cloud data is pulled into localStorage, every piece of state in
