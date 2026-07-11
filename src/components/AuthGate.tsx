@@ -324,19 +324,15 @@ const ONE_PCT_TOTAL_MS =
 // dissolves into view (a plain opacity crossfade — it's already sitting
 // at full size underneath, just invisible), holds for a breath, then the
 // whole thing eases smoothly back down — a single unhurried "zoom out" —
-// into the badge shape. The icon + wordmark are no longer a separate
-// follow-up reveal after that (two reveals back to back read as
-// redundant); they're folded into the tail end of the same zoom-out via a
-// transition delay, so the shape settling and the content appearing read
-// as one continuous motion instead of two.
-const ONE_PCT_WORDS_OUT_MS = 560; // "Better Every Day." collapses, "1%" glides to center
-const ONE_PCT_GRADIENT_IN_MS = 900; // full-screen gradient quietly dissolves into view (opacity only — no scaling)
-const ONE_PCT_GRADIENT_HOLD_MS = 300; // brief hold at full-screen coverage before easing out
-const ONE_PCT_ZOOM_OUT_MS = 1200; // gradient eases smoothly back down into the badge shape — the main beat, lengthened
-const ONE_PCT_ICON_FADE_MS = 560; // logo mark + wordmark fade in during the tail of the zoom-out, not after it
-const ONE_PCT_BADGE_HOLD_MS = 520; // settled badge sits revealed for a beat
-const ONE_PCT_FINAL_FADE_MS = 540; // whole overlay fades, handing off to IntroReveal
-type OnePctPhase = 'intro' | 'wordsOut' | 'gradientIn' | 'zoomOut' | 'finalFade';
+// into the badge shape. One continuous deceleration, no grow-then-shrink.
+const ONE_PCT_WORDS_OUT_MS = 520; // "Better Every Day." collapses, "1%" glides to center
+const ONE_PCT_GRADIENT_IN_MS = 780; // full-screen gradient quietly dissolves into view (opacity only — no scaling)
+const ONE_PCT_GRADIENT_HOLD_MS = 260; // brief hold at full-screen coverage before easing out
+const ONE_PCT_ZOOM_OUT_MS = 900; // gradient eases smoothly back down into the badge shape
+const ONE_PCT_BADGE_REVEAL_MS = 420; // logo mark + wordmark fade in inside the settled badge
+const ONE_PCT_BADGE_HOLD_MS = 480; // badge sits revealed for a beat
+const ONE_PCT_FINAL_FADE_MS = 480; // whole overlay fades, handing off to IntroReveal
+type OnePctPhase = 'intro' | 'wordsOut' | 'gradientIn' | 'zoomOut' | 'badgeReveal' | 'finalFade';
 
 // Standard "ease out cubic" — fast start, long smooth deceleration into
 // the landing value, same shape most real counters/progress bars use.
@@ -362,8 +358,8 @@ const ONE_PCT_TEXT_CLASS = 'text-[clamp(1.4rem,6.8vw,4.75rem)] leading-[1.15]';
 // nothing snaps or springs.
 const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 function onePctBlobStyle(phase: OnePctPhase): React.CSSProperties {
-  const visible = phase === 'gradientIn' || phase === 'zoomOut' || phase === 'finalFade';
-  const settled = phase === 'zoomOut' || phase === 'finalFade';
+  const visible = phase === 'gradientIn' || phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
+  const settled = phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
   const size = settled ? '56px' : '300vmax';
   const radius = settled ? '16px' : '50%';
   return {
@@ -424,19 +420,19 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
     });
 
     // Exit sequence — each beat scheduled off the end of the last. No grow
-    // beat, and no separate reveal beat either: the gradient dissolves in
-    // at full size, holds for a breath, then eases down into the badge —
-    // with the icon/wordmark fading in during that same motion's tail end
-    // (handled via transition-delay in the JSX below, not a phase change).
+    // beat anymore: the gradient just dissolves in at full size, holds for
+    // a breath, then eases straight down into the badge.
     const wordsOutAt = ONE_PCT_TOTAL_MS;
     const gradientInAt = wordsOutAt + ONE_PCT_WORDS_OUT_MS;
     const zoomOutAt = gradientInAt + ONE_PCT_GRADIENT_IN_MS + ONE_PCT_GRADIENT_HOLD_MS;
-    const finalFadeAt = zoomOutAt + ONE_PCT_ZOOM_OUT_MS + ONE_PCT_BADGE_HOLD_MS;
+    const badgeRevealAt = zoomOutAt + ONE_PCT_ZOOM_OUT_MS;
+    const finalFadeAt = badgeRevealAt + ONE_PCT_BADGE_REVEAL_MS + ONE_PCT_BADGE_HOLD_MS;
     const completeAt = finalFadeAt + ONE_PCT_FINAL_FADE_MS;
 
     timers.push(setTimeout(() => setPhase('wordsOut'), wordsOutAt));
     timers.push(setTimeout(() => setPhase('gradientIn'), gradientInAt));
     timers.push(setTimeout(() => setPhase('zoomOut'), zoomOutAt));
+    timers.push(setTimeout(() => setPhase('badgeReveal'), badgeRevealAt));
     timers.push(setTimeout(() => setPhase('finalFade'), finalFadeAt));
     timers.push(setTimeout(onComplete, completeAt));
 
@@ -446,13 +442,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
 
   const wordsCollapsing = phase !== 'intro';
   const onePctVisible = phase === 'intro' || phase === 'wordsOut';
-  // The icon/wordmark are no longer a separate phase — they turn "visible"
-  // the instant zoomOut starts, but a transition-delay (below) holds them
-  // at 0 opacity until the shrink is nearly done, so they resolve into
-  // place right as the shape settles instead of as their own follow-up
-  // reveal beat.
-  const badgeContentVisible = phase === 'zoomOut' || phase === 'finalFade';
-  const iconFadeDelayMs = Math.max(0, ONE_PCT_ZOOM_OUT_MS - ONE_PCT_ICON_FADE_MS);
+  const badgeContentVisible = phase === 'badgeReveal' || phase === 'finalFade';
 
   return (
     <div
@@ -467,7 +457,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
           continuous with what's coming next rather than a hard cut. */}
       <div
         className="fixed left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/25 blur-2xl animate-[akyos-intro-pulse_1.6s_ease-out_infinite] pointer-events-none"
-        style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_ICON_FADE_MS}ms ease-out ${iconFadeDelayMs}ms`, zIndex: 1 }}
+        style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out`, zIndex: 1 }}
       />
 
       {/* The liquid blob: dissolves into view already full-screen, then
@@ -477,7 +467,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
       <div style={onePctBlobStyle(phase)}>
         <div
           className="absolute inset-0 flex items-center justify-center"
-          style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_ICON_FADE_MS}ms ease-out ${iconFadeDelayMs}ms` }}
+          style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out` }}
         >
           <GraduationCap className="h-7 w-7 text-neutral-950" strokeWidth={2} />
         </div>
@@ -491,7 +481,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
           top: 'calc(50% + 44px)',
           transform: 'translateX(-50%)',
           opacity: badgeContentVisible ? 1 : 0,
-          transition: `opacity ${ONE_PCT_ICON_FADE_MS}ms ease-out ${iconFadeDelayMs + 90}ms`,
+          transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out 90ms`,
           zIndex: 2,
         }}
       >
@@ -577,9 +567,9 @@ const CASCADE_KEYFRAMES = `
     to { opacity: 1; transform: translateX(0); }
   }
 `;
-const CASCADE_STEP_MS = 150; // a touch more breathing room between each element's turn
+const CASCADE_STEP_MS = 130; // was 90 — more breathing room between each element's turn
 const cascadeStyle = (index: number): React.CSSProperties => ({
-  animation: `akyos-cascade-in 820ms cubic-bezier(0.16,1,0.3,1) ${INTRO_REVEAL_AT_MS + index * CASCADE_STEP_MS}ms both`,
+  animation: `akyos-cascade-in 750ms cubic-bezier(0.16,1,0.3,1) ${INTRO_REVEAL_AT_MS + index * CASCADE_STEP_MS}ms both`,
 });
 
 // Once cloud data is pulled into localStorage, every piece of state in
