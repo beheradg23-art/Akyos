@@ -20,6 +20,10 @@ import { supabase } from './lib/supabaseClient';
 import { generateTopicDetails, generateExerciseGuide, generateProfileTargets } from './lib/contentGen';
 import { subscribeToPush, messageServiceWorker } from './lib/pushNotifications';
 import { startActiveTimer, clearActiveTimer } from './lib/activeTimers';
+import { Toaster, toast } from './lib/toast';
+import { haptic } from './lib/haptics';
+import PasswordField from './components/PasswordField';
+import PasscodeChangeCard from './components/PasscodeChangeCard';
 
 // Every account gets asked this exactly once, right after their first
 // passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
@@ -1850,11 +1854,15 @@ function TrackerItemButton({ item, isChecked, onToggle, isDerived }) {
     spawnRipple(e, ref.current);
   };
   const handleUp = () => setPressed(false);
+  const handleClick = () => {
+    haptic.light();
+    onToggle?.();
+  };
 
   return (
     <button
       ref={ref}
-      onClick={onToggle}
+      onClick={handleClick}
       onMouseDown={handleDown}
       onMouseUp={handleUp}
       onMouseLeave={handleUp}
@@ -2011,13 +2019,6 @@ function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }) {
 
 function DataBackupCard({ globalHistory, setGlobalHistory }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  useEffect(() => {
-    if (!status) return;
-    const t = setTimeout(() => setStatus(null), 4000);
-    return () => clearTimeout(t);
-  }, [status]);
 
   const collectBackupPayload = () => ({
     _meta: {
@@ -2051,9 +2052,9 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setStatus({ type: 'success', message: 'Backup downloaded — keep it somewhere safe (Drive, email to yourself, etc).' });
+      toast.success('Backup downloaded — keep it somewhere safe (Drive, email to yourself, etc).');
     } catch {
-      setStatus({ type: 'error', message: 'Could not create the backup file. Try again.' });
+      toast.error('Could not create the backup file. Try again.');
     }
   };
 
@@ -2086,10 +2087,10 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
           }
         });
 
-        setStatus({ type: 'success', message: 'Restored — reloading to apply everything…' });
+        toast.success('Restored — reloading to apply everything…');
         setTimeout(() => window.location.reload(), 1100);
       } catch {
-        setStatus({ type: 'error', message: 'That file is invalid or corrupted — nothing was changed.' });
+        toast.error('That file is invalid or corrupted — nothing was changed.');
       }
     };
     reader.readAsText(file);
@@ -2126,18 +2127,6 @@ function DataBackupCard({ globalHistory, setGlobalHistory }) {
       <p className="mt-4 text-[12.5px] text-neutral-500 leading-relaxed">
         Everything here — the Daily Matrix history, streak, Hunter Rank, mock test scores, and weight log — lives only in this browser's storage. Clearing site data, switching devices, or reinstalling the browser erases it permanently, with no way to recover it. Export a backup file regularly, and import it to restore everything on a new device or after a reset.
       </p>
-
-      {status && (
-        <div
-          className={`mt-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-[12px] font-medium animate-fadeIn ${
-            status.type === 'success'
-              ? 'border-violet-800/40 bg-violet-950/30 text-violet-300'
-              : 'border-rose-800/40 bg-rose-950/30 text-rose-300'
-          }`}
-        >
-          {status.message}
-        </div>
-      )}
     </Card>
   );
 }
@@ -2148,33 +2137,34 @@ function ChangePasswordCard() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  useEffect(() => {
-    if (!status) return;
-    const t = setTimeout(() => setStatus(null), 4000);
-    return () => clearTimeout(t);
-  }, [status]);
+  // Inline error stays for form validation (wrong length / mismatch) since
+  // that's tied to a specific field the person needs to look at right now.
+  // The final outcome (saved / failed) goes through the shared toast so it
+  // reads the same way as every other "Saved ✓" moment in the app.
+  const [fieldError, setFieldError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFieldError('');
     if (newPassword.length < 6) {
-      setStatus({ type: 'error', message: 'Password must be at least 6 characters.' });
+      setFieldError('Password must be at least 6 characters.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      setStatus({ type: 'error', message: "Those didn't match — try again." });
+      setFieldError("Those didn't match — try again.");
       return;
     }
     setBusy(true);
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
-      setStatus({ type: 'success', message: 'Password updated.' });
+      haptic.success();
+      toast.success('Password updated.');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      setStatus({ type: 'error', message: err?.message || 'Could not update your password.' });
+      haptic.error();
+      toast.error(err?.message || 'Could not update your password.');
     } finally {
       setBusy(false);
     }
@@ -2189,22 +2179,22 @@ function ChangePasswordCard() {
         <h3 className="text-[13.5px] font-bold text-neutral-100">Change Password</h3>
       </div>
       <form onSubmit={handleSubmit} className="space-y-2.5">
-        <input
-          type="password"
+        <PasswordField
           value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
+          onChange={setNewPassword}
           placeholder="New password (min 6 characters)"
           autoComplete="new-password"
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
+          showStrength
+          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
         />
-        <input
-          type="password"
+        <PasswordField
           value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
+          onChange={setConfirmPassword}
           placeholder="Confirm new password"
           autoComplete="new-password"
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
+          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
         />
+        {fieldError && <p className="text-[12px] text-rose-400">{fieldError}</p>}
         <button
           type="submit"
           disabled={busy}
@@ -2214,15 +2204,6 @@ function ChangePasswordCard() {
           {busy ? 'Saving…' : 'Update Password'}
         </button>
       </form>
-      {status && (
-        <div
-          className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] ${
-            status.type === 'success' ? 'bg-violet-500/10 text-violet-300' : 'bg-rose-500/10 text-rose-300'
-          }`}
-        >
-          {status.message}
-        </div>
-      )}
     </div>
   );
 }
@@ -2269,6 +2250,7 @@ function AccountPage({
       <CloudSyncCard />
       <PushNotificationsCard />
       <ChangePasswordCard />
+      <PasscodeChangeCard />
 
       <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
 
@@ -6075,6 +6057,7 @@ export default function JEEDashboard() {
           * { cursor: none !important; }
         }
       `}</style>
+      <Toaster />
     </div>
     </ConfigContext.Provider>
   );
@@ -6310,6 +6293,7 @@ function PomodoroView({ onSessionComplete }) {
 
   const handleSessionComplete = () => {
     playChime();
+    haptic.success();
     if (userId) clearActiveTimer(userId, 'pomodoro');
     messageServiceWorker({
       type: 'POMODORO_COMPLETE',

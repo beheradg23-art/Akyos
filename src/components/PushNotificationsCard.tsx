@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Bell, BellOff, BellRing } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getPushStatus, subscribeToPush, unsubscribeFromPush, pushSupported, type PushStatus } from '../lib/pushNotifications';
+import { toast } from '../lib/toast';
+import { haptic } from '../lib/haptics';
 
 export default function PushNotificationsCard() {
   const [status, setStatus] = useState<PushStatus>('unsubscribed');
@@ -17,13 +19,25 @@ export default function PushNotificationsCard() {
       if (status === 'subscribed') {
         await unsubscribeFromPush();
         setStatus('unsubscribed');
+        haptic.light();
+        toast.info('Notifications turned off for this device.');
       } else {
         const { data } = await supabase.auth.getUser();
         const userId = data.user?.id;
         if (!userId) return;
         const next = await subscribeToPush(userId);
         setStatus(next);
+        if (next === 'subscribed') {
+          haptic.success();
+          toast.success('Notifications turned on for this device.');
+        } else if (next === 'denied') {
+          haptic.error();
+          toast.error('Blocked — allow notifications for this site in your browser settings.');
+        }
       }
+    } catch {
+      haptic.error();
+      toast.error('Could not update your notification settings. Try again.');
     } finally {
       setBusy(false);
     }

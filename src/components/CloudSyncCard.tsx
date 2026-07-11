@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, CloudUpload, CheckCircle2 } from 'lucide-react';
+import { Cloud, CloudUpload } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { pushToCloud } from '../lib/cloudSync';
+import { toast } from '../lib/toast';
+import { haptic } from '../lib/haptics';
 
 // Lives inside AccountMenu now (Account > Cloud Sync). Sign out is handled
 // centrally by AccountMenu itself, so this card is scoped to just syncing.
@@ -10,7 +12,6 @@ export default function CloudSyncCard() {
   const [email, setEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -19,20 +20,16 @@ export default function CloudSyncCard() {
     });
   }, []);
 
-  useEffect(() => {
-    if (!status) return;
-    const t = setTimeout(() => setStatus(null), 4000);
-    return () => clearTimeout(t);
-  }, [status]);
-
   const handleSyncNow = async () => {
     if (!userId) return;
     setSyncing(true);
     try {
       await pushToCloud(userId);
-      setStatus({ type: 'success', message: 'Synced to the cloud.' });
+      haptic.success();
+      toast.success('Synced to the cloud.');
     } catch {
-      setStatus({ type: 'error', message: 'Sync failed — check your connection and try again.' });
+      haptic.error();
+      toast.error('Sync failed — check your connection and try again.');
     } finally {
       setSyncing(false);
     }
@@ -62,17 +59,6 @@ export default function CloudSyncCard() {
           {syncing ? 'Syncing…' : 'Sync Now'}
         </button>
       </div>
-
-      {status && (
-        <div
-          className={`mt-3 flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] ${
-            status.type === 'success' ? 'bg-violet-500/10 text-violet-300' : 'bg-rose-500/10 text-rose-300'
-          }`}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-          {status.message}
-        </div>
-      )}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   getPasscodeHash,
   PASSCODE_HASH_KEY,
 } from '../lib/cloudSync';
+import PasswordField from './PasswordField';
 
 const PASSCODE_LENGTH = 6;
 
@@ -603,6 +604,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [signupNotice, setSignupNotice] = useState('');
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   // --- "choose your passcode" (signup) state ---
   const [pcSetupPhase, setPcSetupPhase] = useState<'enter' | 'confirm'>('enter');
@@ -683,6 +685,16 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   useEffect(() => {
     if (stage === 'passcode') pcInputRef.current?.focus();
     if (stage === 'setPasscode') pcSetupInputRef.current?.focus();
+    if (stage === 'auth') {
+      // The email field cascades in with its own entrance animation (see
+      // cascadeStyle below) — focusing it timed to land right as that
+      // animation finishes means the cursor is already blinking inside the
+      // box the instant it's visually settled, instead of the person having
+      // to click into it first before they can type.
+      const focusDelay = INTRO_REVEAL_AT_MS + 3 * CASCADE_STEP_MS + 750;
+      const t = setTimeout(() => emailInputRef.current?.focus(), focusDelay);
+      return () => clearTimeout(t);
+    }
   }, [stage]);
 
   // --- returning-user passcode check ---
@@ -888,6 +900,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
           <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
             <input
+              ref={emailInputRef}
               type="email"
               required
               autoComplete="email"
@@ -897,15 +910,15 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
               style={cascadeStyle(3)}
             />
-            <input
-              type="password"
+            <PasswordField
+              value={password}
+              onChange={setPassword}
               required
               minLength={6}
               autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               placeholder="Password (min 6 characters)"
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+              showStrength={authMode === 'signup'}
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
               style={cascadeStyle(4)}
             />
 
@@ -1086,25 +1099,24 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         </p>
 
         <form onSubmit={handleSetNewPassword} className="w-full max-w-xs space-y-3">
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete="new-password"
+          <PasswordField
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="New password (min 6 characters)"
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-          />
-          <input
-            type="password"
+            onChange={setNewPassword}
             required
             minLength={6}
             autoComplete="new-password"
+            placeholder="New password (min 6 characters)"
+            showStrength
+            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+          />
+          <PasswordField
             value={newPasswordConfirm}
-            onChange={(e) => setNewPasswordConfirm(e.target.value)}
+            onChange={setNewPasswordConfirm}
+            required
+            minLength={6}
+            autoComplete="new-password"
             placeholder="Confirm new password"
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
           />
           {newPasswordError && <p className="text-[12px] text-rose-400">{newPasswordError}</p>}
           <button
