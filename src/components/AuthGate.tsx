@@ -208,20 +208,16 @@ function IntroReveal({ onComplete }: { onComplete: () => void }) {
 
 // --- "1% Better Every Day." pre-intro ------------------------------------
 //
-// Plays first, before IntroReveal / the sign-in page itself. "1%" flicks
-// through a few decoy values like a slot-machine/odometer, decelerating
-// into a settled stop (the "lucky draw pause"), rendered as an animated
-// liquid gradient with a soft glow for a premium feel. "Better Every Day."
-// then fades in one word at a time, in plain white, starting from "Better".
-// After a short hold, the whole line fades out and hands off to whatever
-// was already sitting underneath (IntroReveal, then the real stage).
+// Plays first, before IntroReveal / the sign-in page itself. "1%" counts
+// up smoothly — frame by frame, eased, the same way a real loading-percent
+// counter moves — rather than snapping between discrete values, rendered
+// as an animated liquid gradient with a soft glow for a premium feel.
+// "Better Every Day." then drifts in one word at a time, slowly, starting
+// from "Better". After a short hold, the whole line fades out and hands
+// off to whatever was already sitting underneath (IntroReveal, then the
+// real stage).
 const ONE_PCT_KEYFRAMES = `
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&display=swap');
-
-  @keyframes akyos-digit-flip {
-    from { opacity: 0; transform: translateY(-0.06em) scale(0.985); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-  }
 
   @keyframes akyos-liquid-gradient {
     0%   { background-position: 0% 50%; }
@@ -235,30 +231,33 @@ const ONE_PCT_KEYFRAMES = `
   }
 
   @keyframes akyos-word-fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(16px); filter: blur(6px); }
+    to   { opacity: 1; transform: translateY(0); filter: blur(0); }
   }
 `;
 
-// Decoy values the odometer flicks through before landing on the real "1%"
-// — the last entry MUST be the true value, since that's where it stops.
-const ODOMETER_DECOY_VALUES = ['7%', '4%', '9%', '2%', '6%', '3%', '8%', '5%', '1%'];
-
-// Gaps (ms) between each flip — 8 gaps for the 9 values above, getting
-// longer toward the end so it visibly decelerates into a stop rather than
-// cutting off abruptly. These sum to less than ONE_PCT_SPIN_MS, so "1%"
-// sits settled and static for a beat before the words start — the
-// "lucky draw pause".
-const ODOMETER_STEP_DELAYS_MS = [65, 70, 80, 95, 115, 140, 175, 230];
-
-const ONE_PCT_SPIN_MS = 1300; // time budgeted for the odometer settling + its pause
-const ONE_PCT_WORD_STAGGER_MS = 340; // gap between each word starting its fade-in — slow and deliberate, not rapid-fire
-const ONE_PCT_WORD_FADE_MS = 850; // how long a single word takes to fade in — long and gentle rather than a quick snap
-const ONE_PCT_HOLD_MS = 600; // full line sits fully visible before exiting
-const ONE_PCT_EXIT_MS = 550; // whole line fades out
+// Target value the counter eases up to. Displayed with one decimal place
+// while still counting (so the motion actually reads as a sweep, the same
+// way a real loading-percentage counter shows fractional progress), then
+// snapped to a clean whole-number "1%" the instant it settles.
+const ONE_PCT_TARGET = 1;
+const ONE_PCT_COUNT_MS = 1250; // duration of the smooth count-up
+const ONE_PCT_COUNT_PAUSE_MS = 350; // "1%" sits settled before the words start
+const ONE_PCT_WORD_START_MS = ONE_PCT_COUNT_MS + ONE_PCT_COUNT_PAUSE_MS;
+const ONE_PCT_WORD_STAGGER_MS = 420; // gap between each word starting its drift-in — slow and deliberate
+const ONE_PCT_WORD_FADE_MS = 1150; // how long a single word takes to fully resolve — long, slow, cinematic
+const ONE_PCT_HOLD_MS = 550; // full line sits fully visible before exiting
+const ONE_PCT_EXIT_MS = 650; // whole line fades out
 const ONE_PCT_WORDS = ['Better', 'Every', 'Day.'];
 const ONE_PCT_TOTAL_MS =
-  ONE_PCT_SPIN_MS + (ONE_PCT_WORDS.length - 1) * ONE_PCT_WORD_STAGGER_MS + ONE_PCT_WORD_FADE_MS + ONE_PCT_HOLD_MS;
+  ONE_PCT_WORD_START_MS +
+  (ONE_PCT_WORDS.length - 1) * ONE_PCT_WORD_STAGGER_MS +
+  ONE_PCT_WORD_FADE_MS +
+  ONE_PCT_HOLD_MS;
+
+// Standard "ease out cubic" — fast start, long smooth deceleration into
+// the landing value, same shape most real counters/progress bars use.
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
 // The shared big-text styling for both "1%" and the "Better Every Day."
 // words, so they read as one continuous line at one consistent size.
@@ -266,29 +265,42 @@ const ONE_PCT_TEXT_CLASS = 'text-[clamp(2.75rem,7vw,4.75rem)] font-extrabold lea
 
 function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
   const [exiting, setExiting] = useState(false);
-  const [digitIndex, setDigitIndex] = useState(0);
+  const [countLabel, setCountLabel] = useState('0.0%');
   // How many of ONE_PCT_WORDS are currently mounted. Words are only added
   // to the DOM when it's their turn to appear — NOT rendered up front with
   // opacity:0 — because invisible text still reserves its own width in the
-  // flex row. Reserving that space early was pulling the centered block's
-  // visible content (just "1%" at first) off toward the left edge of a
-  // wider-than-it-looks invisible block.
+  // flex row, which would pull the centered block off toward the left.
   const [visibleWordCount, setVisibleWordCount] = useState(0);
+
+  // Smooth count-up, driven by requestAnimationFrame rather than a handful
+  // of discrete setTimeout jumps — every frame nudges the number forward
+  // slightly, which is what actually reads as "smooth" instead of "snappy".
+  useEffect(() => {
+    let rafId = 0;
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / ONE_PCT_COUNT_MS, 1);
+      const eased = easeOutCubic(t);
+      if (t >= 1) {
+        setCountLabel(`${ONE_PCT_TARGET}%`);
+        return;
+      }
+      setCountLabel(`${(eased * ONE_PCT_TARGET).toFixed(1)}%`);
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
 
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
 
-    // Drive the odometer flip through each decoy value in sequence.
-    let cumulative = 0;
-    ODOMETER_STEP_DELAYS_MS.forEach((delay, i) => {
-      cumulative += delay;
-      timers.push(setTimeout(() => setDigitIndex(i + 1), cumulative));
-    });
-
     // Mount each word right as its turn comes up.
     ONE_PCT_WORDS.forEach((_, i) => {
       timers.push(
-        setTimeout(() => setVisibleWordCount(i + 1), ONE_PCT_SPIN_MS + i * ONE_PCT_WORD_STAGGER_MS)
+        setTimeout(() => setVisibleWordCount(i + 1), ONE_PCT_WORD_START_MS + i * ONE_PCT_WORD_STAGGER_MS)
       );
     });
 
@@ -311,18 +323,18 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
         className="flex flex-wrap items-baseline justify-center gap-x-3 gap-y-1 text-center"
         style={{ fontFamily: "'Poppins', sans-serif" }}
       >
-        {/* "1%" — quick decoy flips settling into a liquid, glowing
-            animated gradient. Re-keying on digitIndex remounts the span on
-            every flip so the pop-in animation replays each time. */}
+        {/* "1%" — smooth eased count-up, rendered as a liquid, glowing
+            animated gradient. Text content just updates in place each
+            frame — nothing remounts, so there's no per-frame pop, only
+            the number itself gliding forward. */}
         <span
           className="relative inline-block align-baseline"
           style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
         >
           <span
-            key={digitIndex}
-            className={`inline-block min-w-[1.6ch] text-center ${ONE_PCT_TEXT_CLASS}`}
+            className={`inline-block min-w-[3ch] text-center tabular-nums ${ONE_PCT_TEXT_CLASS}`}
             style={{
-              animation: 'akyos-digit-flip 260ms cubic-bezier(0.25,0.9,0.35,1) both, akyos-liquid-gradient 3s ease-in-out infinite',
+              animation: 'akyos-liquid-gradient 3s ease-in-out infinite',
               backgroundImage:
                 'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
               backgroundSize: '250% 100%',
@@ -332,17 +344,18 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
               color: 'transparent',
             }}
           >
-            {ODOMETER_DECOY_VALUES[digitIndex]}
+            {countLabel}
           </span>
         </span>
 
-        {/* "Better Every Day." — each word mounts (and fades in) one at a
-            time, so words not yet due don't reserve any space. */}
+        {/* "Better Every Day." — each word mounts and slowly drifts/
+            dissolves into view, one at a time, so words not yet due
+            don't reserve any space. */}
         {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
           <span
             key={word}
             className={`inline-block text-white ${ONE_PCT_TEXT_CLASS}`}
-            style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.16,1,0.3,1) both` }}
+            style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
           >
             {word}
           </span>
