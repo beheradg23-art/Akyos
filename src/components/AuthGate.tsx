@@ -290,10 +290,16 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
         {/* "1%" — odometer-style digit roll settling into a liquid,
             glowing animated gradient. */}
         <span
-          className="relative inline-block align-baseline"
+          className="relative inline-block align-baseline text-[clamp(2.75rem,7vw,4.75rem)] font-extrabold leading-[1.15]"
           style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
         >
-          <span className="relative inline-block h-[1.15em] overflow-hidden align-baseline">
+          {/* h-[1.15em] is sized off THIS span's own font-size (set just
+              above), so it must live on an element that actually carries
+              that font-size — not an ancestor with the inherited default
+              size, or the em resolves tiny and clips the digits to a
+              sliver (which is what was causing the "1%" to flicker/vanish
+              instead of showing). */}
+          <span className="relative inline-block h-[1.15em] w-[1.6ch] overflow-hidden align-baseline">
             <span
               className="flex flex-col items-center"
               style={{ animation: `akyos-odometer-roll ${ONE_PCT_SPIN_MS}ms cubic-bezier(0.15,0.85,0.2,1) both` }}
@@ -301,7 +307,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
               {ODOMETER_DECOY_VALUES.map((v, i) => (
                 <span
                   key={i}
-                  className="block text-[clamp(2.75rem,7vw,4.75rem)] font-extrabold leading-[1.15]"
+                  className="block leading-[1.15]"
                   style={{
                     backgroundImage:
                       'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
