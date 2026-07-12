@@ -9,9 +9,29 @@ import {
 import {
   generateChecklist,
   generateDailyTimeline,
-  generateWeeklyTraining,
   generateProfileTargets,
-  generateSyllabus,
+  // Phase 9 Part 1: the wizard now calls the structured, domain-aware
+  // generators Phases 5-7 built (generateDietPlan / generateTrainingPlan /
+  // generateExamSyllabus) instead of the original generic
+  // generateWeeklyTraining / generateSyllabus. Those two original functions
+  // are UNCHANGED and still exist in contentGen.ts (kept for anything else
+  // that might call them) — this file just no longer imports them. See
+  // PHASE_9_PART1_HANDOFF.md for the full reasoning.
+  generateDietPlan,
+  generateTrainingPlan,
+  generateExamSyllabus,
+  // Last-resort, fully-local fallback builders — used only if the structured
+  // generate*() calls above somehow throw past their own internal try/catch
+  // (defensive; shouldn't happen in practice, see PHASE_9_PART1_HANDOFF.md).
+  // Reusing these (rather than this file's own generic fallbackTraining/
+  // fallbackSyllabus) means even a total-failure path still produces
+  // daysPerWeek/currentLevel-aware content instead of a one-size-fits-all
+  // placeholder.
+  calculateDietTargets,
+  buildFallbackDietPlan,
+  buildFallbackWeeklyTrainingPlan,
+  buildFallbackSyllabus,
+  type DietPlanMeal,
 } from '../lib/contentGen';
 import {
   GOAL_DOMAINS,
@@ -31,6 +51,12 @@ import {
   type ActivityLevel,
   type RoutineStyle,
 } from '../lib/questionnaire';
+// Phase 9 Part 1: hydrate generated timeline/diet data into the real,
+// icon-bearing shape appConfig.ts's own state already uses (see "Bug fixed"
+// in PHASE_9_PART1_HANDOFF.md — config.timeline/config.diet items need a
+// resolved `.icon` component, not just an `iconName` string, or the
+// Timeline/Training & Fuel tabs crash trying to render `<slot.icon />`).
+import { hydrateTimeline, hydrateDiet, DEFAULT_DIET_OVERRIDES, type DietOverrideKey } from '../lib/appConfig';
 
 // ---------- First-run setup ----------
 // Shown once, right after a new account picks its passcode (see App.tsx —
@@ -132,6 +158,33 @@ function fallbackSyllabus(goalDescription: string, wantsSyllabus: boolean): { su
     subjects: [{ key: 'subject_1', label: goalDescription.slice(0, 30) || 'Main Subject', color: 'sky' }],
     syllabus: [{ phase: 1, month: 'Month 1', label: 'Getting started', subjects: { subject_1: ['Add your first topic'] } }],
   };
+}
+
+// ---- Phase 9 Part 1: last-resort local fallbacks for the three structured
+// generators. generateDietPlan/generateTrainingPlan/generateExamSyllabus
+// already resolve internally to their own buildFallback*() on an AI
+// failure, so these wrappers only ever run if the call itself throws past
+// that (network layer blowing up before generate()'s own try/catch, etc.) —
+// belt-and-suspenders, matching this project's established defensive style.
+// Kept separate from the generic fallbackTraining()/fallbackSyllabus()
+// above so even this total-failure path stays domain-aware (real
+// daysPerWeek-sized split, real currentLevel-shaped roadmap) instead of a
+// one-size-fits-all placeholder.
+function localDietFallback(a: QuestionnaireAnswers['diet']) {
+  const targets = calculateDietTargets(a);
+  return {
+    meals: buildFallbackDietPlan(a, targets),
+    targetCalories: targets.calories,
+    targetProteinG: targets.proteinG,
+    targetHydrationL: targets.hydrationL,
+    usedFallback: true,
+  };
+}
+function localTrainingFallback(a: QuestionnaireAnswers['fitness']) {
+  return { days: buildFallbackWeeklyTrainingPlan(a), usedFallback: true };
+}
+function localSyllabusFallback(a: QuestionnaireAnswers['exam']) {
+  return { ...buildFallbackSyllabus(a), usedFallback: true };
 }
 
 function addMinutes(time: string, mins: number): string {
@@ -249,7 +302,22 @@ const ROUTINE_STYLE_OPTIONS: { value: RoutineStyle; label: string }[] = [
 export default function OnboardingWizard({
   onComplete,
 }: {
-  onComplete: (partial: { trackerItems: ChecklistItem[]; timeline: TimelineBlock[]; training: TrainingDay[]; profile: any; subjects: Subject[]; syllabus: SyllabusPhase[] }) => void;
+  onComplete: (partial: {
+    trackerItems: ChecklistItem[]; timeline: TimelineBlock[]; training: TrainingDay[]; profile: any;
+    subjects: Subject[]; syllabus: SyllabusPhase[];
+    // Phase 9 Part 1 additions — all optional so this stays a strict
+    // superset of what onComplete accepted before. `domains` is the
+    // TOP-LEVEL config.domains field Phase 8 built the dynamic tab system
+    // around (deliberately distinct from `profile.domains`, which
+    // deriveProfileFields() already puts on the profile object itself — see
+    // that function's own doc comment on why they're separate fields).
+    // `diet`/`dietOverrides` are only ever included when the 'diet' domain
+    // was selected (see finish() below) — a non-diet account's
+    // config.diet/config.dietOverrides are left completely untouched.
+    domains?: GoalDomain[];
+    diet?: any[];
+    dietOverrides?: Partial<Record<DietOverrideKey, string>>;
+  }) => void;
 }) {
   const [stage, setStage] = useState<Stage>('intro');
   const [answers, setAnswers] = useState<QuestionnaireAnswers>(() => ({
@@ -269,14 +337,22 @@ export default function OnboardingWizard({
   const [targets, setTargets] = useState<{ targets: ProfileTarget[]; baselineLabel: string }>({ targets: [], baselineLabel: 'Baseline Score' });
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [syllabus, setSyllabus] = useState<SyllabusPhase[]>([]);
+  // Phase 9 Part 1: only meaningful when the 'diet' domain is selected —
+  // stays empty otherwise, and finish()/skip() only ever write config.diet/
+  // config.dietOverrides when it's populated, so a non-diet account's Fuel
+  // Matrix is left completely untouched (still whatever DEFAULT_DIET_*
+  // appConfig.ts already starts every account with), exactly like before
+  // this phase.
+  const [diet, setDiet] = useState<DietPlanMeal[]>([]);
+  const [dietTargets, setDietTargets] = useState<{ calories: number; proteinG: number; hydrationL: number } | null>(null);
   const [regenerating, setRegenerating] = useState<string | null>(null);
   // Tracks which sections are showing generic fallback content rather than
   // the actual AI-generated plan (generation failed, timed out, or was
   // skipped). Surfaced in the review screen so the person knows what they're
   // looking at isn't personalized yet, instead of silently passing off a
   // placeholder as the real thing.
-  const [usedFallback, setUsedFallback] = useState<Record<'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus', boolean>>({
-    checklist: false, timeline: false, training: false, targets: false, syllabus: false,
+  const [usedFallback, setUsedFallback] = useState<Record<'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet', boolean>>({
+    checklist: false, timeline: false, training: false, targets: false, syllabus: false, diet: false,
   });
 
   const loadingMessages = [
@@ -303,6 +379,7 @@ export default function OnboardingWizard({
 
   const wantsTraining = hasDomain(answers, 'fitness');
   const wantsSyllabus = hasDomain(answers, 'exam');
+  const wantsDiet = hasDomain(answers, 'diet');
 
   const goalDescription = buildGoalDescription(answers);
   const context = buildGoalContext(answers);
@@ -311,49 +388,71 @@ export default function OnboardingWizard({
     setStage('generating');
     setError('');
 
-    const [checklistRes, timelineRes, trainingRes, targetsRes, syllabusRes] = await Promise.all([
+    // Phase 9 Part 1: training/syllabus/diet now go through the structured,
+    // domain-aware generators (Phases 5-7) instead of the generic
+    // goalDescription-string ones — see the import block's comment for why.
+    // checklist/timeline/targets are untouched: they have no structured
+    // per-domain answer shape to upgrade to, so they still take the composed
+    // goalDescription/context strings exactly as before.
+    const [checklistRes, timelineRes, trainingRes, targetsRes, syllabusRes, dietRes] = await Promise.all([
       generateChecklist(goalDescription, context).catch(() => null),
       generateDailyTimeline(goalDescription, context).catch(() => null),
-      wantsTraining ? generateWeeklyTraining(goalDescription, context).catch(() => null) : Promise.resolve(null),
+      wantsTraining ? generateTrainingPlan(answers.fitness, context).catch(() => null) : Promise.resolve(null),
       generateProfileTargets(goalDescription).catch(() => null),
-      wantsSyllabus ? generateSyllabus(goalDescription, context).catch(() => null) : Promise.resolve(null),
+      wantsSyllabus ? generateExamSyllabus(answers.exam, context).catch(() => null) : Promise.resolve(null),
+      wantsDiet ? generateDietPlan(answers.diet, undefined, context).catch(() => null) : Promise.resolve(null),
     ]);
 
     const checklistOk = !!checklistRes?.items?.length;
     const timelineOk = !!timelineRes?.blocks?.length;
-    const trainingOk = !wantsTraining || !!trainingRes?.days?.length;
     const targetsOk = !!targetsRes?.targets?.length;
-    const syllabusOk = !wantsSyllabus || !!(syllabusRes?.subjects?.length && syllabusRes?.phases?.length);
+
+    // trainingRes/syllabusRes/dietRes already resolve to real, usable
+    // content themselves (they never return null on an AI failure — only a
+    // total exception makes them null here). If one IS null, fall through to
+    // this file's own local*Fallback() wrappers (still domain-aware, see
+    // above) rather than treating a null result as "nothing to show."
+    const trainingResolved = wantsTraining ? (trainingRes ?? localTrainingFallback(answers.fitness)) : null;
+    const syllabusResolved = wantsSyllabus ? (syllabusRes ?? localSyllabusFallback(answers.exam)) : null;
+    const dietResolved = wantsDiet ? (dietRes ?? localDietFallback(answers.diet)) : null;
 
     setChecklist(checklistOk ? checklistRes!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
     setTimeline(timelineOk ? timelineRes!.blocks : fallbackTimeline(answers.wake, answers.sleep));
-    setTraining(trainingOk ? (trainingRes?.days ?? fallbackTraining(wantsTraining)) : fallbackTraining(wantsTraining));
+    setTraining(trainingResolved ? trainingResolved.days : fallbackTraining(false));
     setTargets(
       targetsOk
         ? { targets: targetsRes!.targets, baselineLabel: targetsRes!.baselineLabel || 'Baseline Score' }
         : fallbackTargets(goalDescription)
     );
-    if (syllabusOk && syllabusRes?.subjects?.length && syllabusRes?.phases?.length) {
-      setSubjects(syllabusRes.subjects);
-      setSyllabus(syllabusRes.phases);
+    if (syllabusResolved) {
+      setSubjects(syllabusResolved.subjects);
+      setSyllabus(syllabusResolved.phases);
     } else {
-      const fb = fallbackSyllabus(goalDescription, wantsSyllabus);
+      const fb = fallbackSyllabus(goalDescription, false);
       setSubjects(fb.subjects);
       setSyllabus(fb.syllabus);
+    }
+    if (dietResolved) {
+      setDiet(dietResolved.meals);
+      setDietTargets({ calories: dietResolved.targetCalories, proteinG: dietResolved.targetProteinG, hydrationL: dietResolved.targetHydrationL });
+    } else {
+      setDiet([]);
+      setDietTargets(null);
     }
 
     setUsedFallback({
       checklist: !checklistOk,
       timeline: !timelineOk,
-      training: !trainingOk,
+      training: trainingResolved ? trainingResolved.usedFallback : false,
       targets: !targetsOk,
-      syllabus: !syllabusOk,
+      syllabus: syllabusResolved ? syllabusResolved.usedFallback : false,
+      diet: dietResolved ? dietResolved.usedFallback : false,
     });
 
     setStage('review');
   };
 
-  const regenerate = async (section: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus') => {
+  const regenerate = async (section: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet') => {
     setRegenerating(section);
     try {
       if (section === 'checklist') {
@@ -367,22 +466,33 @@ export default function OnboardingWizard({
         setTimeline(ok ? res!.blocks : fallbackTimeline(answers.wake, answers.sleep));
         setUsedFallback((f) => ({ ...f, timeline: !ok }));
       } else if (section === 'training') {
-        const res = wantsTraining ? await generateWeeklyTraining(goalDescription, context).catch(() => null) : null;
-        const ok = !!res?.days?.length;
-        setTraining(ok ? res!.days : fallbackTraining(wantsTraining));
-        setUsedFallback((f) => ({ ...f, training: !ok }));
+        const res = wantsTraining ? await generateTrainingPlan(answers.fitness, context).catch(() => null) : null;
+        const resolved = wantsTraining ? (res ?? localTrainingFallback(answers.fitness)) : null;
+        setTraining(resolved ? resolved.days : fallbackTraining(false));
+        setUsedFallback((f) => ({ ...f, training: resolved ? resolved.usedFallback : false }));
       } else if (section === 'syllabus') {
-        const res = wantsSyllabus ? await generateSyllabus(goalDescription, context).catch(() => null) : null;
-        const ok = !!(res?.subjects?.length && res?.phases?.length);
-        if (ok) {
-          setSubjects(res!.subjects);
-          setSyllabus(res!.phases);
+        const res = wantsSyllabus ? await generateExamSyllabus(answers.exam, context).catch(() => null) : null;
+        const resolved = wantsSyllabus ? (res ?? localSyllabusFallback(answers.exam)) : null;
+        if (resolved) {
+          setSubjects(resolved.subjects);
+          setSyllabus(resolved.phases);
         } else {
-          const fb = fallbackSyllabus(goalDescription, wantsSyllabus);
+          const fb = fallbackSyllabus(goalDescription, false);
           setSubjects(fb.subjects);
           setSyllabus(fb.syllabus);
         }
-        setUsedFallback((f) => ({ ...f, syllabus: !ok }));
+        setUsedFallback((f) => ({ ...f, syllabus: resolved ? resolved.usedFallback : false }));
+      } else if (section === 'diet') {
+        const res = wantsDiet ? await generateDietPlan(answers.diet, undefined, context).catch(() => null) : null;
+        const resolved = wantsDiet ? (res ?? localDietFallback(answers.diet)) : null;
+        if (resolved) {
+          setDiet(resolved.meals);
+          setDietTargets({ calories: resolved.targetCalories, proteinG: resolved.targetProteinG, hydrationL: resolved.targetHydrationL });
+        } else {
+          setDiet([]);
+          setDietTargets(null);
+        }
+        setUsedFallback((f) => ({ ...f, diet: resolved ? resolved.usedFallback : false }));
       } else {
         const res = await generateProfileTargets(goalDescription).catch(() => null);
         const ok = !!res?.targets?.length;
@@ -401,9 +511,34 @@ export default function OnboardingWizard({
   const goalLabel = (answers.exam.examName || answers.custom.description || goalDescription).slice(0, 60);
 
   const finish = () => {
+    // Phase 9 Part 1 bug fix: hydrate through appConfig.ts's own
+    // hydrateTimeline/hydrateDiet before handing off to config — both
+    // generated (AI or fallback) timeline blocks and diet meals only carry
+    // an `iconName` string, but TimelineTab/TrainingFuelTab read `.icon` as
+    // an actual component (`<slot.icon />` / `<m.icon />`). Without this,
+    // finishing onboarding with a real timeline (every account) or a
+    // generated diet plan (any 'diet'-domain account) would crash the very
+    // next render — see PHASE_9_PART1_HANDOFF.md, "Bug fixed", for the full
+    // trace. updateConfig() in App.tsx just spreads whatever's handed to it
+    // with no hydration step of its own, so this has to happen here.
+    const hydratedTimeline = hydrateTimeline(timeline);
+    const hydratedDiet = wantsDiet ? hydrateDiet(diet) : undefined;
+    const dietOverridesOut: Partial<Record<DietOverrideKey, string>> | undefined = wantsDiet && dietTargets
+      ? {
+          // Explicit numeric targets, not left to re-derive from the
+          // (possibly scaled/approximated) meal text via
+          // computeDietAutoValues — this is what makes an explicit
+          // "2700kcal vegetarian" answer stay exactly 2700kcal once it
+          // lands in the live Fuel Matrix, not just during onboarding.
+          calories: `~${dietTargets.calories} kcal`,
+          protein: `~${dietTargets.proteinG}g protein`,
+          hydration: `~${dietTargets.hydrationL.toFixed(1)}L water/day`,
+        }
+      : undefined;
+
     onComplete({
       trackerItems: checklist,
-      timeline,
+      timeline: hydratedTimeline as TimelineBlock[],
       training,
       profile: {
         name: answers.name || 'Your Name',
@@ -419,15 +554,19 @@ export default function OnboardingWizard({
         targets: targets.targets,
         // Extra fields from the questionnaire (domains, dietType, dietGoal,
         // targetCalories, activityLevel, fitnessGoal, experienceLevel,
-        // examName) — not read by anything yet (that's Phase 9's job when
-        // it wires generated content end-to-end), but safe to carry through
-        // now: deserializeConfig/serializeConfig in appConfig.ts already
-        // spread `profile` as a plain object with no field allowlist, so
-        // these round-trip through save/load untouched in the meantime.
+        // examName). This is a DIFFERENT field than the top-level `domains`
+        // below — see deriveProfileFields()'s own doc comment in
+        // questionnaire.ts for why they're kept separate.
         ...deriveProfileFields(answers),
       },
       subjects,
       syllabus,
+      // Phase 9 Part 1: this is what actually makes Phase 8's dynamic tab
+      // system live for the first time — App.tsx's `visibleTabs` reads
+      // config.domains directly (not profile.domains).
+      domains: answers.domains,
+      ...(hydratedDiet ? { diet: hydratedDiet } : {}),
+      ...(dietOverridesOut ? { dietOverrides: dietOverridesOut } : {}),
     });
   };
 
@@ -435,11 +574,16 @@ export default function OnboardingWizard({
     const fb = fallbackSyllabus('', true);
     onComplete({
       trackerItems: fallbackChecklist(),
-      timeline: fallbackTimeline(answers.wake, answers.sleep),
+      timeline: hydrateTimeline(fallbackTimeline(answers.wake, answers.sleep)) as TimelineBlock[],
       training: fallbackTraining(true),
       profile: { name: answers.name || 'Your Name', goalLabel: 'Add your goal', birthdate: answers.birthdate || defaultBirthdate() } as any,
       subjects: fb.subjects,
       syllabus: fb.syllabus,
+      // "Skip" never asked about domains, so this intentionally leaves
+      // `domains` unset -> config.domains stays at its DEFAULT_DOMAINS
+      // (null / "unrestricted") value, same as every legacy/pre-Phase-8
+      // account. A skip-onboarding account seeing the full, unfiltered tab
+      // set is the correct, conservative behavior here, not a gap.
     });
   };
 
@@ -759,7 +903,7 @@ export default function OnboardingWizard({
     icon: any,
     title: string,
     subtitle: string,
-    key: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus',
+    key: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet',
     children: React.ReactNode
   ) => {
     const Icon = icon;
@@ -867,6 +1011,23 @@ export default function OnboardingWizard({
                 </li>
               ))}
             </ul>
+          ))}
+
+          {wantsDiet && dietTargets && sectionCard(Utensils, 'Diet Plan', `${diet.length} meal${diet.length === 1 ? '' : 's'}, ~${dietTargets.calories}kcal/day`, 'diet', (
+            <>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.calories} kcal</span>
+                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.proteinG}g protein</span>
+                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.hydrationL.toFixed(1)}L water</span>
+              </div>
+              <ul className="space-y-1.5">
+                {diet.slice(0, 6).map((m, i) => (
+                  <li key={i} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
+                    <span className="text-neutral-600 tabular-nums text-[11px] w-[80px] shrink-0">{m.time}</span> {m.name}
+                  </li>
+                ))}
+              </ul>
+            </>
           ))}
         </div>
 

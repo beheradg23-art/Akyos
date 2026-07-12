@@ -6,6 +6,7 @@ import {
   ArrowUpRight, Settings,
 } from 'lucide-react';
 import { ConfigContext, resolveDietValues, getLocalDateString, DailyCheckLog } from '../../lib/appConfig';
+import { isSectionVisibleForDomains, type GoalDomain } from '../../lib/questionnaire';
 import { EXERCISE_GUIDE } from '../../lib/staticContent';
 import { Card, StatPill, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
@@ -13,7 +14,16 @@ import { WeightTrackerCard } from '../shared/WeightTracker';
 import { generateExerciseGuide } from '../../lib/contentGen';
 
 export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr }: { setModal: (data: ModalData | null) => void; dietLog: DailyCheckLog; setDietLog: React.Dispatch<React.SetStateAction<DailyCheckLog>>; currentDateStr: string }) {
-  const { training, diet, dietOverrides, profile } = React.useContext(ConfigContext);
+  const { training, diet, dietOverrides, profile, domains } = React.useContext(ConfigContext);
+  // Phase 9 Part 2: section-level domain gating, wiring in the mechanism
+  // Phase 8 built (SECTION_DOMAIN_KEYS/isSectionVisibleForDomains in
+  // questionnaire.ts) but never consumed. A diet-only account (no
+  // 'fitness') no longer sees the workout-split section; a fitness-only
+  // account (no 'diet') no longer sees the Fuel Matrix. `domains === null`
+  // (legacy/unrestricted accounts, and every account until Phase 9 Part 1
+  // actually started writing a real value) still sees both, unchanged.
+  const showWorkout = isSectionVisibleForDomains('tf_workout', domains as GoalDomain[] | null);
+  const showFuel = isSectionVisibleForDomains('tf_fuel', domains as GoalDomain[] | null);
   const [activeDay, setActiveDay] = useState(training[0].day);
   const dayData = training.find((d) => d.day === activeDay) || training[0];
 
@@ -102,6 +112,7 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
 
   return (
     <div className="space-y-8 animate-fadeIn">
+      {showWorkout && (
       <div>
         <EditableSectionHeading id="tf_workout" defaultTitle="Hybrid Vascularity Workout Split" defaultIcon={Dumbbell} subtitle="Select day to map active routines. Click any individual exercise to view strict mechanical form guides." />
         <div className="flex flex-wrap gap-2 mb-4">
@@ -147,9 +158,11 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
           </div>
         </Card>
       </div>
+      )}
 
       <WeightTrackerCard />
 
+      {showFuel && (
       <div>
         <EditableSectionHeading id="tf_fuel" defaultTitle="Fuel Matrix" defaultIcon={Flame} subtitle="Meals, targets & icons" />
         <div className="mb-4 flex flex-wrap gap-2.5">
@@ -247,6 +260,14 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
           })}
         </div>
       </div>
+      )}
+
+      {!showWorkout && !showFuel && (
+        <p className="text-[12.5px] text-neutral-500">
+          Nothing to show here yet for your current goals — add a fitness or
+          diet goal in Settings to unlock this tab's sections.
+        </p>
+      )}
     </div>
   );
 }

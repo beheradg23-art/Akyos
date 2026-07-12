@@ -8,13 +8,21 @@ import {
   ArrowUpRight, Settings,
 } from 'lucide-react';
 import { ConfigContext, resolveDietValues, resolveOverviewValues, calculateAge } from '../../lib/appConfig';
+import { isSectionVisibleForDomains, type GoalDomain } from '../../lib/questionnaire';
 import { Card, StatPill, ModalData } from '../ui/Primitives';
 import { CountdownMatrix } from '../shared/CountdownMatrix';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 import { WEIGHT_LOG_KEY } from '../shared/WeightTracker';
 
 export function OverviewTab({ setModal }: { setModal: (data: ModalData | null) => void }) {
-  const { profile, syllabus, timeline, overviewOverrides, diet, dietOverrides } = React.useContext(ConfigContext);
+  const { profile, syllabus, timeline, overviewOverrides, diet, dietOverrides, domains } = React.useContext(ConfigContext);
+  // Phase 9 Part 2: Overview is a CORE tab (always shown, every account),
+  // so unlike tf_workout/tf_fuel — whose parent tab is itself domain-gated
+  // — nothing was narrowing "Syllabus Runway" for a non-exam account until
+  // now. See questionnaire.ts's SECTION_DOMAIN_KEYS comment for the full
+  // reasoning; this is the same isSectionVisibleForDomains mechanism
+  // TrainingFuelTab.tsx now uses.
+  const showSyllabus = isSectionVisibleForDomains('ov_syllabus', domains as GoalDomain[] | null);
   const latestWeight = useMemo(() => {
     try {
       const saved = localStorage.getItem(WEIGHT_LOG_KEY);
@@ -124,6 +132,7 @@ export function OverviewTab({ setModal }: { setModal: (data: ModalData | null) =
           </div>
         </Card>
 
+        {showSyllabus && (
         <Card>
           <EditableSectionHeading id="ov_syllabus" defaultTitle="Syllabus Runway" defaultIcon={Calendar} subtitle="4-month deadline progression" />
           <div className="space-y-2">
@@ -139,6 +148,7 @@ export function OverviewTab({ setModal }: { setModal: (data: ModalData | null) =
             ))}
           </div>
         </Card>
+        )}
       </div>
     </div>
   );

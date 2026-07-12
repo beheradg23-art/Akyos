@@ -13,6 +13,7 @@ import {
   buildGoalDescription,
   buildGoalContext,
   resolveTabKeysForDomains,
+  isSectionVisibleForDomains,
   deriveProfileFields,
   CORE_TAB_KEYS,
   type QuestionnaireAnswers,
@@ -147,6 +148,38 @@ describe('resolveTabKeysForDomains', () => {
     const result = resolveTabKeysForDomains([], TAB_LABEL_KEYS as TabLabelKey[]);
     expect(result).not.toContain('settings');
     expect(result).not.toContain('account');
+  });
+});
+
+describe('isSectionVisibleForDomains', () => {
+  it('is always visible when domains is null (legacy/unrestricted account)', () => {
+    expect(isSectionVisibleForDomains('tf_workout', null)).toBe(true);
+    expect(isSectionVisibleForDomains('tf_fuel', null)).toBe(true);
+  });
+
+  it('shows the workout-split section only for a fitness domain', () => {
+    expect(isSectionVisibleForDomains('tf_workout', ['fitness'])).toBe(true);
+    expect(isSectionVisibleForDomains('tf_workout', ['diet'])).toBe(false);
+  });
+
+  it('shows the Fuel Matrix section only for a diet domain', () => {
+    expect(isSectionVisibleForDomains('tf_fuel', ['diet'])).toBe(true);
+    expect(isSectionVisibleForDomains('tf_fuel', ['fitness'])).toBe(false);
+  });
+
+  it('shows both training sections when both domains are selected', () => {
+    expect(isSectionVisibleForDomains('tf_workout', ['fitness', 'diet'])).toBe(true);
+    expect(isSectionVisibleForDomains('tf_fuel', ['fitness', 'diet'])).toBe(true);
+  });
+
+  it('hides both training sections for an unrelated domain', () => {
+    expect(isSectionVisibleForDomains('tf_workout', ['exam'])).toBe(false);
+    expect(isSectionVisibleForDomains('tf_fuel', ['exam'])).toBe(false);
+  });
+
+  it('is always visible for a section with no entry in SECTION_DOMAIN_KEYS (tab-level gating already covers it)', () => {
+    expect(isSectionVisibleForDomains('syl_runway', ['fitness'])).toBe(true);
+    expect(isSectionVisibleForDomains('ov_profile', [])).toBe(true);
   });
 });
 

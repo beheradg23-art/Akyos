@@ -611,7 +611,7 @@ export function hydrateDiet(rawList: any): DietMeal[] {
   });
 }
 
-export function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[]; overviewOverrides: Record<OverviewOverrideKey, string>; diet: DietMeal[]; dietOverrides: Record<DietOverrideKey, string>; tabLabels: Record<TabLabelKey, string>; tabIcons: Record<TabLabelKey, string>; sectionLabels: Record<string, { label: string; icon: string }> }) {
+export function serializeConfig(config: { trackerItems: any[]; timeline: any[]; training: any[]; profile: any; subjects: any[]; syllabus: any[]; countdowns: any[]; overviewOverrides: Record<OverviewOverrideKey, string>; diet: DietMeal[]; dietOverrides: Record<DietOverrideKey, string>; tabLabels: Record<TabLabelKey, string>; tabIcons: Record<TabLabelKey, string>; sectionLabels: Record<string, { label: string; icon: string }>; domains: string[] | null }) {
   return {
     trackerItems: config.trackerItems,
     training: config.training,
@@ -626,6 +626,7 @@ export function serializeConfig(config: { trackerItems: any[]; timeline: any[]; 
     tabLabels: config.tabLabels,
     tabIcons: config.tabIcons,
     sectionLabels: config.sectionLabels,
+    domains: config.domains,
   };
 }
 
@@ -693,6 +694,7 @@ export function deserializeConfig(raw: any) {
     tabLabels: hydrateTabLabels(raw?.tabLabels),
     tabIcons: hydrateTabIcons(raw?.tabIcons),
     sectionLabels: hydrateSectionLabels(raw?.sectionLabels),
+    domains: hydrateDomains(raw?.domains),
   };
 }
 
@@ -796,6 +798,54 @@ export function hydrateTabIcons(raw: any): Record<TabLabelKey, string> {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Per-account goal domains (Phase 8 — Dynamic tab system).
+//
+// `null` means "unrestricted" — the account gets the full, unfiltered TABS
+// list exactly like every account did before this phase existed. This is
+// the default for every account today (nothing sets this field yet — see
+// PHASE_8_HANDOFF.md), and it's also what a legacy/pre-onboarding account or
+// a "Skip" onboarding account permanently gets, by design: dynamic tabs are
+// only ever a *narrowing* that a real onboarding completion opts an account
+// into, never something that can take a tab away from an account that
+// already had it.
+//
+// A non-null value is a plain string array, not `GoalDomain[]`, on purpose:
+// `GoalDomain` lives in questionnaire.ts, and questionnaire.ts already
+// imports `TabLabelKey` from *this* file — importing `GoalDomain` back here
+// would make the two files circularly depend on each other. Values stored
+// here are always written from real `GoalDomain` values by whatever sets
+// this field (Phase 9's onboarding wiring), so treating them as strings
+// here and re-typing them as `GoalDomain[]` at the one or two call sites
+// that resolve a tab set (App.tsx) is a safe, deliberate boundary, not a
+// type-safety hole.
+export const DEFAULT_DOMAINS: string[] | null = null;
+
+export function hydrateDomains(raw: any): string[] | null {
+  if (!Array.isArray(raw)) return DEFAULT_DOMAINS;
+  const cleaned = raw.filter((d) => typeof d === 'string' && d.trim()).map((d) => d.trim());
+  // An empty array is treated the same as "never set" — there's no such
+  // thing as a real account with zero goal domains (the onboarding wizard's
+  // intro screen requires picking at least one), so an empty array only
+  // ever means corrupted/cleared data, and unrestricted is the safe default
+  // for that case, same as `null`.
+  return cleaned.length ? cleaned : DEFAULT_DOMAINS;
+}
+
+// Sections that live *inside* a tab which is itself shown for more than one
+// domain (today, just 'training' — shown for either 'fitness' or 'diet',
+// see DOMAIN_TAB_KEYS in questionnaire.ts) sometimes need finer-than-tab
+// granularity: a diet-only account should see the Training & Fuel tab (for
+// its Fuel Matrix) but not the workout-split section that tab also
+// contains. `TAB_LABEL_KEYS`/`SECTION_LABEL_ROWS` above already have the
+// per-section `tabKey` grouping this builds on. See
+// `isSectionVisibleForDomains` in questionnaire.ts, which is the function
+// that actually consumes this — kept there (not here) so every piece of
+// "which domain needs which UI" logic lives in one place, next to
+// DOMAIN_TAB_KEYS. NOT wired into TrainingFuelTab.tsx's actual JSX this
+// phase — see PHASE_8_HANDOFF.md, "Not done this phase."
+export const TRAINING_TAB_SECTION_KEYS = { workout: 'tf_workout', fuel: 'tf_fuel' } as const;
+
 // Sub-section labels/icons — the named panels *inside* a tab (e.g. Dashboard
 // Overview's "Profile", "Targets", "Today's Shape" cards). Each entry is
 // keyed by a stable id prefixed with the tab it lives in ('ov_' = Dashboard
@@ -865,8 +915,9 @@ export const ConfigContext = React.createContext<{
   tabLabels: Record<TabLabelKey, string>;
   tabIcons: Record<TabLabelKey, string>;
   sectionLabels: Record<string, { label: string; icon: string }>;
+  domains: string[] | null;
   updateConfig: (partial: Record<string, any>) => void;
-  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels') => void;
+  resetConfigSection: (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels' | 'domains') => void;
 }>({
   trackerItems: DEFAULT_TRACKER_ITEMS,
   timeline: hydrateTimeline(DEFAULT_TIMELINE_STORABLE),
@@ -881,6 +932,7 @@ export const ConfigContext = React.createContext<{
   tabLabels: DEFAULT_TAB_LABELS,
   tabIcons: DEFAULT_TAB_ICONS,
   sectionLabels: DEFAULT_SECTION_LABELS,
+  domains: DEFAULT_DOMAINS,
   updateConfig: () => {},
   resetConfigSection: () => {},
 });

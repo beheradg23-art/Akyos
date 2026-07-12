@@ -486,7 +486,7 @@ export function PomodoroSubjectStats({ log, subjects }) {
         id="clk_subjecthours"
         defaultTitle="Subject Hours"
         defaultIcon={BarChart3}
-        subtitle={grandTotal > 0 ? `${formatHrs(grandTotal)} logged across all Focus Gates — checking Chemistry isn't quietly falling behind` : 'Complete a tagged Focus Gate to start building this up'}
+        subtitle={grandTotal > 0 ? `${formatHrs(grandTotal)} logged across all Focus Gates — checking nothing is quietly falling behind` : 'Complete a tagged Focus Gate to start building this up'}
       />
       {grandTotal === 0 ? (
         <p className="text-[13px] text-neutral-500 mt-4">

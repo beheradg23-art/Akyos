@@ -378,17 +378,34 @@ export function buildGoalContext(answers: QuestionnaireAnswers): string {
 //    would build on (tf_workout vs tf_fuel are already distinct keys).
 // 2. 'ashclock' (Clock/subject-hours) and 'mocktests' are exam-shaped by
 //    default (subject hours, mock test scores) — mapped under 'exam' below.
-//    A 'productivity' or 'custom'-only account plausibly still wants
-//    *some* form of time-tracking, just not exam-flavored. Left as exam-
-//    only for now since generalizing "Clock"/"Mock Tests" themselves is a
-//    Phase 8/9 wiring question, not a Phase 3 data-model one.
+//    RESOLVED in Phase 9 Part 2 (was left open through Phases 8 and 9 Part
+//    1 — see PHASE_8_HANDOFF.md and PHASE_9_PART1_HANDOFF.md): 'ashclock'
+//    is now ALSO given to 'productivity' accounts; 'mocktests' stays
+//    exam-only. Reasoning: 'ashclock' is a fade-digit clock + Pomodoro
+//    focus-timer + per-"subject" hour log — nothing about that component
+//    is actually exam-flavored (`PomodoroSubjectStats`/`PomodoroView` both
+//    already read `subjects` generically off `ConfigContext`, and a
+//    non-exam account already gets a real, non-empty `subjects` array —
+//    see `fallbackSyllabus(goalDescription, false)` in
+//    OnboardingWizard.tsx, which produces a single generic "General"
+//    subject rather than leaving the array empty). A 'productivity'
+//    account choosing to track focused work sessions against a
+//    "subject" (really: a project/activity) is exactly what this
+//    component is for, just without exam framing. 'mocktests', by
+//    contrast, is fundamentally about logging *practice-test scores*
+//    against a *max-marks* — there's no productivity-domain equivalent of
+//    "a test" to log, so generalizing it would mean inventing a feature,
+//    not just relaxing a gate. 'custom' and 'diet'/'fitness'-only accounts
+//    still don't get 'ashclock' by default — 'custom' has no well-defined
+//    shape to justify it, and a diet/fitness-only account already has a
+//    dedicated Training & Fuel tab for its actual tracking needs.
 export const CORE_TAB_KEYS: TabLabelKey[] = ['overview', 'timeline', 'history'];
 
 export const DOMAIN_TAB_KEYS: Record<GoalDomain, TabLabelKey[]> = {
   exam: ['syllabus', 'mocktests', 'ashclock'],
   fitness: ['training'],
   diet: ['training'],
-  productivity: [],
+  productivity: ['ashclock'],
   custom: [],
 };
 
@@ -411,6 +428,74 @@ export function resolveTabKeysForDomains(domains: GoalDomain[], tabOrder: TabLab
   // special-case them, but it's safe either way since Set + filter just
   // ignores keys tabOrder doesn't contain.
   return tabOrder.filter((k) => wanted.has(k));
+}
+
+// ----------------------------------------------------------------------------
+// Phase 8 addendum — resolves open question 1 left above: 'training' is
+// shown (via DOMAIN_TAB_KEYS) for EITHER 'fitness' OR 'diet', but the tab
+// itself bundles two sections (see SECTION_LABEL_ROWS in appConfig.ts:
+// 'tf_workout' — the workout split — and 'tf_fuel' — the Fuel Matrix).
+// A diet-only account (no 'fitness' domain) should see the tab, for its
+// Fuel Matrix, but not the workout-split section that has nothing to do
+// with its goal; symmetrically, a fitness-only account (no 'diet' domain)
+// shouldn't see the Fuel Matrix. This map + function give that
+// section-level granularity, resolved here rather than left open, per
+// Phase 8's instructions.
+//
+// Deliberately small and explicit rather than derived from
+// DOMAIN_TAB_KEYS automatically: only sections that are STRICTLY narrower
+// than their tab's own domain gating need an entry here at all. Every
+// other section in SECTION_LABEL_ROWS (e.g. 'ov_profile', 'syl_runway')
+// is exactly as visible as its parent tab already is once
+// resolveTabKeysForDomains has run — gating it again here would be
+// redundant, not wrong, so it's simply left out.
+//
+// Phase 9 Part 2 addendum: that reasoning silently assumed every section's
+// parent tab is itself domain-gated. 'ov_syllabus' lives on the Overview
+// tab, which is in CORE_TAB_KEYS (always visible, every account) — so
+// unlike tf_workout/tf_fuel's parent (Training & Fuel, domain-gated),
+// nothing was actually narrowing 'ov_syllabus' for a non-exam account.
+// Confirmed live by reading OnboardingWizard.tsx's `fallbackSyllabus`:
+// a non-exam account still gets a real (if generic, "This month —
+// Getting started") syllabus/phase written to config so nothing crashes,
+// which meant a diet-only or fitness-only account was seeing a "Syllabus
+// Runway" card with placeholder exam-prep content that has nothing to do
+// with their actual goal. Added here so OverviewTab.tsx can gate it the
+// same way TrainingFuelTab.tsx gates tf_workout/tf_fuel.
+export const SECTION_DOMAIN_KEYS: Partial<Record<string, GoalDomain[]>> = {
+  tf_workout: ['fitness'],
+  tf_fuel: ['diet'],
+  ov_syllabus: ['exam'],
+};
+
+/**
+ * Pure visibility check for a single SECTION_LABEL_ROWS key, given an
+ * account's resolved domains. `domains === null` means "legacy/unrestricted
+ * account" (see DEFAULT_DOMAINS in appConfig.ts) — always visible, same
+ * "dynamic tabs only ever narrow a real onboarded account" rule
+ * resolveTabKeysForDomains's caller (App.tsx) applies at the tab level.
+ * A section with no entry in SECTION_DOMAIN_KEYS is ungated at this level
+ * (its tab's own gating already covers it) and is always visible once its
+ * tab is.
+ *
+ * NOT wired into TrainingFuelTab.tsx's actual JSX this phase — the
+ * mechanism exists and is unit-tested, but consuming it to conditionally
+ * render tf_workout/tf_fuel is a component-render change outside this
+ * phase's file scope (appConfig.ts + App.tsx + this file only, see
+ * PHASE_8_HANDOFF.md). Flagged forward for Phase 9 or whoever next touches
+ * TrainingFuelTab.tsx.
+ *
+ * Phase 9 Part 2 update: now wired in for real. TrainingFuelTab.tsx calls
+ * this for 'tf_workout'/'tf_fuel', and OverviewTab.tsx calls it for the
+ * 'ov_syllabus' entry added above. This doc comment is left largely intact
+ * (rather than rewritten) as a record of the original deferral, per this
+ * project's convention of not silently erasing prior phases' reasoning.
+ */
+export function isSectionVisibleForDomains(sectionKey: string, domains: GoalDomain[] | null): boolean {
+  if (domains === null) return true;
+  const required = SECTION_DOMAIN_KEYS[sectionKey];
+  if (!required || required.length === 0) return true;
+  return required.some((d) => domains.includes(d));
 }
 
 // ============================================================================

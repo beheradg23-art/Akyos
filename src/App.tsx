@@ -30,10 +30,12 @@ import {
   DEFAULT_SUBJECTS, DEFAULT_SYLLABUS, DEFAULT_TRACKER_ITEMS, DEFAULT_TAB_LABELS,
   DEFAULT_TAB_ICONS, DEFAULT_SECTION_LABELS, DEFAULT_DIET_OVERRIDES,
   DEFAULT_OVERVIEW_OVERRIDES, DEFAULT_TIMELINE_STORABLE, DEFAULT_DIET_STORABLE,
+  DEFAULT_DOMAINS,
   ConfigContext, hydrateTimeline, hydrateDiet, serializeConfig, deserializeConfig,
   getHunterRank, computeCurrentStreak, getLocalDateString, DailyCheckLog,
   CONFIG_STORAGE_KEY, TABS, HUNTER_RANKS, ICON_OPTIONS,
 } from './lib/appConfig';
+import { resolveTabKeysForDomains, type GoalDomain } from './lib/questionnaire';
 import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES } from './lib/liquidFill';
 import {
   useRipple, MagneticCursor, GlobalDetailModal, QuestClearNotification,
@@ -82,7 +84,11 @@ export default function JEEDashboard() {
   // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
   // Purely additive: the click-based tab bar above still works exactly as
   // before. This just lets a left/right swipe anywhere on the workspace
-  // move to the next/previous tab in the TABS array.
+  // move to the next/previous tab in `visibleTabs` (Phase 8 — this used to
+  // walk the static TABS array; `visibleTabs` is declared further down,
+  // right after `config`, but referencing it here is safe: this function
+  // is just stored in a closure and never runs until a swipe actually
+  // happens post-mount, by which point `visibleTabs` is already assigned).
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const [swipePeek, setSwipePeek] = useState<'left' | 'right' | null>(null);
 
@@ -90,11 +96,11 @@ export default function JEEDashboard() {
   const SWIPE_MAX_OFF_AXIS = 70; // px — how vertical it can drift before we treat it as a scroll instead
 
   const goToAdjacentTab = (direction: 1 | -1) => {
-    const currentIndex = TABS.findIndex((t) => t.id === activeTab);
+    const currentIndex = visibleTabs.findIndex((t) => t.id === activeTab);
     if (currentIndex === -1) return;
     const nextIndex = currentIndex + direction;
-    if (nextIndex < 0 || nextIndex >= TABS.length) return;
-    setActiveTab(TABS[nextIndex].id);
+    if (nextIndex < 0 || nextIndex >= visibleTabs.length) return;
+    setActiveTab(visibleTabs[nextIndex].id);
   };
 
   const handleWorkspaceTouchStart = (e: React.TouchEvent) => {
@@ -155,11 +161,44 @@ export default function JEEDashboard() {
     }
   }, [config]);
 
+  // ---------- Dynamic tab system (Phase 8) ----------
+  // `config.domains === null` means "unrestricted" — every account today,
+  // plus any legacy/pre-onboarding account and anyone who used "Skip" on
+  // the wizard, permanently falls into this branch and sees the exact same
+  // full TABS list they always have. `dynamic` tabs are only ever a
+  // *narrowing* a real onboarding completion opts an account into (see
+  // PHASE_8_HANDOFF.md) — this branch is what guarantees that.
+  //
+  // Recomputed live off `config.domains` (not frozen once at onboarding
+  // time) so that if domains are ever edited post-onboarding in a future
+  // phase, the visible tab set updates immediately rather than needing a
+  // reload — same "everything reads through ConfigContext so edits
+  // propagate immediately" principle this file's own header comment
+  // already states for every other config field.
+  const visibleTabs = useMemo(() => {
+    if (config.domains === null) return TABS;
+    const domains = config.domains as GoalDomain[];
+    const visibleKeys = new Set(resolveTabKeysForDomains(domains, TABS.map((t) => t.id as TabLabelKey)));
+    return TABS.filter((t) => visibleKeys.has(t.id as TabLabelKey));
+  }, [config.domains]);
+
+  // If a domain change ever narrows the tab set out from under whatever tab
+  // is currently open, fall back to Dashboard Overview rather than showing
+  // a blank/hidden tab. 'settings' and 'account' are pinned outside TABS
+  // (rendered separately at the bottom of the rail) and are never affected
+  // by domain gating, so they're explicitly excluded from this check.
+  useEffect(() => {
+    if (activeTab === 'settings' || activeTab === 'account') return;
+    if (!visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [visibleTabs, activeTab]);
+
   const updateConfig = (partial: Record<string, any>) => {
     setConfig((prev) => ({ ...prev, ...partial }));
   };
 
-  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels') => {
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels' | 'domains') => {
     setConfig((prev) => ({
       ...prev,
       [key]: key === 'timeline'
@@ -186,6 +225,8 @@ export default function JEEDashboard() {
         ? DEFAULT_TAB_ICONS
         : key === 'sectionLabels'
         ? DEFAULT_SECTION_LABELS
+        : key === 'domains'
+        ? DEFAULT_DOMAINS
         : DEFAULT_TRACKER_ITEMS,
     }));
   };
@@ -458,6 +499,7 @@ export default function JEEDashboard() {
         tabLabels: config.tabLabels,
         tabIcons: config.tabIcons,
         sectionLabels: config.sectionLabels,
+        domains: config.domains,
         updateConfig,
         resetConfigSection,
       }}
@@ -503,7 +545,7 @@ export default function JEEDashboard() {
 
         <nav className="flex-1 overflow-y-auto px-3 pb-4 no-scrollbar" role="tablist" aria-label="Main sections">
           <div className="space-y-1">
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = ICON_OPTIONS[config.tabIcons[tab.id as TabLabelKey]] || tab.icon;
               const isActive = activeTab === tab.id;
               const label = config.tabLabels[tab.id as TabLabelKey] || tab.label;

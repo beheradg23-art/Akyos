@@ -2,8 +2,9 @@ import { supabase } from './supabaseClient';
 import type {
   DietDomainAnswers, DietType, DietGoal, ActivityLevel,
   FitnessDomainAnswers, FitnessGoalType, ExperienceLevel, EquipmentAccess,
+  ExamDomainAnswers, ExamCurrentLevel,
 } from './questionnaire';
-import { MAX_DIET_MEALS, ICON_LIBRARY_KEYS, estimateItemNutrition } from './appConfig';
+import { MAX_DIET_MEALS, ICON_LIBRARY_KEYS, estimateItemNutrition, SUBJECT_COLOR_PALETTE } from './appConfig';
 
 // ---------- Hidden content generation ----------
 // Not surfaced to the user as an "AI" feature — it's just how the app fills
@@ -348,11 +349,22 @@ const DIET_MEAL_TEMPLATES: Record<DietType, DietPlanMeal[]> = {
 // nearest 0.1. Leaves anything without a leading number untouched.
 function scaleQuantityInText(text: string, scale: number): string {
   const trimmed = text.trim();
-  const m = /^(\d+(?:\.\d+)?)\s*([a-zA-Z]*)/.exec(trimmed);
+  // Phase 10 Part 2 bugfix: the whitespace between the number and its unit
+  // word is now captured (group 2) and echoed back in the output, instead
+  // of being silently swallowed. This was invisible for gram/ml items
+  // ("200g grilled chicken" has no space to lose in the first place) but
+  // corrupted every space-separated whole-count/volume item ("2 tbsp sattu
+  // drink" -> "2tbsp sattu drink", "1 banana" -> "1banana", "3 whole eggs"
+  // -> "3whole eggs") in every diet fallback plan, for every diet-including
+  // account, regardless of scale (reproduces even at scale ~1) — found
+  // while extending Phase 9 Part 3's diet-only trace with new edge cases
+  // per Phase 10's instructions.
+  const m = /^(\d+(?:\.\d+)?)(\s*)([a-zA-Z]*)/.exec(trimmed);
   if (!m) return text;
   const num = parseFloat(m[1]);
   if (!num) return text;
-  const unit = m[2] || '';
+  const sep = m[2] || '';
+  const unit = m[3] || '';
   const unitLower = unit.toLowerCase();
   const rest = trimmed.slice(m[0].length);
   const scaled = num * scale;
@@ -365,7 +377,7 @@ function scaleQuantityInText(text: string, scale: number): string {
   } else {
     rounded = Math.max(1, Math.round(scaled));
   }
-  return `${rounded}${unit}${rest}`;
+  return `${rounded}${sep}${unit}${rest}`;
 }
 
 // Drops any item containing a comma-separated allergy/dislike keyword the
@@ -954,4 +966,380 @@ export async function generateTrainingPlan(
       }));
 
   return { days, usedFallback };
+}
+// ---------------------------------------------------------------------------
+// Phase 7 — syllabus / study-plan generation beyond JEE-shaped assumptions
+//
+// Same two-layer shape Phases 5 and 6 established: a pure/synchronous/
+// never-fails structural layer (resolveMonthsRemaining + buildRoadmapSkeleton
+// -> exactly how many phases, and what stage each one is, driven by
+// `currentLevel` + time-to-exam) feeding a pure/synchronous fallback content
+// builder (buildFallbackSyllabus), plus an AI path tried first
+// (generateExamSyllabus) with the fallback taking over on any failure or
+// structural mismatch.
+//
+// STRUCTURED INPUT VS goalDescription STRING — the judgment call flagged in
+// PHASE_6_HANDOFF.md, made deliberately here rather than by default:
+// this generator takes `ExamDomainAnswers` directly (like Phase 5/6), NOT a
+// free-text goalDescription. The reasoning is narrower than Phase 5/6's
+// (subjectsHint is free text, not an enum — there's less "the AI might get a
+// typed number wrong" risk to avoid), but `currentLevel` is still a typed
+// enum and it is the single most important lever this phase has to pull:
+// the actual number of roadmap phases and which stages they are must be
+// computed deterministically from currentLevel + time remaining, not left to
+// an AI's discretion, or "revision-only with 2 months left" and
+// "just-starting with 8 months left" could come back looking similar. That
+// determinism is exactly Phase 5/6's reason for going structured, and it
+// applies here too, so the same call is made. subjectsHint/examName are
+// still passed through as free text within the structured object — going
+// structured doesn't mean re-typing everything, just not falling back to a
+// single opaque prose string for the fields that matter for shape.
+// generateSyllabus(goalDescription, context) above is completely UNCHANGED
+// and untouched — it still exists side by side, same "both now exist"
+// pattern Phase 6 used for generateWeeklyTraining vs generateTrainingPlan.
+//
+// MONTH LABELING — the other judgment call the handoff asked to be made
+// deliberately: this uses relative "Month 1" / "Month 2" labels, NOT
+// calendar month names (unlike DEFAULT_SYLLABUS in appConfig.ts, which is
+// JEE-shaped and uses real months like 'July'/'August'). Reasoning:
+// `examDate` is optional (ExamDomainAnswers docs it as such), and this
+// generator explicitly has to serve flexible-pace goals with no fixed
+// calendar deadline (a professional cert studied "whenever I get to it").
+// Calendar-month labels would be actively misleading for that case (there's
+// no real 'Month 1 = July' anchor), whereas relative labels degrade
+// gracefully for every case — this matches the convention
+// OnboardingWizard.tsx's own existing fallbackSyllabus() already uses
+// ('Month 1', 'This month'), so it's also the less surprising choice, not a
+// new one.
+// ---------------------------------------------------------------------------
+
+// ---- 1. Deterministic phase count + stage sequence ----
+
+// Roadmap depth (in months) to assume when no valid examDate was given —
+// scaled by currentLevel since that's the best signal we have absent a real
+// date: someone 'just-starting' with no stated date gets a fuller runway
+// than someone in 'revision-only' with no stated date (who by definition has
+// already finished learning the material, so a short runway is the honest
+// default either way).
+const DEFAULT_MONTHS_BY_LEVEL: Record<ExamCurrentLevel, number> = {
+  'just-starting': 6,
+  'mid-prep': 4,
+  'final-stretch': 2,
+  'revision-only': 1,
+};
+
+// Whole calendar months between `now` and `dateStr`, rounding any partial
+// month UP (a target 8 days past an even N-month mark still needs a full
+// extra month of runway) — a ceiling, not a round-to-nearest. Returns null
+// for an empty/unparseable date, letting the caller fall back to
+// DEFAULT_MONTHS_BY_LEVEL.
+function monthsBetween(dateStr: string, now: Date): number | null {
+  if (!dateStr) return null;
+  const target = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const months = (target.getFullYear() - now.getFullYear()) * 12 + (target.getMonth() - now.getMonth());
+  const dayAdjust = target.getDate() > now.getDate() ? 1 : 0;
+  return months + dayAdjust;
+}
+
+/**
+ * Resolves how many months of roadmap to build. Pure and synchronous,
+ * never fails. Prefers a real `examDate` when it parses to a future date;
+ * otherwise (no date, unparseable date, or a date that's already passed)
+ * falls back to a currentLevel-scaled default. Always clamped to 1-12 —
+ * below 1 there's no meaningful roadmap to build, and above 12 the phase
+ * granularity (one entry per month) stops being useful, same spirit as
+ * `clampDaysPerWeek` in the Phase 6 section above.
+ */
+export function resolveMonthsRemaining(
+  answers: Pick<ExamDomainAnswers, 'examDate' | 'currentLevel'>,
+  now: Date = new Date(),
+): number {
+  const parsed = monthsBetween(answers.examDate, now);
+  const raw = parsed !== null && parsed > 0 ? parsed : DEFAULT_MONTHS_BY_LEVEL[answers.currentLevel];
+  return Math.min(12, Math.max(1, Math.round(raw)));
+}
+
+// The roadmap always ends on this stage, regardless of currentLevel or
+// monthsRemaining — a final mock-tests-and-weak-areas phase is the honest
+// last step for every prep level, including someone with only one month
+// left total (in which case it's the *only* phase — there's no time for
+// anything else, which is itself an accurate signal to show the person).
+const FINAL_STAGE = 'Final Mock & Weak-Area Drilling';
+
+// Every stage BEFORE the guaranteed final one, per currentLevel, in
+// earliest-to-latest order. This is what makes 'revision-only' and
+// 'just-starting' produce visibly different roadmaps for the same
+// monthsRemaining: 'revision-only' skips straight to revision content
+// (the person has already learned the material), while 'just-starting'
+// walks through foundations first. 'mid-prep' and 'final-stretch' sit
+// between the two, each skipping the stages that prep level implies are
+// already behind the person.
+const PRE_FINAL_STAGES_BY_LEVEL: Record<ExamCurrentLevel, string[]> = {
+  'just-starting': ['Foundations', 'Core Buildout', 'Advanced / Applied', 'Full Revision'],
+  'mid-prep': ['Core Buildout', 'Advanced / Applied', 'Full Revision'],
+  'final-stretch': ['Advanced / Applied Consolidation', 'Full Revision'],
+  'revision-only': ['Full Revision'],
+};
+
+export type RoadmapStage = { phase: number; month: string; stageLabel: string };
+
+/**
+ * Builds the phase-by-phase stage sequence — pure structure, no subjects or
+ * topics yet. Always returns exactly `monthsRemaining` (clamped 1-12)
+ * entries, always ending on FINAL_STAGE. When monthsRemaining is smaller
+ * than the level's full pre-final stage list, earlier (lower-index) stages
+ * are kept and later ones (typically 'Full Revision') are the ones dropped
+ * from the pre-final portion — on a tight timeline, actually covering
+ * foundational/core content matters more than a dedicated revision phase,
+ * since FINAL_STAGE itself already covers final review and drilling. When
+ * monthsRemaining is larger, earlier stages are the ones stretched across
+ * more months (more time to build foundations properly), not later ones.
+ * Both directions use the same proportional (floor-indexed) mapping, so the
+ * behavior is one rule, not two special cases — exercised directly (not
+ * just type-checked) for every currentLevel x several monthsRemaining
+ * combinations before trusting it; see PHASE_7_HANDOFF.md.
+ */
+export function buildRoadmapSkeleton(currentLevel: ExamCurrentLevel, monthsRemaining: number): RoadmapStage[] {
+  const n = Math.min(12, Math.max(1, Math.round(monthsRemaining)));
+  const preFinal = PRE_FINAL_STAGES_BY_LEVEL[currentLevel];
+  const m = n - 1; // months available before the guaranteed final phase
+  const stages: string[] = [];
+  if (m > 0) {
+    const L = preFinal.length;
+    for (let i = 0; i < m; i++) {
+      const idx = Math.min(L - 1, Math.floor((i * L) / m));
+      stages.push(preFinal[idx]);
+    }
+  }
+  stages.push(FINAL_STAGE);
+  return stages.map((stageLabel, i) => ({ phase: i + 1, month: `Month ${i + 1}`, stageLabel }));
+}
+
+// ---- 2. Local, stage-aware topic templates + subject inference ----
+
+// Deliberately genuine-but-generic per-stage topic phrasing (not just "Add
+// your first topic" — same "the fallback should still be real, useful
+// content" bar Phase 5/6 held themselves to) rather than actual curriculum
+// content, since unlike diet macros or a training rep range, this sandbox
+// has no way to know the real chapter breakdown of an arbitrary exam/
+// skill/course offline. Getting real subject-specific topics (e.g. "NLM &
+// Friction" for NEET Physics) is exactly what the AI path
+// (`onboarding-syllabus-structured`) is for — this is the honest, always-
+// available floor under it.
+function topicsForStage(stageLabel: string, subjectLabel: string): string[] {
+  switch (stageLabel) {
+    case 'Foundations':
+      return [`${subjectLabel}: fundamentals & core concepts`, `${subjectLabel}: basic practice problems`];
+    case 'Core Buildout':
+      return [`${subjectLabel}: intermediate topics`, `${subjectLabel}: applied problem-solving`];
+    case 'Advanced / Applied':
+    case 'Advanced / Applied Consolidation':
+      return [`${subjectLabel}: advanced / high-weightage topics`, `${subjectLabel}: previous-year style questions`];
+    case 'Full Revision':
+      return [`${subjectLabel}: full syllabus revision`, `${subjectLabel}: formula / concept sheet review`];
+    default: // FINAL_STAGE
+      return [`${subjectLabel}: full-length mock tests`, `${subjectLabel}: weak-area drilling`];
+  }
+}
+
+// Small set of common exam/cert name -> subject-breakdown presets, matched
+// by case-insensitive substring against `examName`. Deliberately modest in
+// size (not an attempt at an exhaustive exam database) — it exists so the
+// most common cases (NEET, JEE, UPSC, AWS, etc.) get a real subject split
+// instead of a single generic bucket even when the person leaves
+// `subjectsHint` blank, while anything not on this list still degrades
+// gracefully to the generic single-subject fallback below rather than
+// guessing wrong.
+const EXAM_SUBJECT_PRESETS: { keywords: string[]; subjects: string[] }[] = [
+  { keywords: ['neet'], subjects: ['Physics', 'Chemistry', 'Biology'] },
+  { keywords: ['jee'], subjects: ['Mathematics', 'Physics', 'Chemistry'] },
+  { keywords: ['upsc', 'civil services', 'ias'], subjects: ['General Studies', 'CSAT', 'Essay & Ethics'] },
+  { keywords: ['cat'], subjects: ['Quantitative Ability', 'Verbal Ability & Reading Comprehension', 'Data Interpretation & Logical Reasoning'] },
+  { keywords: ['gate'], subjects: ['Core Engineering', 'Engineering Mathematics', 'General Aptitude'] },
+  { keywords: ['gre'], subjects: ['Verbal Reasoning', 'Quantitative Reasoning', 'Analytical Writing'] },
+  { keywords: ['gmat'], subjects: ['Quantitative', 'Verbal', 'Data Insights'] },
+  { keywords: ['aws'], subjects: ['Cloud Concepts', 'Security', 'Core Services & Technology', 'Billing & Pricing'] },
+  { keywords: ['pmp'], subjects: ['People', 'Process', 'Business Environment'] },
+  { keywords: ['cfa'], subjects: ['Ethics & Quant Methods', 'Financial Statement Analysis', 'Portfolio Management'] },
+];
+
+function matchExamPreset(examName: string): string[] | null {
+  const lower = examName.toLowerCase();
+  for (const preset of EXAM_SUBJECT_PRESETS) {
+    if (preset.keywords.some((kw) => lower.includes(kw))) return preset.subjects;
+  }
+  return null;
+}
+
+// Comma/semicolon-separated free text -> trimmed, non-empty parts, matching
+// the "generator's job to parse" convention DietDomainAnswers.
+// allergiesOrDislikes already documents in questionnaire.ts.
+function parseSubjectsHint(hint: string): string[] {
+  return hint.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+}
+
+function slugifySubjectLabel(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'subject';
+}
+
+export type ExamSyllabusSubject = { key: string; label: string; color: string };
+
+/**
+ * Resolves the subject list for a syllabus roadmap. Priority order: (1) a
+ * person-supplied `subjectsHint` is always respected verbatim over guessing
+ * — they told us directly; (2) failing that, a known exam-name preset
+ * (EXAM_SUBJECT_PRESETS); (3) failing that, one generic subject named after
+ * the exam itself, so "AWS SAA-C03" with no hint still gets a real (if
+ * unspecific) subject rather than the app inventing wrong physics/chemistry/
+ * biology subjects for something that isn't NEET. Pure and synchronous,
+ * never fails, never returns an empty list.
+ */
+export function deriveExamSubjects(answers: Pick<ExamDomainAnswers, 'examName' | 'subjectsHint'>): ExamSyllabusSubject[] {
+  const colorNames = Object.keys(SUBJECT_COLOR_PALETTE);
+  const hinted = parseSubjectsHint(answers.subjectsHint);
+  const labels = hinted.length ? hinted : matchExamPreset(answers.examName) ?? [`${answers.examName.trim() || 'Exam'} Core Topics`];
+
+  const seenKeys = new Set<string>();
+  return labels.map((label, i) => {
+    let key = slugifySubjectLabel(label);
+    while (seenKeys.has(key)) key = `${key}_${i}`;
+    seenKeys.add(key);
+    return { key, label, color: colorNames[i % colorNames.length] };
+  });
+}
+
+export type ExamSyllabusPhase = { phase: number; month: string; label: string; subjects: Record<string, string[]> };
+
+/**
+ * Builds a full syllabus roadmap entirely locally (no network) — the
+ * fallback path for when AI generation isn't available, and honors every
+ * field in ExamDomainAnswers that matters for shape: `currentLevel` +
+ * `examDate` decide the phase count and stage sequence (via
+ * resolveMonthsRemaining + buildRoadmapSkeleton), `subjectsHint`/`examName`
+ * decide the subject list (via deriveExamSubjects), and every phase gets
+ * real stage-appropriate topic text (via topicsForStage) rather than a
+ * placeholder.
+ */
+export function buildFallbackSyllabus(
+  answers: ExamDomainAnswers,
+  now: Date = new Date(),
+): { subjects: ExamSyllabusSubject[]; phases: ExamSyllabusPhase[] } {
+  const subjects = deriveExamSubjects(answers);
+  const monthsRemaining = resolveMonthsRemaining(answers, now);
+  const skeleton = buildRoadmapSkeleton(answers.currentLevel, monthsRemaining);
+
+  const phases: ExamSyllabusPhase[] = skeleton.map(({ phase, month, stageLabel }) => ({
+    phase,
+    month,
+    label: stageLabel,
+    subjects: Object.fromEntries(subjects.map((s) => [s.key, topicsForStage(stageLabel, s.label)])),
+  }));
+
+  return { subjects, phases };
+}
+
+// ---- 3. AI generation, tying the skeleton + fallback together ----
+
+/**
+ * Composes the structured description sent to the `generate-content` edge
+ * function for `kind: 'onboarding-syllabus-structured'`. New kind,
+ * deliberately NOT reusing today's `kind: 'onboarding-syllabus'` (which
+ * `generateSyllabus` above still uses, unchanged) — same "new kind for a new
+ * structured contract, old kind left alone" pattern Phase 6 used for
+ * training. Tells the AI the exact phase count and stage order our skeleton
+ * already computed (so its roadmap shape matches currentLevel/timeline the
+ * same way the fallback's does), plus subjectsHint/examName so it can supply
+ * real subject-specific topic content the fallback can't.
+ */
+function describeExamForGeneration(answers: ExamDomainAnswers, monthsRemaining: number, skeleton: RoadmapStage[]): string {
+  const parts = [
+    `Exam / skill / course: ${answers.examName.trim() || 'unspecified — infer a reasonable one from context'}`,
+    `Current prep level: ${answers.currentLevel.replace(/-/g, ' ')}`,
+    `Months remaining: ${monthsRemaining}`,
+    `Roadmap must have exactly ${skeleton.length} phase(s), in this order: ${skeleton.map((s) => s.stageLabel).join(' -> ')}`,
+  ];
+  if (answers.examDate) parts.push(`Exam date: ${answers.examDate}`);
+  parts.push(
+    answers.subjectsHint.trim()
+      ? `Subjects — use exactly these, do not substitute your own: ${answers.subjectsHint.trim()}`
+      : 'No subjects given — infer the real subject/module breakdown for this exam/skill/course yourself.',
+  );
+  return parts.join('. ');
+}
+
+export type ExamSyllabusResult = {
+  subjects: ExamSyllabusSubject[];
+  phases: ExamSyllabusPhase[];
+  // true if `subjects`/`phases` came from buildFallbackSyllabus() rather
+  // than the AI — same convention as DietPlanResult.usedFallback (Phase 5)
+  // and WeeklyTrainingResult.usedFallback (Phase 6).
+  usedFallback: boolean;
+};
+
+/**
+ * Generates a full syllabus/study-plan roadmap for the onboarding
+ * questionnaire's 'exam' domain (or any caller with an ExamDomainAnswers
+ * object) — generalized beyond JEE-shaped assumptions: works for any named
+ * exam, certification, or skill, honors `currentLevel` to shape a visibly
+ * different roadmap for someone starting from scratch vs someone in pure
+ * revision, and uses `subjectsHint` when given instead of assuming a fixed
+ * subject list.
+ *
+ * Deliberate signature difference from today's
+ * `generateSyllabus(goalDescription, context?)`, which is untouched by this
+ * phase and still exists above — see the block comment at the top of this
+ * section for the reasoning (same judgment call Phase 5/6 made).
+ *
+ * Always resolves with a real, currentLevel/timeline-shaped roadmap (AI or
+ * local fallback) rather than null; use `usedFallback` to detect the AI path
+ * failed, same convention as `generateDietPlan`/`generateTrainingPlan`.
+ */
+export async function generateExamSyllabus(
+  answers: ExamDomainAnswers,
+  context?: string,
+  now: Date = new Date(),
+): Promise<ExamSyllabusResult> {
+  const monthsRemaining = resolveMonthsRemaining(answers, now);
+  const skeleton = buildRoadmapSkeleton(answers.currentLevel, monthsRemaining);
+  const input = describeExamForGeneration(answers, monthsRemaining, skeleton);
+
+  const aiResult = (await generate('onboarding-syllabus-structured', input, context).catch(() => null)) as {
+    subjects?: { key: string; label: string; color: string }[];
+    phases?: { phase: number; month: string; label: string; subjects: Record<string, string[]> }[];
+  } | null;
+
+  const aiSubjects = Array.isArray(aiResult?.subjects) ? aiResult!.subjects : null;
+  const aiPhases = Array.isArray(aiResult?.phases) ? aiResult!.phases : null;
+  // Requires at least one subject and exactly the phase count our skeleton
+  // called for — anything short of that (missing phases, wrong length) is
+  // treated as a failed generation rather than silently rendering a roadmap
+  // that doesn't actually match the requested currentLevel/timeline shape,
+  // same convention Phase 6 used for `generateTrainingPlan`'s 7-day check.
+  const usedFallback = !aiSubjects || !aiSubjects.length || !aiPhases || aiPhases.length !== skeleton.length;
+
+  if (usedFallback) {
+    return { ...buildFallbackSyllabus(answers, now), usedFallback: true };
+  }
+
+  const colorNames = Object.keys(SUBJECT_COLOR_PALETTE);
+  const subjects: ExamSyllabusSubject[] = aiSubjects!.map((s, i) => ({
+    key: typeof s?.key === 'string' && s.key ? s.key : `subject_${i}`,
+    label: typeof s?.label === 'string' && s.label ? s.label : `Subject ${i + 1}`,
+    color: typeof s?.color === 'string' && colorNames.includes(s.color) ? s.color : colorNames[i % colorNames.length],
+  }));
+
+  const phases: ExamSyllabusPhase[] = aiPhases!.map((p, i) => ({
+    phase: typeof p?.phase === 'number' ? p.phase : i + 1,
+    month: typeof p?.month === 'string' && p.month ? p.month : skeleton[i].month,
+    label: typeof p?.label === 'string' && p.label ? p.label : skeleton[i].stageLabel,
+    subjects: Object.fromEntries(
+      subjects.map((s) => [
+        s.key,
+        Array.isArray(p?.subjects?.[s.key]) ? p.subjects[s.key].filter((t: any) => typeof t === 'string') : [],
+      ]),
+    ),
+  }));
+
+  return { subjects, phases, usedFallback: false };
 }

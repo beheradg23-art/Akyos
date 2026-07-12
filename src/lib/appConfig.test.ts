@@ -20,6 +20,8 @@ import {
   REVISION_FRESH_DAYS,
   REVISION_DUE_DAYS,
   DEFAULT_TRACKER_ITEMS,
+  hydrateDomains,
+  DEFAULT_DOMAINS,
 } from './appConfig';
 
 describe('getHunterRank', () => {
@@ -188,5 +190,30 @@ describe('getPreciseCountdown', () => {
     expect(result?.expired).toBe(false);
     expect(result?.mode).toBe('dhm');
     expect(result?.days).toBe(4);
+  });
+});
+
+describe('hydrateDomains (Phase 8)', () => {
+  it('defaults to null (unrestricted) for missing/malformed input, matching every account today', () => {
+    expect(hydrateDomains(undefined)).toBe(DEFAULT_DOMAINS);
+    expect(hydrateDomains(null)).toBe(DEFAULT_DOMAINS);
+    expect(hydrateDomains('exam')).toBe(DEFAULT_DOMAINS);
+    expect(hydrateDomains({ 0: 'exam' })).toBe(DEFAULT_DOMAINS);
+  });
+
+  it('treats an empty array the same as "never set" — unrestricted, not zero-domain', () => {
+    expect(hydrateDomains([])).toBe(DEFAULT_DOMAINS);
+  });
+
+  it('keeps a valid string array, trimmed', () => {
+    expect(hydrateDomains(['exam', ' fitness '])).toEqual(['exam', 'fitness']);
+  });
+
+  it('drops non-string/blank entries but keeps the rest', () => {
+    expect(hydrateDomains(['exam', 42, '', '  ', null, 'diet'])).toEqual(['exam', 'diet']);
+  });
+
+  it('falls back to unrestricted if every entry is invalid', () => {
+    expect(hydrateDomains([42, null, '   '])).toBe(DEFAULT_DOMAINS);
   });
 });
