@@ -1,6 +1,6 @@
 // Training & Fuel tab: the gym block (with AI-generated exercise guides,
 // falling back to the static EXERCISE_GUIDE) and the diet/meal log.
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Dumbbell, CheckCircle2, Circle, Target, Droplets, Flame, Activity,
   ArrowUpRight, Settings,

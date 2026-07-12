@@ -1,6 +1,6 @@
 // Weight trend mini-chart + logging card shown on the Timeline tab. Stores
 // its own log in localStorage under WEIGHT_LOG_KEY.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Weight, TrendingUp, Calendar, Trash2, Plus } from 'lucide-react';
 import { ConfigContext, getLocalDateString, getDayName } from '../../lib/appConfig';
 import { Card, StatPill, RippleButton } from '../ui/Primitives';

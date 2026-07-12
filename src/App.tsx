@@ -13,7 +13,7 @@
 // This file is now just the shell: auth/onboarding gating, top-level state,
 // the sidebar/nav, and wiring the tabs together.
 // ---------------------------------------------------------------------------
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   GraduationCap, ChevronRight, X, ChevronLeft, Swords, Settings, UserCircle2,
 } from 'lucide-react';

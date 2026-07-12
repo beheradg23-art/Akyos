@@ -2,7 +2,7 @@
 // timeline, training, diet, profile & goals, countdowns, overview summary
 // overrides, subjects & syllabus, tab labels/icons, and section labels —
 // plus the accordion shell (ConfigEditorTab) that hosts them all.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   LayoutGrid, Clock3, Dumbbell, BookOpen, Sparkles, Target, GraduationCap,
   Weight, Droplets, Moon, Utensils, Flame, ChevronRight, ChevronDown,

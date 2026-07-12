@@ -4,7 +4,7 @@
 // streak flame, and the mobile status strip. Pulled out of App.tsx since
 // these have no dependency on any single tab — everything else imports
 // from here.
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Target, Flame, AlertTriangle, ChevronRight, X, FlameKindling, Swords,
   Loader2,

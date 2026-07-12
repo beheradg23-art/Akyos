@@ -1,7 +1,7 @@
 // Dashboard Overview tab: profile summary, countdowns, daily stat pills
 // (study/training/meals/sleep/calories/protein/hydration), and the goal
 // targets list.
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Clock3, Dumbbell, BookOpen, Target, GraduationCap, Ruler, Weight,
   Droplets, Moon, Utensils, Flame, TrendingUp, Activity, Calendar,

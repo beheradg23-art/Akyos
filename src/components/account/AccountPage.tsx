@@ -1,6 +1,6 @@
 // Account tab: profile summary, data backup/restore, password change, cloud
 // sync + push notification cards, and the performance calendar heatmap.
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sun, Calendar, ArrowUpRight, ChevronLeft, Download, Upload, ShieldCheck,
   Settings, UserCircle2, KeyRound, LogOut,

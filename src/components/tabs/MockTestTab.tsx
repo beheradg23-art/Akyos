@@ -1,5 +1,5 @@
 // Mock Test tab: test log, score-trend chart, and weak-topic priority list.
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, ClipboardList, BarChart3, Trash2, Plus, Settings } from 'lucide-react';
 import { ConfigContext, getSubjectStyle, getSubjectHex, getLocalDateString, getDayName } from '../../lib/appConfig';
 import { Card, RippleButton } from '../ui/Primitives';

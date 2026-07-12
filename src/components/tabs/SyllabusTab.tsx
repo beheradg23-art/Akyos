@@ -1,7 +1,7 @@
 // Syllabus tab: phase-by-phase topic checklist with revision-status
 // coloring (fresh/due/overdue) and AI-generated topic detail panels,
 // falling back to the static TOPIC_DETAILS.
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { BookOpen, ChevronRight, ArrowUpRight, RotateCcw } from 'lucide-react';
 import {
   ConfigContext, getTopicRevisionKey, getRevisionStatus, getAllSyllabusTopics,

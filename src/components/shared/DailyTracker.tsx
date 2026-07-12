@@ -1,7 +1,7 @@
 // The "Bento Box" daily execution checklist sidebar — the 6-10 tracker
 // items (wake-up, study blocks, gym, meals, sleep lock, etc.) whose
 // completion drives the streak and Hunter Rank calculations.
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CheckCircle2, Circle, Timer, Calendar } from 'lucide-react';
 import { ConfigContext, getDayName, TrackerItem, TabLabelKey } from '../../lib/appConfig';
 import { liquidFillStyle } from '../../lib/liquidFill';

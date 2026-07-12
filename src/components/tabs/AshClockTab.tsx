@@ -1,6 +1,6 @@
 // Ash's Clock tab: fade-digit live clock + Pomodoro timer, subject-hour
 // stats, and alarms panel.
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Timer, Play, Pause, SkipForward, RotateCcw, Crown, Swords, BarChart3 } from 'lucide-react';
 import { ConfigContext, getSubjectStyle, getLocalDateString } from '../../lib/appConfig';
 import { liquidFillStyle, liquidFillStyleFor } from '../../lib/liquidFill';
