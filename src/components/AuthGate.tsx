@@ -340,6 +340,25 @@ type OnePctPhase = 'intro' | 'wordsOut' | 'gradientIn' | 'zoomOut' | 'badgeRevea
 // the landing value, same shape most real counters/progress bars use.
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
+// Speed curve for the "zoom out" beat: slow at the start, a sharp spike of
+// speed through the middle, then slow again as it settles into the badge —
+// i.e. the *derivative* of this easing function is a narrow bell/spike
+// centered around the midpoint, not the broad, roughly-symmetric hump a
+// plain ease-in-out cubic-bezier gives you. A logistic (sigmoid) curve is
+// the natural fit: its derivative IS a bell curve, flat at both tails and
+// sharply peaked in the middle, and ZOOM_OUT_STEEPNESS controls how narrow/
+// tall that peak is (higher = snappier spike, lower = gentler ease-in-out).
+// Driving the size in JS frame-by-frame (rather than a CSS `transition`)
+// is what makes this possible — a single CSS cubic-bezier can't describe a
+// non-monotonic speed profile like this.
+const ZOOM_OUT_STEEPNESS = 9;
+function zoomOutEase(t: number, k = ZOOM_OUT_STEEPNESS): number {
+  const sigmoid = (x: number) => 1 / (1 + Math.exp(-k * (x - 0.5)));
+  const s0 = sigmoid(0);
+  const s1 = sigmoid(1);
+  return (sigmoid(t) - s0) / (s1 - s0); // renormalized so it lands exactly on 0 and 1
+}
+
 // The shared big-text styling for both "1%" and the "Better Every Day."
 // words, so they read as one continuous line at one consistent size. The
 // lower end of the clamp is driven mostly by vw (rather than a large fixed
@@ -351,31 +370,35 @@ const ONE_PCT_TEXT_CLASS = 'text-[clamp(1.4rem,6.8vw,4.75rem)] leading-[1.15]';
 // screen — that scale-up read as a bulky, sudden zoom-in. Instead it sits
 // at full-screen size the whole time and simply dissolves into view via
 // opacity (see the 'gradientIn' phase below); the one real motion left is
-// a single, smooth "zoom out" — easing all the way down from full-screen
-// to the compact badge shape. Sized in absolute px (badge state) vs vmax
-// (full-screen state) so the browser can still interpolate between them
-// smoothly — a plain width/height transition, no scale-factor math needed
-// to guarantee full coverage on any screen size. Both the fade-in and the
-// zoom-out share the same gentle, no-overshoot deceleration curve so
-// nothing snaps or springs.
-const SMOOTH_EASE = 'cubic-bezier(0.16, 1, 0.3, 1)';
-function onePctBlobStyle(phase: OnePctPhase): React.CSSProperties {
+// the "zoom out" down to the compact badge shape.
+//
+// That zoom is driven frame-by-frame from JS (via `zoomProgress`, a 0→1
+// value produced by zoomOutEase — see above) rather than a CSS
+// `transition`, because the desired speed profile (slow → sharp spike →
+// slow, not a plain symmetric ease) isn't expressible as a single
+// cubic-bezier. `fullSizePx` is computed from the viewport (the JS
+// equivalent of the old `300vmax`) so the blob still comfortably covers
+// the screen at every aspect ratio.
+function onePctBlobStyle(phase: OnePctPhase, zoomProgress: number, fullSizePx: number): React.CSSProperties {
   const visible = phase === 'gradientIn' || phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
-  const settled = phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
-  const size = settled ? '56px' : '300vmax';
-  const radius = settled ? '16px' : '50%';
+  const settled = phase === 'badgeReveal' || phase === 'finalFade';
+  const badgeSizePx = 56;
+  // t: 0 = full screen, 1 = fully settled into the badge.
+  const t = settled ? 1 : phase === 'zoomOut' ? zoomProgress : 0;
+  const size = fullSizePx + (badgeSizePx - fullSizePx) * t;
+  const radius = fullSizePx / 2 + (16 - fullSizePx / 2) * t; // circle -> 16px rounded square
   return {
     ...liquidFillStyle(),
     position: 'fixed',
     left: '50%',
     top: '50%',
-    width: size,
-    height: size,
-    borderRadius: radius,
+    width: `${size}px`,
+    height: `${size}px`,
+    borderRadius: `${radius}px`,
     transform: 'translate(-50%, -50%)',
     opacity: visible ? 1 : 0,
     boxShadow: settled ? '0 10px 30px -6px rgba(124,58,237,0.45)' : 'none',
-    transition: `width ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, height ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, border-radius ${ONE_PCT_ZOOM_OUT_MS}ms ${SMOOTH_EASE}, opacity ${ONE_PCT_GRADIENT_IN_MS}ms ease-in-out, box-shadow 380ms ease-out`,
+    transition: `opacity ${ONE_PCT_GRADIENT_IN_MS}ms ease-in-out, box-shadow 380ms ease-out`,
     zIndex: 2,
   };
 }
@@ -388,6 +411,36 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
   // opacity:0 — because invisible text still reserves its own width in the
   // flex row, which would pull the centered block off toward the left.
   const [visibleWordCount, setVisibleWordCount] = useState(0);
+  // 0→1 progress through the "zoom out" beat, advanced every frame using
+  // zoomOutEase (slow → sharp mid-speed spike → slow) instead of a plain
+  // CSS transition — see zoomOutEase / onePctBlobStyle above for why.
+  const [zoomProgress, setZoomProgress] = useState(0);
+  // The JS equivalent of the old `300vmax` — recomputed once per mount so
+  // the blob still comfortably covers the screen at any aspect ratio.
+  const [fullSizePx] = useState(() =>
+    typeof window !== 'undefined' ? 3 * Math.max(window.innerWidth, window.innerHeight) : 3000
+  );
+
+  // Drives the zoom-out size frame-by-frame (rather than letting the
+  // browser interpolate a CSS transition) so the *speed* of the shrink can
+  // follow a custom curve — slow at first, a sharp spike through the
+  // middle, slow again as it settles — instead of a single, roughly-
+  // symmetric cubic-bezier ease.
+  useEffect(() => {
+    if (phase !== 'zoomOut') return;
+    let rafId = 0;
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / ONE_PCT_ZOOM_OUT_MS, 1);
+      setZoomProgress(zoomOutEase(t));
+      if (t < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [phase]);
 
   // Smooth count-up, driven by requestAnimationFrame rather than a handful
   // of discrete setTimeout jumps — every frame nudges the number forward
@@ -466,7 +519,7 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
           eases smoothly down (zooms out) into the badge shape. Its own
           background is the same moving/shining liquid gradient used
           everywhere else. */}
-      <div style={onePctBlobStyle(phase)}>
+      <div style={onePctBlobStyle(phase, zoomProgress, fullSizePx)}>
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out` }}
