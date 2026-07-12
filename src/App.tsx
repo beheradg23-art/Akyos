@@ -686,15 +686,21 @@ export default function JEEDashboard() {
         }
         input[type="date"]::-webkit-calendar-picker-indicator,
         input[type="time"]::-webkit-calendar-picker-indicator {
-          filter: invert(0.85);
-          opacity: 0.75;
+          /* invert(1) turns the browser's near-black glyph fully white;
+             the violet drop-shadow tints its edges toward the app's accent
+             color (rgba(167,139,250,...) is the same violet used for the
+             focus ring above) without the fragile sepia/hue-rotate hacks
+             needed to recolor a monochrome icon outright. */
+          filter: invert(1) drop-shadow(0 0 2.5px rgba(167, 139, 250, 0.9));
+          opacity: 0.9;
           cursor: pointer;
           border-radius: 4px;
-          transition: opacity 0.15s ease;
+          transition: opacity 0.15s ease, filter 0.15s ease;
         }
         input[type="date"]::-webkit-calendar-picker-indicator:hover,
         input[type="time"]::-webkit-calendar-picker-indicator:hover {
           opacity: 1;
+          filter: invert(1) drop-shadow(0 0 3.5px rgba(167, 139, 250, 1));
         }
 
         /* Branded keyboard-focus ring, app-wide. Several inputs already
