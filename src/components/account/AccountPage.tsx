@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sun, Calendar, ArrowUpRight, ChevronLeft, Download, Upload, ShieldCheck,
-  Settings, UserCircle2, KeyRound, LogOut,
+  Settings, UserCircle2, KeyRound, LogOut, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { ConfigContext, SECTION_LABEL_ROWS, getLocalDateString, getDayName, DailyCheckLog } from '../../lib/appConfig';
 import { liquidFillStyle } from '../../lib/liquidFill';
@@ -16,7 +16,10 @@ import { toast } from '../../lib/toast';
 import { haptic } from '../../lib/haptics';
 import PasswordField from '../PasswordField';
 import PasscodeChangeCard from '../PasscodeChangeCard';
-import { SYNC_KEYS, resetLocalAccountState, LAST_ACTIVE_USER_KEY } from '../../lib/cloudSync';
+import {
+  SYNC_KEYS, resetLocalAccountState, LAST_ACTIVE_USER_KEY,
+  hashPasscode, getPasscodeHash, PASSCODE_HASH_KEY,
+} from '../../lib/cloudSync';
 
 export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHistory: DailyCheckLog; setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>> }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -211,6 +214,227 @@ export function ChangePasswordCard() {
   );
 }
 
+// ---------- Delete Account (inside Account Menu) ----------
+//
+// Required auth, two layers:
+// 1. Client-side gate (this component): the person must re-enter their
+//    current 6-digit app passcode — verified the same way
+//    PasscodeChangeCard.tsx verifies it, against the cached/cloud hash —
+//    and then type the literal word DELETE, before the delete request is
+//    ever sent. Either step failing/being skipped means no request goes
+//    out.
+// 2. Server-side gate (api/delete-account.ts): deleting a Supabase Auth
+//    user requires the *service role* key, a secret that must never reach
+//    the browser, so the actual deletion can only happen in that
+//    serverless function. It independently re-verifies the caller's
+//    Supabase session token (never trusting a user id from the request
+//    body) before deleting anything — so even a request that somehow
+//    skipped step 1 still can't delete an account without a currently
+//    valid session for that exact account.
+//
+// This is deliberately NOT reachable from ChangePasswordCard/PasscodeChangeCard
+// above — it's its own card so the destructive action has its own,
+// separate confirmation flow rather than living as a mode of something
+// else.
+const DELETE_PASSCODE_LENGTH = 6;
+type DeleteStep = 'warning' | 'passcode' | 'confirm-text';
+
+export function DeleteAccountCard() {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<DeleteStep>('warning');
+  const [passcode, setPasscode] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [userId, setUserId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const passcodeRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => {
+      if (step === 'passcode') passcodeRef.current?.focus();
+      if (step === 'confirm-text') confirmRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [open, step]);
+
+  const reset = () => {
+    setStep('warning');
+    setPasscode('');
+    setPasscodeError(false);
+    setConfirmText('');
+  };
+
+  const closeCard = () => {
+    setOpen(false);
+    reset();
+  };
+
+  // --- verify current passcode, same check PasscodeChangeCard uses ---
+  useEffect(() => {
+    if (step !== 'passcode' || passcode.length !== DELETE_PASSCODE_LENGTH || !userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const hash = await hashPasscode(passcode, userId);
+        const cached = localStorage.getItem(PASSCODE_HASH_KEY) || (await getPasscodeHash(userId).catch(() => null));
+        if (cancelled) return;
+        if (hash === cached) {
+          setPasscodeError(false);
+          setStep('confirm-text');
+        } else {
+          haptic.error();
+          setPasscodeError(true);
+          setTimeout(() => {
+            if (cancelled) return;
+            setPasscode('');
+            setPasscodeError(false);
+            passcodeRef.current?.focus();
+          }, 500);
+        }
+      } catch {
+        if (cancelled) return;
+        toast.error('Could not verify your passcode — check your connection.');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [passcode, step, userId]);
+
+  const handleDelete = async () => {
+    if (confirmText !== 'DELETE') return;
+    setBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error('Your session has expired — sign in again and retry.');
+
+      const res = await fetch('/api/delete-account', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || 'Could not delete your account.');
+
+      // Account is gone server-side — clear every local trace and the
+      // (now-invalid) session, same order handleSignOut uses and for the
+      // same reason: drop the session first, then wipe storage, so no
+      // in-flight autosync can push a stray write anywhere.
+      await supabase.auth.signOut();
+      resetLocalAccountState();
+      localStorage.removeItem(LAST_ACTIVE_USER_KEY);
+      sessionStorage.removeItem('dcc_cloud_synced_this_session');
+      haptic.success();
+      toast.success('Your account has been deleted.');
+      setTimeout(() => window.location.reload(), 900);
+    } catch (err: any) {
+      haptic.error();
+      toast.error(err?.message || 'Could not delete your account. Try again.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-rose-900/40 bg-rose-950/[0.08] p-4 sm:p-5">
+      <button
+        onClick={() => (open ? closeCard() : setOpen(true))}
+        className="flex w-full items-center gap-3 text-left"
+      >
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-950/40 border border-rose-900/40">
+          <Trash2 className="h-4.5 w-4.5 text-rose-300" strokeWidth={2} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[13.5px] font-bold text-rose-200">Delete Account</h3>
+          <p className="text-[11.5px] text-neutral-500">Permanently erase your account and all synced data</p>
+        </div>
+      </button>
+
+      {open && (
+        <div className="mt-4 flex flex-col items-start gap-3 animate-fadeIn">
+          {step === 'warning' && (
+            <>
+              <div className="flex gap-2.5 rounded-lg border border-rose-900/40 bg-rose-950/20 p-3">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                <p className="text-[12px] leading-relaxed text-rose-200/90">
+                  This deletes your account, your cloud-synced data, and your passcode.
+                  Anything only stored on THIS device (see Data Backup & Restore above)
+                  is not touched by this — export a backup first if you want to keep it.
+                  This cannot be undone.
+                </p>
+              </div>
+              <button
+                onClick={() => setStep('passcode')}
+                className="rounded-lg border border-rose-800/60 bg-rose-950/40 px-3.5 py-2 text-[12px] font-semibold text-rose-200 hover:bg-rose-900/40 transition-colors"
+              >
+                I understand, continue
+              </button>
+            </>
+          )}
+
+          {step === 'passcode' && (
+            <>
+              <p className="text-[12px] text-neutral-400">Enter your current passcode to continue</p>
+              <input
+                ref={passcodeRef}
+                value={passcode}
+                onChange={(e) => setPasscode(e.target.value.replace(/\D/g, '').slice(0, DELETE_PASSCODE_LENGTH))}
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete="off"
+                aria-label="Current passcode"
+                className={`w-32 rounded-lg border px-3 py-2.5 text-center text-[15px] tracking-[0.4em] outline-none transition-colors ${
+                  passcodeError
+                    ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300 animate-shake'
+                    : 'border-neutral-800 bg-neutral-950/60 text-neutral-100 focus:border-rose-500/50'
+                }`}
+              />
+            </>
+          )}
+
+          {step === 'confirm-text' && (
+            <>
+              <p className="text-[12px] text-neutral-400">
+                Type <span className="font-mono font-bold text-rose-300">DELETE</span> to permanently delete your account
+              </p>
+              <input
+                ref={confirmRef}
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                type="text"
+                autoComplete="off"
+                aria-label="Type DELETE to confirm"
+                placeholder="DELETE"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] font-mono text-neutral-100 placeholder:text-neutral-700 outline-none focus:border-rose-500/50"
+              />
+              <button
+                onClick={handleDelete}
+                disabled={confirmText !== 'DELETE' || busy}
+                className="w-full rounded-lg bg-rose-600 py-2.5 text-[12.5px] font-semibold text-white transition-opacity hover:bg-rose-500 disabled:opacity-40 disabled:hover:bg-rose-600"
+              >
+                {busy ? 'Deleting…' : 'Permanently Delete My Account'}
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={closeCard}
+            className="text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Account Menu ----------
 // Slide-over panel replacing the old standalone "Config & Settings" tab.
 // Holds account identity, cloud sync, password change, data backup/restore,
@@ -283,6 +507,8 @@ export function AccountPage({
         <LogOut className="h-4 w-4" />
         Log Out
       </button>
+
+      <DeleteAccountCard />
     </div>
   );
 }
