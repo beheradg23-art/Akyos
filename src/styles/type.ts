@@ -23,22 +23,22 @@
 // ---------------------------------------------------------------------------
 
 export const type = {
-    /** Tiny meta text: "Auto" badges, timestamps, char counters. */
-    micro: 'text-[10px] font-medium tracking-wide',
-    /** Uppercase eyebrow / overline labels. */
-    eyebrow: 'text-[10.5px] font-bold uppercase tracking-wider',
-    /** Field labels, helper text, secondary captions. */
-    caption: 'text-[11.5px] text-neutral-500',
-    /** Small UI labels — button text, list item labels. */
-    label: 'text-[12px] font-medium',
-    /** Default body copy inside cards. */
-    body: 'text-[12.5px] leading-relaxed text-neutral-400',
-    /** Form input text. */
-    input: 'text-[13px]',
-    /** Card / section sub-heading. */
-    subheading: 'text-[13.5px] font-bold text-neutral-100',
-    /** Page-level heading. */
-    heading: 'text-[15px] font-semibold tracking-tight text-neutral-50',
-    /** Large numeric / hero display (timers, streak counts). */
-    display: 'text-[28px] font-bold tabular-nums tracking-tight',
-  } as const;
+  /** Tiny meta text: "Auto" badges, timestamps, char counters. */
+  micro: 'text-[10px] font-medium tracking-wide',
+  /** Uppercase eyebrow / overline labels. */
+  eyebrow: 'text-[10.5px] font-bold uppercase tracking-wider',
+  /** Field labels, helper text, secondary captions. */
+  caption: 'text-[11.5px] text-neutral-500',
+  /** Small UI labels — button text, list item labels. */
+  label: 'text-[12px] font-medium',
+  /** Default body copy inside cards. */
+  body: 'text-[12.5px] leading-relaxed text-neutral-400',
+  /** Form input text. */
+  input: 'text-[13px]',
+  /** Card / section sub-heading. */
+  subheading: 'text-[13.5px] font-bold text-neutral-100',
+  /** Page-level heading. */
+  heading: 'text-[15px] font-semibold tracking-tight text-neutral-50',
+  /** Large numeric / hero display (timers, streak counts). */
+  display: 'text-[28px] font-bold tabular-nums tracking-tight',
+} as const;

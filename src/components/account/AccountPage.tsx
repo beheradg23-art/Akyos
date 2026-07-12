@@ -16,7 +16,7 @@ import { toast } from '../../lib/toast';
 import { haptic } from '../../lib/haptics';
 import PasswordField from '../PasswordField';
 import PasscodeChangeCard from '../PasscodeChangeCard';
-import { SYNC_KEYS } from '../../lib/cloudSync';
+import { SYNC_KEYS, resetLocalAccountState, LAST_ACTIVE_USER_KEY } from '../../lib/cloudSync';
 
 export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHistory: DailyCheckLog; setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>> }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -230,9 +230,28 @@ export function AccountPage({
   }, []);
 
   const handleSignOut = async () => {
-    sessionStorage.removeItem('dcc_cloud_synced_this_session');
-    localStorage.removeItem('dcc_passcode_hash');
+    // PHASE 1 FIX: this used to only remove the passcode hash, leaving the
+    // config, routine, weight/diet logs, calendar, everything else sitting
+    // in localStorage for whoever signs into (or creates) the next account
+    // on this device to inherit. Now sign-out wipes every account-scoped
+    // key, and forgets which account this device belonged to —
+    // ensureAccountIsolation() (see cloudSync.ts) still double-checks this
+    // on the next login too, as a second line of defense.
+    //
+    // PHASE 2 FIX: order matters here. useCloudAutoSync (cloudSync.ts) has
+    // a 45s interval AND a `beforeunload` handler that both push whatever's
+    // currently in localStorage to this account's cloud row. If local
+    // storage were wiped BEFORE the session is actually invalidated, either
+    // of those could fire mid-sign-out and push an empty snapshot —
+    // silently overwriting the user's real saved data with blanks. Signing
+    // out FIRST means the Supabase client drops its session immediately, so
+    // any push that sneaks in after that point gets rejected by the
+    // database (no authenticated user_id match) instead of succeeding with
+    // the wrong data. Only once that's done do we touch localStorage.
     await supabase.auth.signOut();
+    resetLocalAccountState();
+    localStorage.removeItem(LAST_ACTIVE_USER_KEY);
+    sessionStorage.removeItem('dcc_cloud_synced_this_session');
     window.location.reload();
   };
 

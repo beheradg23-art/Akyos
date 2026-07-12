@@ -16,36 +16,36 @@
 // Raw millisecond values, for places that need the number itself (setTimeout,
 // animation-delay math, etc).
 export const durationMs = {
-    /** Micro-interactions: button presses, ripples, toggle fills. */
-    instant: 100,
-    /** Hover states, small color/opacity transitions. */
-    fast: 150,
-    /** The default — card hovers, tab switches, most UI transitions. */
-    base: 200,
-    /** Panel slide-ins, modal entrances, drawer open/close. */
-    slow: 300,
-    /** Larger choreographed moves — page transitions, the intro cascade. */
-    slower: 450,
-    /** Full-screen reveals, curtain wipes, splash sequences. */
-    slowest: 650,
-  } as const;
-  
-  // Standard easing curves. `standard` matches what's already used all over
-  // the app (cubic-bezier(0.16, 1, 0.3, 1) — a soft, slightly overshooting
-  // "ease-out-expo" feel); `linear` and `inOut` cover the rest.
-  export const easing = {
-    standard: 'cubic-bezier(0.16, 1, 0.3, 1)',
-    inOut: 'cubic-bezier(0.65, 0, 0.35, 1)',
-    linear: 'linear',
-  } as const;
-  
-  // Ready-to-drop-into-a-`transition` string values, for the common cases.
-  export const motion = {
-    instant: `${durationMs.instant}ms ${easing.standard}`,
-    fast: `${durationMs.fast}ms ${easing.standard}`,
-    base: `${durationMs.base}ms ${easing.standard}`,
-    slow: `${durationMs.slow}ms ${easing.standard}`,
-    slower: `${durationMs.slower}ms ${easing.standard}`,
-    slowest: `${durationMs.slowest}ms ${easing.standard}`,
-    ease: easing.standard,
-  } as const;
+  /** Micro-interactions: button presses, ripples, toggle fills. */
+  instant: 100,
+  /** Hover states, small color/opacity transitions. */
+  fast: 150,
+  /** The default — card hovers, tab switches, most UI transitions. */
+  base: 200,
+  /** Panel slide-ins, modal entrances, drawer open/close. */
+  slow: 300,
+  /** Larger choreographed moves — page transitions, the intro cascade. */
+  slower: 450,
+  /** Full-screen reveals, curtain wipes, splash sequences. */
+  slowest: 650,
+} as const;
+
+// Standard easing curves. `standard` matches what's already used all over
+// the app (cubic-bezier(0.16, 1, 0.3, 1) — a soft, slightly overshooting
+// "ease-out-expo" feel); `linear` and `inOut` cover the rest.
+export const easing = {
+  standard: 'cubic-bezier(0.16, 1, 0.3, 1)',
+  inOut: 'cubic-bezier(0.65, 0, 0.35, 1)',
+  linear: 'linear',
+} as const;
+
+// Ready-to-drop-into-a-`transition` string values, for the common cases.
+export const motion = {
+  instant: `${durationMs.instant}ms ${easing.standard}`,
+  fast: `${durationMs.fast}ms ${easing.standard}`,
+  base: `${durationMs.base}ms ${easing.standard}`,
+  slow: `${durationMs.slow}ms ${easing.standard}`,
+  slower: `${durationMs.slower}ms ${easing.standard}`,
+  slowest: `${durationMs.slowest}ms ${easing.standard}`,
+  ease: easing.standard,
+} as const;

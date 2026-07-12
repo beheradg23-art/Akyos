@@ -7,6 +7,9 @@ import {
   hashPasscode,
   setPasscodeHash,
   getPasscodeHash,
+  ensureAccountIsolation,
+  resetLocalAccountState,
+  LAST_ACTIVE_USER_KEY,
   PASSCODE_HASH_KEY,
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
@@ -750,6 +753,19 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   };
 
   const syncThenContinue = async (userId: string) => {
+    // PHASE 1 FIX: if this browser's local storage currently belongs to a
+    // different account (or no account at all), wipe it before doing
+    // anything else. Otherwise a returning account's sign-in could silently
+    // keep whatever the previous account on this device left behind for any
+    // key their own cloud snapshot doesn't happen to cover.
+    const wasReset = ensureAccountIsolation(userId);
+    if (wasReset) {
+      // The local passcode hash (and everything else) was just wiped as
+      // part of that reset — sessionStorage's "already synced" flag from a
+      // previous account is now stale too, so force a real sync below
+      // instead of trusting it.
+      sessionStorage.removeItem(SYNCED_FLAG);
+    }
     if (sessionStorage.getItem(SYNCED_FLAG) === 'true') {
       decidePostSyncStage(userId);
       return;
@@ -922,6 +938,16 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         if (data.session?.user) {
           // Brand new account — nothing to pull from the cloud, so skip
           // straight to "choose your passcode" instead of a sync cycle.
+          //
+          // PHASE 1 FIX: this used to be the exact spot where a previous
+          // account's leftover localStorage (routine, config, calendar,
+          // etc.) would get adopted as this brand-new account's data —
+          // finalizeNewPasscode() below pushes whatever's currently in
+          // localStorage to the cloud as this account's baseline. Wiping
+          // first guarantees that baseline is genuinely empty/default for
+          // every new signup, regardless of what account last used this
+          // browser.
+          ensureAccountIsolation(data.session.user.id);
           sessionStorage.setItem(SYNCED_FLAG, 'true');
           setPendingUserId(data.session.user.id);
           setStage('setPasscode');
@@ -1320,9 +1346,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
       <button
         onClick={async () => {
+          // PHASE 2 FIX: bring this in line with AccountPage's sign-out —
+          // full wipe, not just the passcode hash, and sign-out happens
+          // first so nothing can push stale/empty data mid-transition.
           sessionStorage.removeItem(SYNCED_FLAG);
-          localStorage.removeItem(PASSCODE_HASH_KEY);
           await supabase.auth.signOut();
+          resetLocalAccountState();
+          localStorage.removeItem(LAST_ACTIVE_USER_KEY);
           window.location.reload();
         }}
         className="mt-10 text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400"

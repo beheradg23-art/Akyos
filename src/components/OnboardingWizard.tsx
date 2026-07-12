@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { NO_SELECT_CSS } from '../styles/noSelect';
 import { DateField, TimeField } from './ui/Primitives';
 import {
-  Sparkles, Loader2, RefreshCcw, ArrowRight, ClipboardList,
-  Clock3, Dumbbell, Target, CheckCircle2, BookOpen,
+  Sparkles, Loader2, RefreshCcw, ArrowRight, ArrowLeft, ClipboardList,
+  Clock3, Dumbbell, Target, CheckCircle2, BookOpen, GraduationCap,
+  Utensils, LayoutGrid,
 } from 'lucide-react';
 import {
   generateChecklist,
@@ -12,18 +13,42 @@ import {
   generateProfileTargets,
   generateSyllabus,
 } from '../lib/contentGen';
+import {
+  GOAL_DOMAINS,
+  DEFAULT_QUESTIONNAIRE_ANSWERS,
+  hasDomain,
+  buildGoalDescription,
+  buildGoalContext,
+  deriveProfileFields,
+  type GoalDomain,
+  type QuestionnaireAnswers,
+  type ExamCurrentLevel,
+  type FitnessGoalType,
+  type ExperienceLevel,
+  type EquipmentAccess,
+  type DietType,
+  type DietGoal,
+  type ActivityLevel,
+  type RoutineStyle,
+} from '../lib/questionnaire';
 
 // ---------- First-run setup ----------
 // Shown once, right after a new account picks its passcode (see App.tsx —
-// gated on `akyos_onboarding_completed_v1`). Nothing here is hardcoded to
-// any one person's goal: everything downstream (Daily Checklist, Master
-// Timeline, Training Split, Profile targets) is generated from whatever
-// this specific person types into the questionnaire below, then handed to
-// the existing Settings editors to refine further. If generation fails for
-// a section (offline, API hiccup), we fall back to a plain generic default
-// for that section only — never to someone else's real data.
+// gated on `akyos_onboarding_completed_v1`). Phase 4: this is a rebuild of
+// the wizard's UI on top of Phase 3's `questionnaire.ts` data model — the
+// old single "describe your goal" textbox + two checkboxes is replaced by
+// a domain multi-select (a person can pick more than one — e.g. exam prep
+// + fitness + diet all at once) followed by one branching question screen
+// per selected domain. Generation itself (the five generate*() calls
+// below) is UNCHANGED from before — buildGoalDescription()/
+// buildGoalContext() compose the structured answers into the same
+// goalDescription/context strings those functions already accepted, so
+// this phase only touches what's asked and how it's assembled, not how
+// it's generated. If generation fails for a section (offline, API
+// hiccup), we fall back to a plain generic default for that section only
+// — never to someone else's real data.
 
-type Stage = 'intro' | 'generating' | 'review';
+type Stage = 'intro' | 'domain' | 'generating' | 'review';
 
 type ChecklistItem = { id: string; label: string };
 type TimelineBlock = {
@@ -37,6 +62,18 @@ type Subject = { key: string; label: string; color: string };
 type SyllabusPhase = { phase: number; month: string; label: string; subjects: Record<string, string[]> };
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// Icon per domain, for the intro screen's multi-select chips. Kept as a
+// local lookup (rather than adding an icon field to GOAL_DOMAINS in
+// questionnaire.ts) since questionnaire.ts is deliberately UI-agnostic —
+// see its Phase 3 header comment.
+const DOMAIN_ICONS: Record<GoalDomain, any> = {
+  exam: GraduationCap,
+  fitness: Dumbbell,
+  diet: Utensils,
+  productivity: LayoutGrid,
+  custom: Sparkles,
+};
 
 function fallbackChecklist(): ChecklistItem[] {
   return [
@@ -106,8 +143,108 @@ function subMinutes(time: string, mins: number): string {
   return addMinutes(time, -mins);
 }
 
+// A neutral default birthdate (~18 years ago), same convention as
+// DEFAULT_PROFILE.birthdate in appConfig.ts — used only if the person
+// leaves the birthdate field untouched.
+function defaultBirthdate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 18);
+  return d.toISOString().split('T')[0];
+}
+
 const inputCls = 'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50';
 const labelCls = 'text-[11px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1.5';
+const hintCls = 'mt-1 text-[11px] text-neutral-600';
+
+// Reusable "pick one" chip row — used throughout the per-domain question
+// screens below (currentLevel, fitnessGoal, dietType, etc.). Deliberately
+// tiny/local rather than a shared Primitives export: these option sets are
+// specific to this wizard's copy and unlikely to be reused elsewhere.
+function ChipSelect<T extends string>({
+  options, value, onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
+              active
+                ? 'border-violet-500/60 bg-violet-500/15 text-violet-300'
+                : 'border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const EXAM_LEVEL_OPTIONS: { value: ExamCurrentLevel; label: string }[] = [
+  { value: 'just-starting', label: 'Just starting' },
+  { value: 'mid-prep', label: 'Mid-way through' },
+  { value: 'final-stretch', label: 'Final stretch' },
+  { value: 'revision-only', label: 'Revision only' },
+];
+
+const FITNESS_GOAL_OPTIONS: { value: FitnessGoalType; label: string }[] = [
+  { value: 'strength', label: 'Strength' },
+  { value: 'hypertrophy', label: 'Build muscle' },
+  { value: 'endurance', label: 'Endurance' },
+  { value: 'general-health', label: 'General health' },
+  { value: 'sport-specific', label: 'A specific sport' },
+];
+
+const EXPERIENCE_OPTIONS: { value: ExperienceLevel; label: string }[] = [
+  { value: 'beginner', label: 'Beginner' },
+  { value: 'intermediate', label: 'Intermediate' },
+  { value: 'advanced', label: 'Advanced' },
+];
+
+const EQUIPMENT_OPTIONS: { value: EquipmentAccess; label: string }[] = [
+  { value: 'full-gym', label: 'Full gym' },
+  { value: 'home-basic', label: 'Home / basic kit' },
+  { value: 'bodyweight-only', label: 'Bodyweight only' },
+];
+
+const DIET_TYPE_OPTIONS: { value: DietType; label: string }[] = [
+  { value: 'no-preference', label: 'No preference' },
+  { value: 'vegetarian', label: 'Vegetarian' },
+  { value: 'non-vegetarian', label: 'Non-vegetarian' },
+  { value: 'vegan', label: 'Vegan' },
+  { value: 'eggetarian', label: 'Eggetarian' },
+  { value: 'pescatarian', label: 'Pescatarian' },
+];
+
+const DIET_GOAL_OPTIONS: { value: DietGoal; label: string }[] = [
+  { value: 'maintain', label: 'Maintain' },
+  { value: 'bulk', label: 'Bulk' },
+  { value: 'cut', label: 'Cut' },
+  { value: 'recomp', label: 'Recomposition' },
+];
+
+const ACTIVITY_LEVEL_OPTIONS: { value: ActivityLevel; label: string }[] = [
+  { value: 'sedentary', label: 'Sedentary' },
+  { value: 'light', label: 'Lightly active' },
+  { value: 'moderate', label: 'Moderately active' },
+  { value: 'very-active', label: 'Very active' },
+  { value: 'extra-active', label: 'Extra active' },
+];
+
+const ROUTINE_STYLE_OPTIONS: { value: RoutineStyle; label: string }[] = [
+  { value: 'flexible-flow', label: 'Flexible / go with the flow' },
+  { value: 'strict-blocks', label: 'Strict time blocks' },
+];
 
 export default function OnboardingWizard({
   onComplete,
@@ -115,14 +252,14 @@ export default function OnboardingWizard({
   onComplete: (partial: { trackerItems: ChecklistItem[]; timeline: TimelineBlock[]; training: TrainingDay[]; profile: any; subjects: Subject[]; syllabus: SyllabusPhase[] }) => void;
 }) {
   const [stage, setStage] = useState<Stage>('intro');
-  const [goalDescription, setGoalDescription] = useState('');
-  const [name, setName] = useState('');
-  const [age, setAge] = useState('');
-  const [wake, setWake] = useState('06:00');
-  const [sleep, setSleep] = useState('23:00');
-  const [targetDate, setTargetDate] = useState('');
-  const [wantsTraining, setWantsTraining] = useState(true);
-  const [wantsSyllabus, setWantsSyllabus] = useState(true);
+  const [answers, setAnswers] = useState<QuestionnaireAnswers>(() => ({
+    ...DEFAULT_QUESTIONNAIRE_ANSWERS,
+    birthdate: defaultBirthdate(),
+  }));
+  // Index into the person's *selected* domains (in GOAL_DOMAINS' canonical
+  // order) while stepping through the branching question screens — one
+  // domain's questions per screen, advanced by the Next/Back buttons.
+  const [domainStep, setDomainStep] = useState(0);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [error, setError] = useState('');
 
@@ -156,7 +293,19 @@ export default function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
-  const context = `Wake time: ${wake}. Sleep time: ${sleep}. Name: ${name || 'not given'}.`;
+  // Selected domains, kept in GOAL_DOMAINS' fixed display order regardless
+  // of the order they were clicked in — so the question-screen sequence
+  // (and the composed goalDescription's clause order) is always stable and
+  // predictable rather than depending on click order.
+  const selectedDomains: GoalDomain[] = GOAL_DOMAINS
+    .map((d) => d.key)
+    .filter((k) => hasDomain(answers, k));
+
+  const wantsTraining = hasDomain(answers, 'fitness');
+  const wantsSyllabus = hasDomain(answers, 'exam');
+
+  const goalDescription = buildGoalDescription(answers);
+  const context = buildGoalContext(answers);
 
   const runGeneration = async () => {
     setStage('generating');
@@ -177,7 +326,7 @@ export default function OnboardingWizard({
     const syllabusOk = !wantsSyllabus || !!(syllabusRes?.subjects?.length && syllabusRes?.phases?.length);
 
     setChecklist(checklistOk ? checklistRes!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
-    setTimeline(timelineOk ? timelineRes!.blocks : fallbackTimeline(wake, sleep));
+    setTimeline(timelineOk ? timelineRes!.blocks : fallbackTimeline(answers.wake, answers.sleep));
     setTraining(trainingOk ? (trainingRes?.days ?? fallbackTraining(wantsTraining)) : fallbackTraining(wantsTraining));
     setTargets(
       targetsOk
@@ -215,7 +364,7 @@ export default function OnboardingWizard({
       } else if (section === 'timeline') {
         const res = await generateDailyTimeline(goalDescription, context).catch(() => null);
         const ok = !!res?.blocks?.length;
-        setTimeline(ok ? res!.blocks : fallbackTimeline(wake, sleep));
+        setTimeline(ok ? res!.blocks : fallbackTimeline(answers.wake, answers.sleep));
         setUsedFallback((f) => ({ ...f, timeline: !ok }));
       } else if (section === 'training') {
         const res = wantsTraining ? await generateWeeklyTraining(goalDescription, context).catch(() => null) : null;
@@ -245,23 +394,37 @@ export default function OnboardingWizard({
     }
   };
 
+  // Short human label for the profile card / target-1 fallback name.
+  // Prefers whatever's most specific to what was actually asked: an exam
+  // name, then the custom free-text box, then the full composed
+  // description as a last resort.
+  const goalLabel = (answers.exam.examName || answers.custom.description || goalDescription).slice(0, 60);
+
   const finish = () => {
     onComplete({
       trackerItems: checklist,
       timeline,
       training,
       profile: {
-        name: name || 'Your Name',
-        goalLabel: goalDescription.slice(0, 60) || 'Add your goal',
-        age: Number(age) || 18,
+        name: answers.name || 'Your Name',
+        goalLabel: goalLabel || 'Add your goal',
+        birthdate: answers.birthdate || defaultBirthdate(),
         height: 170,
         weight: 65,
         category: '',
         baseline: 0,
         baselineLabel: targets.baselineLabel,
         boards: 0,
-        targetDate: targetDate || '',
+        targetDate: answers.targetDate || answers.exam.examDate || '',
         targets: targets.targets,
+        // Extra fields from the questionnaire (domains, dietType, dietGoal,
+        // targetCalories, activityLevel, fitnessGoal, experienceLevel,
+        // examName) — not read by anything yet (that's Phase 9's job when
+        // it wires generated content end-to-end), but safe to carry through
+        // now: deserializeConfig/serializeConfig in appConfig.ts already
+        // spread `profile` as a plain object with no field allowlist, so
+        // these round-trip through save/load untouched in the meantime.
+        ...deriveProfileFields(answers),
       },
       subjects,
       syllabus,
@@ -269,15 +432,48 @@ export default function OnboardingWizard({
   };
 
   const skip = () => {
-    const fb = fallbackSyllabus(goalDescription, true);
+    const fb = fallbackSyllabus('', true);
     onComplete({
       trackerItems: fallbackChecklist(),
-      timeline: fallbackTimeline(wake, sleep),
+      timeline: fallbackTimeline(answers.wake, answers.sleep),
       training: fallbackTraining(true),
-      profile: { name: name || 'Your Name', goalLabel: 'Add your goal' } as any,
+      profile: { name: answers.name || 'Your Name', goalLabel: 'Add your goal', birthdate: answers.birthdate || defaultBirthdate() } as any,
       subjects: fb.subjects,
       syllabus: fb.syllabus,
     });
+  };
+
+  const toggleDomain = (key: GoalDomain) => {
+    setAnswers((a) => ({
+      ...a,
+      domains: a.domains.includes(key) ? a.domains.filter((d) => d !== key) : [...a.domains, key],
+    }));
+    setError('');
+  };
+
+  const startQuestions = () => {
+    if (!selectedDomains.length) {
+      setError('Pick at least one — "Something else" is fine if nothing above fits.');
+      return;
+    }
+    setDomainStep(0);
+    setStage('domain');
+  };
+
+  const goNextDomain = () => {
+    if (domainStep < selectedDomains.length - 1) {
+      setDomainStep((i) => i + 1);
+    } else {
+      runGeneration();
+    }
+  };
+
+  const goBackDomain = () => {
+    if (domainStep > 0) {
+      setDomainStep((i) => i - 1);
+    } else {
+      setStage('intro');
+    }
   };
 
   // ---------------- Intro ----------------
@@ -291,69 +487,255 @@ export default function OnboardingWizard({
           </div>
           <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50">Let's set up Akyos for you</h1>
           <p className="mb-6 text-[12.5px] leading-relaxed text-neutral-500">
-            Nothing here is a template built for someone else. Tell us what you're working toward and we'll build your checklist, schedule, and training plan around it — you can edit any of it afterward.
+            Nothing here is a template built for someone else. Pick whatever you're working toward — you can pick more than one — and we'll build your checklist, schedule, and plan around exactly that. Everything stays editable afterward.
           </p>
 
           <div className="space-y-4">
-            <div>
-              <label className={labelCls}>What are you working toward right now?</label>
-              <textarea
-                value={goalDescription}
-                onChange={(e) => setGoalDescription(e.target.value)}
-                placeholder="e.g. Preparing for UPSC prelims 2027, or getting my daily routine and fitness back on track"
-                rows={3}
-                className={`${inputCls} resize-none`}
-              />
-            </div>
-
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Name</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Optional" className={inputCls} />
+                <input value={answers.name} onChange={(e) => setAnswers((a) => ({ ...a, name: e.target.value }))} placeholder="Optional" className={inputCls} />
               </div>
               <div>
-                <label className={labelCls}>Age</label>
-                <input value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, ''))} placeholder="Optional" inputMode="numeric" className={inputCls} />
+                <label className={labelCls}>Birthdate</label>
+                <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Wake time</label>
-                <TimeField value={wake} onChange={(e) => setWake(e.target.value)} className={inputCls} />
+                <TimeField value={answers.wake} onChange={(e) => setAnswers((a) => ({ ...a, wake: e.target.value }))} className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Sleep time</label>
-                <TimeField value={sleep} onChange={(e) => setSleep(e.target.value)} className={inputCls} />
+                <TimeField value={answers.sleep} onChange={(e) => setAnswers((a) => ({ ...a, sleep: e.target.value }))} className={inputCls} />
               </div>
             </div>
 
             <div>
               <label className={labelCls}>Target date (optional)</label>
-              <DateField value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={inputCls} />
-              <p className="mt-1 text-[11px] text-neutral-600">Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
+              <DateField value={answers.targetDate} onChange={(e) => setAnswers((a) => ({ ...a, targetDate: e.target.value }))} className={inputCls} />
+              <p className={hintCls}>Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
             </div>
 
-            <label className="flex items-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 cursor-pointer">
-              <input type="checkbox" checked={wantsTraining} onChange={(e) => setWantsTraining(e.target.checked)} className="h-4 w-4 accent-violet-500" />
-              <span className="text-[12.5px] text-neutral-300">Include a weekly training / workout plan</span>
-            </label>
-
-            <label className="flex items-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/50 px-4 py-3 cursor-pointer">
-              <input type="checkbox" checked={wantsSyllabus} onChange={(e) => setWantsSyllabus(e.target.checked)} className="h-4 w-4 accent-violet-500" />
-              <span className="text-[12.5px] text-neutral-300">Include a subject / syllabus roadmap</span>
-            </label>
+            <div>
+              <label className={labelCls}>What are you working toward? Pick all that apply.</label>
+              <div className="grid grid-cols-1 gap-2">
+                {GOAL_DOMAINS.map((d) => {
+                  const Icon = DOMAIN_ICONS[d.key];
+                  const active = answers.domains.includes(d.key);
+                  return (
+                    <button
+                      key={d.key}
+                      type="button"
+                      onClick={() => toggleDomain(d.key)}
+                      className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                        active
+                          ? 'border-violet-500/60 bg-violet-500/10'
+                          : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-700'
+                      }`}
+                    >
+                      <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-violet-400' : 'text-neutral-500'}`} strokeWidth={2} />
+                      <div>
+                        <div className={`text-[12.5px] font-semibold ${active ? 'text-violet-300' : 'text-neutral-300'}`}>{d.label}</div>
+                        <div className="text-[11.5px] text-neutral-500">{d.blurb}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {error && <p className="text-[12px] text-rose-400">{error}</p>}
 
             <button
-              onClick={() => (goalDescription.trim() ? runGeneration() : setError('Tell us a bit about your goal first — even a rough sentence is enough.'))}
+              onClick={startQuestions}
               className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90"
             >
-              Generate my setup <ArrowRight className="h-4 w-4" />
+              Continue <ArrowRight className="h-4 w-4" />
             </button>
             <button onClick={skip} className="w-full text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400">
               Skip — I'll set everything up myself
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------- Domain question screens ----------------
+  if (stage === 'domain') {
+    const domain = selectedDomains[domainStep];
+    const isLast = domainStep === selectedDomains.length - 1;
+    const domainMeta = GOAL_DOMAINS.find((d) => d.key === domain)!;
+    const Icon = DOMAIN_ICONS[domain];
+
+    let fields: React.ReactNode = null;
+
+    if (domain === 'exam') {
+      const a = answers.exam;
+      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, exam: { ...prev.exam, ...patch } }));
+      fields = (
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>What exam / certification / subject?</label>
+            <input value={a.examName} onChange={(e) => set({ examName: e.target.value })} placeholder="e.g. NEET, UPSC Prelims, AWS SAA-C03, Class 10 Boards" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Exam date (optional)</label>
+            <DateField value={a.examDate} onChange={(e) => set({ examDate: e.target.value })} className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Subjects (optional)</label>
+            <input value={a.subjectsHint} onChange={(e) => set({ subjectsHint: e.target.value })} placeholder="e.g. Physics, Chemistry, Biology" className={inputCls} />
+            <p className={hintCls}>Leave blank and we'll infer them from the exam name.</p>
+          </div>
+          <div>
+            <label className={labelCls}>Where are you right now?</label>
+            <ChipSelect options={EXAM_LEVEL_OPTIONS} value={a.currentLevel} onChange={(v) => set({ currentLevel: v })} />
+          </div>
+        </div>
+      );
+    } else if (domain === 'fitness') {
+      const a = answers.fitness;
+      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, fitness: { ...prev.fitness, ...patch } }));
+      fields = (
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Main training goal</label>
+            <ChipSelect options={FITNESS_GOAL_OPTIONS} value={a.fitnessGoal} onChange={(v) => set({ fitnessGoal: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Experience level</label>
+            <ChipSelect options={EXPERIENCE_OPTIONS} value={a.experienceLevel} onChange={(v) => set({ experienceLevel: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Equipment access</label>
+            <ChipSelect options={EQUIPMENT_OPTIONS} value={a.equipmentAccess} onChange={(v) => set({ equipmentAccess: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Training days per week: {a.daysPerWeek}</label>
+            <input
+              type="range" min={1} max={7} step={1}
+              value={a.daysPerWeek}
+              onChange={(e) => set({ daysPerWeek: Number(e.target.value) })}
+              className="w-full accent-violet-500"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Injuries or limitations (optional)</label>
+            <input value={a.injuriesOrLimits} onChange={(e) => set({ injuriesOrLimits: e.target.value })} placeholder="e.g. bad left knee, avoid deep squats" className={inputCls} />
+          </div>
+        </div>
+      );
+    } else if (domain === 'diet') {
+      const a = answers.diet;
+      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, diet: { ...prev.diet, ...patch } }));
+      fields = (
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Diet type</label>
+            <ChipSelect options={DIET_TYPE_OPTIONS} value={a.dietType} onChange={(v) => set({ dietType: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Goal</label>
+            <ChipSelect options={DIET_GOAL_OPTIONS} value={a.dietGoal} onChange={(v) => set({ dietGoal: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Activity level</label>
+            <ChipSelect options={ACTIVITY_LEVEL_OPTIONS} value={a.activityLevel} onChange={(v) => set({ activityLevel: v })} />
+          </div>
+          <div>
+            <label className={labelCls}>Target daily calories (optional)</label>
+            <input
+              value={a.targetCalories ?? ''}
+              onChange={(e) => {
+                const digits = e.target.value.replace(/\D/g, '');
+                set({ targetCalories: digits ? Number(digits) : null });
+              }}
+              placeholder="Leave blank to auto-calculate"
+              inputMode="numeric"
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Allergies or dislikes (optional)</label>
+            <input value={a.allergiesOrDislikes} onChange={(e) => set({ allergiesOrDislikes: e.target.value })} placeholder="e.g. peanuts, dairy" className={inputCls} />
+          </div>
+        </div>
+      );
+    } else if (domain === 'productivity') {
+      const a = answers.productivity;
+      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, productivity: { ...prev.productivity, ...patch } }));
+      fields = (
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>What are you focusing on?</label>
+            <textarea
+              value={a.focusAreas}
+              onChange={(e) => set({ focusAreas: e.target.value })}
+              placeholder="e.g. deep work on my startup, a reading habit, cutting down screen time"
+              rows={3}
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Routine style</label>
+            <ChipSelect options={ROUTINE_STYLE_OPTIONS} value={a.routineStyle} onChange={(v) => set({ routineStyle: v })} />
+          </div>
+        </div>
+      );
+    } else {
+      const a = answers.custom;
+      fields = (
+        <div className="space-y-4">
+          <div>
+            <label className={labelCls}>Describe it in your own words</label>
+            <textarea
+              value={a.description}
+              onChange={(e) => setAnswers((prev) => ({ ...prev, custom: { description: e.target.value } }))}
+              placeholder="Tell us what you're working toward — even a rough sentence is enough."
+              rows={4}
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+        <style>{NO_SELECT_CSS}</style>
+        <div className="w-full max-w-md">
+          <div className="mb-1.5 flex items-center gap-2">
+            {selectedDomains.map((_, i) => (
+              <span key={i} className={`h-1 flex-1 rounded-full ${i <= domainStep ? 'bg-violet-500' : 'bg-neutral-800'}`} />
+            ))}
+          </div>
+          <p className="mb-4 text-[11px] text-neutral-600">Step {domainStep + 1} of {selectedDomains.length}</p>
+
+          <div className="mb-6 flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20 shrink-0">
+              <Icon className="h-4 w-4 text-neutral-950" strokeWidth={2} />
+            </div>
+            <h1 className="text-[16px] font-semibold tracking-tight text-neutral-50">{domainMeta.label}</h1>
+          </div>
+
+          {fields}
+
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={goBackDomain}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-[13px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <button
+              onClick={goNextDomain}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90"
+            >
+              {isLast ? 'Generate my setup' : 'Next'} <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -447,7 +829,7 @@ export default function OnboardingWizard({
             </ul>
           ))}
 
-          {sectionCard(Clock3, 'Daily Timeline', `${timeline.length} blocks, ${wake}–${sleep}`, 'timeline', (
+          {sectionCard(Clock3, 'Daily Timeline', `${timeline.length} blocks, ${answers.wake}–${answers.sleep}`, 'timeline', (
             <ul className="space-y-1.5">
               {timeline.slice(0, 6).map((b, i) => (
                 <li key={i} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
@@ -494,7 +876,7 @@ export default function OnboardingWizard({
         >
           Looks good — Enter Akyos <ArrowRight className="h-4 w-4" />
         </button>
-        <button onClick={() => setStage('intro')} className="mt-3 w-full text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400">
+        <button onClick={() => { setStage('intro'); setDomainStep(0); }} className="mt-3 w-full text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400">
           Start over
         </button>
       </div>

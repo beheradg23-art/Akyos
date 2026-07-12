@@ -26,6 +26,60 @@ export const SYNC_KEYS = [
 
 export type CloudSnapshot = Record<string, string | null>;
 
+// ---------- Account isolation ----------
+// PHASE 1 FIX (see PHASE_1_HANDOFF.md): localStorage is shared by the whole
+// browser, not scoped per Supabase account. Previously, nothing ever cleared
+// it between accounts, so a brand-new signup (or a sign-in on a device that
+// was last used by someone else) would inherit whatever the *previous*
+// account left behind — config, routine, weight/diet logs, onboarding-done
+// flag, even the passcode hash. `ensureAccountIsolation` is the single choke
+// point that stops that: it remembers which user id last "owned" this
+// browser's local storage, and wipes every account-scoped key the instant it
+// detects a different (or no previous) user id, before anything gets pulled
+// from or pushed to the cloud for the incoming session.
+//
+// LAST_ACTIVE_USER_KEY intentionally lives OUTSIDE SYNC_KEYS — it must never
+// be synced to the cloud or copied between accounts; it's purely a local
+// "whose data is currently sitting in this browser" marker.
+export const LAST_ACTIVE_USER_KEY = 'dcc_last_active_user_id';
+
+/** Wipes every account-scoped key from localStorage (all of SYNC_KEYS, plus
+ * the passcode hash, which is deliberately kept out of SYNC_KEYS/the cloud
+ * snapshot since it's derived per-device). Does NOT touch
+ * LAST_ACTIVE_USER_KEY — callers decide separately whether to update that.
+ */
+export function resetLocalAccountState(): void {
+  SYNC_KEYS.forEach((key) => {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  });
+  try { localStorage.removeItem(PASSCODE_HASH_KEY); } catch { /* ignore */ }
+}
+
+/**
+ * Call this with the id of the account that's about to become active
+ * (right after signup succeeds with a session, and at the top of the
+ * sign-in sync flow) BEFORE any pull/push happens.
+ *
+ * If the browser's local data currently belongs to a different account (or
+ * no account is on record at all), every account-scoped key is wiped first
+ * — so a new account always starts from a genuinely empty/default state,
+ * and a returning account only ever ends up with ITS OWN cloud data, never
+ * leftovers from whoever used this browser before.
+ *
+ * Returns true if a reset happened (useful for logging/debugging), false if
+ * this device was already known to belong to this exact account.
+ */
+export function ensureAccountIsolation(userId: string): boolean {
+  let lastUserId: string | null = null;
+  try { lastUserId = localStorage.getItem(LAST_ACTIVE_USER_KEY); } catch { /* ignore */ }
+
+  if (lastUserId === userId) return false;
+
+  resetLocalAccountState();
+  try { localStorage.setItem(LAST_ACTIVE_USER_KEY, userId); } catch { /* ignore */ }
+  return true;
+}
+
 export function collectLocalSnapshot(): CloudSnapshot {
   const snapshot: CloudSnapshot = {};
   SYNC_KEYS.forEach((key) => {
