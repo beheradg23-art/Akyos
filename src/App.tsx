@@ -672,6 +672,31 @@ export default function JEEDashboard() {
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+        /* Native <input type="date"/"time"> calendar/clock picker icons
+           render as a near-black glyph by default, which all but disappears
+           against this app's dark inputs (looks like the icon is missing
+           entirely). color-scheme: dark tells the browser to draw its
+           built-in form controls — including this icon — in a light color
+           suited to a dark background, and the invert filter on Chromium's
+           ::-webkit-calendar-picker-indicator (which ignores color-scheme
+           on its own) backs that up directly. Firefox/Safari pick up
+           color-scheme alone. */
+        input[type="date"], input[type="time"] {
+          color-scheme: dark;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="time"]::-webkit-calendar-picker-indicator {
+          filter: invert(0.85);
+          opacity: 0.75;
+          cursor: pointer;
+          border-radius: 4px;
+          transition: opacity 0.15s ease;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        input[type="time"]::-webkit-calendar-picker-indicator:hover {
+          opacity: 1;
+        }
+
         /* Branded keyboard-focus ring, app-wide. Several inputs already
            swap outline-none for a border-color change on focus (a fine
            substitute), but every button, link, and nav item was falling
