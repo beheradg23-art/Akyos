@@ -330,7 +330,7 @@ const ONE_PCT_TOTAL_MS =
 const ONE_PCT_WORDS_OUT_MS = 520; // "Better Every Day." collapses, "1%" glides to center
 const ONE_PCT_GRADIENT_IN_MS = 780; // full-screen gradient quietly dissolves into view (opacity only — no scaling)
 const ONE_PCT_GRADIENT_HOLD_MS = 260; // brief hold at full-screen coverage before easing out
-const ONE_PCT_ZOOM_OUT_MS = 900; // gradient eases smoothly back down into the badge shape
+const ONE_PCT_ZOOM_OUT_MS = 1050; // gradient eases smoothly back down into the badge shape — a bit longer so the settle isn't rushed
 const ONE_PCT_BADGE_REVEAL_MS = 420; // logo mark + wordmark fade in inside the settled badge
 const ONE_PCT_BADGE_HOLD_MS = 480; // badge sits revealed for a beat
 const ONE_PCT_FINAL_FADE_MS = 480; // whole overlay fades, handing off to IntroReveal
@@ -358,11 +358,11 @@ const ZOOM_SPEED_CONTROL_POINTS: [number, number][] = [
   [0.44, 0.4],
   [0.52, 0.85],
   [0.57, 1.0], // peak — sharp, narrow
-  [0.63, 0.75],
-  [0.7, 0.35], // faster fall-off than the climb up
-  [0.78, 0.14],
-  [0.88, 0.07],
-  [1.0, 0.05], // slow hold again as it settles
+  [0.63, 0.55], // drops off the peak faster than it climbed...
+  [0.7, 0.24],
+  [0.78, 0.1],
+  [0.87, 0.045], // ...but keeps easing down well past where it used to bottom out,
+  [1.0, 0.02], // so the very last stretch into the badge is a slow, gentle settle
 ];
 
 function sampleSpeed(t: number): number {
