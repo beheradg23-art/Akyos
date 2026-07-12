@@ -132,6 +132,14 @@ export default function OnboardingWizard({
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [syllabus, setSyllabus] = useState<SyllabusPhase[]>([]);
   const [regenerating, setRegenerating] = useState<string | null>(null);
+  // Tracks which sections are showing generic fallback content rather than
+  // the actual AI-generated plan (generation failed, timed out, or was
+  // skipped). Surfaced in the review screen so the person knows what they're
+  // looking at isn't personalized yet, instead of silently passing off a
+  // placeholder as the real thing.
+  const [usedFallback, setUsedFallback] = useState<Record<'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus', boolean>>({
+    checklist: false, timeline: false, training: false, targets: false, syllabus: false,
+  });
 
   const loadingMessages = [
     'Reading what you told us…',
@@ -161,19 +169,21 @@ export default function OnboardingWizard({
       wantsSyllabus ? generateSyllabus(goalDescription, context).catch(() => null) : Promise.resolve(null),
     ]);
 
-    setChecklist(
-      checklistRes?.items?.length
-        ? checklistRes.items.map((it, i) => ({ id: `ob_${i}`, label: it.label }))
-        : fallbackChecklist()
-    );
-    setTimeline(timelineRes?.blocks?.length ? timelineRes.blocks : fallbackTimeline(wake, sleep));
-    setTraining(trainingRes?.days?.length ? trainingRes.days : fallbackTraining(wantsTraining));
+    const checklistOk = !!checklistRes?.items?.length;
+    const timelineOk = !!timelineRes?.blocks?.length;
+    const trainingOk = !wantsTraining || !!trainingRes?.days?.length;
+    const targetsOk = !!targetsRes?.targets?.length;
+    const syllabusOk = !wantsSyllabus || !!(syllabusRes?.subjects?.length && syllabusRes?.phases?.length);
+
+    setChecklist(checklistOk ? checklistRes!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
+    setTimeline(timelineOk ? timelineRes!.blocks : fallbackTimeline(wake, sleep));
+    setTraining(trainingOk ? (trainingRes?.days ?? fallbackTraining(wantsTraining)) : fallbackTraining(wantsTraining));
     setTargets(
-      targetsRes?.targets?.length
-        ? { targets: targetsRes.targets, baselineLabel: targetsRes.baselineLabel || 'Baseline Score' }
+      targetsOk
+        ? { targets: targetsRes!.targets, baselineLabel: targetsRes!.baselineLabel || 'Baseline Score' }
         : fallbackTargets(goalDescription)
     );
-    if (syllabusRes?.subjects?.length && syllabusRes?.phases?.length) {
+    if (syllabusOk && syllabusRes?.subjects?.length && syllabusRes?.phases?.length) {
       setSubjects(syllabusRes.subjects);
       setSyllabus(syllabusRes.phases);
     } else {
@@ -181,6 +191,14 @@ export default function OnboardingWizard({
       setSubjects(fb.subjects);
       setSyllabus(fb.syllabus);
     }
+
+    setUsedFallback({
+      checklist: !checklistOk,
+      timeline: !timelineOk,
+      training: !trainingOk,
+      targets: !targetsOk,
+      syllabus: !syllabusOk,
+    });
 
     setStage('review');
   };
@@ -190,26 +208,36 @@ export default function OnboardingWizard({
     try {
       if (section === 'checklist') {
         const res = await generateChecklist(goalDescription, context).catch(() => null);
-        setChecklist(res?.items?.length ? res.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
+        const ok = !!res?.items?.length;
+        setChecklist(ok ? res!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
+        setUsedFallback((f) => ({ ...f, checklist: !ok }));
       } else if (section === 'timeline') {
         const res = await generateDailyTimeline(goalDescription, context).catch(() => null);
-        setTimeline(res?.blocks?.length ? res.blocks : fallbackTimeline(wake, sleep));
+        const ok = !!res?.blocks?.length;
+        setTimeline(ok ? res!.blocks : fallbackTimeline(wake, sleep));
+        setUsedFallback((f) => ({ ...f, timeline: !ok }));
       } else if (section === 'training') {
         const res = wantsTraining ? await generateWeeklyTraining(goalDescription, context).catch(() => null) : null;
-        setTraining(res?.days?.length ? res.days : fallbackTraining(wantsTraining));
+        const ok = !!res?.days?.length;
+        setTraining(ok ? res!.days : fallbackTraining(wantsTraining));
+        setUsedFallback((f) => ({ ...f, training: !ok }));
       } else if (section === 'syllabus') {
         const res = wantsSyllabus ? await generateSyllabus(goalDescription, context).catch(() => null) : null;
-        if (res?.subjects?.length && res?.phases?.length) {
-          setSubjects(res.subjects);
-          setSyllabus(res.phases);
+        const ok = !!(res?.subjects?.length && res?.phases?.length);
+        if (ok) {
+          setSubjects(res!.subjects);
+          setSyllabus(res!.phases);
         } else {
           const fb = fallbackSyllabus(goalDescription, wantsSyllabus);
           setSubjects(fb.subjects);
           setSyllabus(fb.syllabus);
         }
+        setUsedFallback((f) => ({ ...f, syllabus: !ok }));
       } else {
         const res = await generateProfileTargets(goalDescription).catch(() => null);
-        setTargets(res?.targets?.length ? { targets: res.targets, baselineLabel: res.baselineLabel || 'Baseline Score' } : fallbackTargets(goalDescription));
+        const ok = !!res?.targets?.length;
+        setTargets(ok ? { targets: res!.targets, baselineLabel: res!.baselineLabel || 'Baseline Score' } : fallbackTargets(goalDescription));
+        setUsedFallback((f) => ({ ...f, targets: !ok }));
       }
     } finally {
       setRegenerating(null);
@@ -352,24 +380,41 @@ export default function OnboardingWizard({
     children: React.ReactNode
   ) => {
     const Icon = icon;
+    const isFallback = usedFallback[key];
     return (
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-4 sm:p-5">
+      <div className={`rounded-2xl border p-4 sm:p-5 ${isFallback ? 'border-amber-700/40 bg-amber-950/10' : 'border-neutral-800 bg-neutral-950/60'}`}>
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2.5">
             <Icon className="h-4 w-4 text-violet-400" strokeWidth={2} />
             <div>
-              <h3 className="text-[13px] font-bold text-neutral-100">{title}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-[13px] font-bold text-neutral-100">{title}</h3>
+                {isFallback && (
+                  <span
+                    className="rounded-full border border-amber-700/50 bg-amber-900/30 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-amber-400"
+                    title="AI generation didn't come through for this section, so this is generic placeholder content, not something built for your goal. Edit it directly or hit Regenerate to try again."
+                  >
+                    Generic — not generated
+                  </span>
+                )}
+              </div>
               <p className="text-[11.5px] text-neutral-500">{subtitle}</p>
             </div>
           </div>
           <button
             onClick={() => regenerate(key)}
             disabled={regenerating === key}
+            aria-label={`Regenerate ${title}`}
             className="shrink-0 flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors disabled:opacity-50"
           >
             <RefreshCcw className={`h-3 w-3 ${regenerating === key ? 'animate-spin' : ''}`} /> Regenerate
           </button>
         </div>
+        {isFallback && (
+          <p className="mb-2.5 text-[11.5px] leading-relaxed text-amber-500/80">
+            This section couldn't be generated from your goal, so it's showing generic placeholder content instead. Edit it in Settings after finishing, or try Regenerate now.
+          </p>
+        )}
         {children}
       </div>
     );
@@ -380,9 +425,15 @@ export default function OnboardingWizard({
       <style>{NO_SELECT_CSS}</style>
       <div className="w-full max-w-lg">
         <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50">Here's what we built</h1>
-        <p className="mb-6 text-[12.5px] leading-relaxed text-neutral-500">
+        <p className="mb-4 text-[12.5px] leading-relaxed text-neutral-500">
           Not quite right? Regenerate any section, or just continue — everything below stays fully editable in Settings afterward.
         </p>
+
+        {Object.values(usedFallback).some(Boolean) && (
+          <div className="mb-4 rounded-xl border border-amber-700/40 bg-amber-950/10 px-4 py-2.5 text-[12px] leading-relaxed text-amber-400/90">
+            One or more sections below (marked "Generic — not generated") couldn't be built from your goal and are showing generic placeholder content instead of a real plan. Regenerate them, or edit directly in Settings once you're in.
+          </div>
+        )}
 
         <div className="space-y-3">
           {sectionCard(ClipboardList, 'Daily Checklist', `${checklist.length} objectives`, 'checklist', (
