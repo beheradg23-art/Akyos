@@ -3,6 +3,7 @@ import { Plus, Trash2, AlarmClock, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { fetchAlarms, createAlarm, updateAlarm, deleteAlarm, readCachedAlarms, type Alarm } from '../lib/alarms';
 import { getPushStatus, subscribeToPush, type PushStatus } from '../lib/pushNotifications';
+import { TimeField } from './ui/Primitives';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -132,8 +133,7 @@ export default function AlarmsPanel() {
               placeholder="Label"
               className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-[12.5px] text-neutral-200 focus:outline-none focus:border-purple-600"
             />
-            <input
-              type="time"
+            <TimeField
               value={time}
               onChange={(e) => setTime(e.target.value)}
               className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-purple-600"

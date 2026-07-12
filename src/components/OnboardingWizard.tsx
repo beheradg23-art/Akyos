@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { NO_SELECT_CSS } from '../styles/noSelect';
+import { DateField, TimeField } from './ui/Primitives';
 import {
   Sparkles, Loader2, RefreshCcw, ArrowRight, ClipboardList,
   Clock3, Dumbbell, Target, CheckCircle2, BookOpen,
@@ -319,17 +320,17 @@ export default function OnboardingWizard({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Wake time</label>
-                <input type="time" value={wake} onChange={(e) => setWake(e.target.value)} className={inputCls} />
+                <TimeField value={wake} onChange={(e) => setWake(e.target.value)} className={inputCls} />
               </div>
               <div>
                 <label className={labelCls}>Sleep time</label>
-                <input type="time" value={sleep} onChange={(e) => setSleep(e.target.value)} className={inputCls} />
+                <TimeField value={sleep} onChange={(e) => setSleep(e.target.value)} className={inputCls} />
               </div>
             </div>
 
             <div>
               <label className={labelCls}>Target date (optional)</label>
-              <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={inputCls} />
+              <DateField value={targetDate} onChange={(e) => setTargetDate(e.target.value)} className={inputCls} />
               <p className="mt-1 text-[11px] text-neutral-600">Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
             </div>
 

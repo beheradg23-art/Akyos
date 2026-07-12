@@ -7,9 +7,76 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Target, Flame, AlertTriangle, ChevronRight, X, FlameKindling, Swords,
-  Loader2,
+  Loader2, Calendar, Clock3,
 } from 'lucide-react';
 import { ConfigContext, HunterRank } from '../../lib/appConfig';
+
+// ---------------------------------------------------------------------------
+// DateField / TimeField
+// ---------------------------------------------------------------------------
+// Native <input type="date"/"time"> picker icons render in whatever color
+// the browser feels like (usually a near-black glyph), and that color
+// can't be reliably controlled cross-browser — filter/invert tricks on
+// ::-webkit-calendar-picker-indicator are Chromium-only, inconsistent
+// across versions, and easy for something elsewhere in the cascade to
+// override, which is exactly why it kept looking wrong here. Instead: hide
+// the native icon (opacity: 0, stretched over the whole input so the real
+// click target — and therefore the real native picker — still opens no
+// matter where on the field you click) and draw our own Lucide icon on top,
+// fully controlled by normal Tailwind text-color classes, no filter voodoo.
+export function DateField({
+  value,
+  onChange,
+  className = '',
+  iconClassName = 'text-neutral-300',
+  ...rest
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+  iconClassName?: string;
+  [key: string]: any;
+}) {
+  return (
+    <div className="relative">
+      <input
+        type="date"
+        value={value}
+        onChange={onChange}
+        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+        {...rest}
+      />
+      <Calendar className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
+    </div>
+  );
+}
+
+export function TimeField({
+  value,
+  onChange,
+  className = '',
+  iconClassName = 'text-neutral-300',
+  ...rest
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+  iconClassName?: string;
+  [key: string]: any;
+}) {
+  return (
+    <div className="relative">
+      <input
+        type="time"
+        value={value}
+        onChange={onChange}
+        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+        {...rest}
+      />
+      <Clock3 className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
+    </div>
+  );
+}
 
 export function useRipple() {
   const [ripples, setRipples] = useState([]);

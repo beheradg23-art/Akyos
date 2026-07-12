@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Weight, TrendingUp, Calendar, Trash2, Plus } from 'lucide-react';
 import { ConfigContext, getLocalDateString, getDayName } from '../../lib/appConfig';
-import { Card, StatPill, RippleButton } from '../ui/Primitives';
+import { Card, StatPill, RippleButton, DateField } from '../ui/Primitives';
 import { EditableSectionHeading } from './EditableSectionHeading';
 
 export const WEIGHT_LOG_KEY = 'weight_log_v1';
@@ -129,8 +129,7 @@ export function WeightTrackerCard() {
         <div className="flex items-end gap-2">
           <div>
             <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Date</label>
-            <input
-              type="date"
+            <DateField
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
               className="rounded-lg border border-neutral-800 bg-neutral-950/60 px-2.5 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"

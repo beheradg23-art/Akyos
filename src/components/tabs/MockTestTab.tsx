@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, ClipboardList, BarChart3, Trash2, Plus, Settings } from 'lucide-react';
 import { ConfigContext, getSubjectStyle, getSubjectHex, getLocalDateString, getDayName } from '../../lib/appConfig';
-import { Card, RippleButton } from '../ui/Primitives';
+import { Card, RippleButton, DateField } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 
 export function ScoreTrendChart({ tests, subjects }) {
@@ -220,8 +220,7 @@ export function MockTestTab() {
         <div className="grid sm:grid-cols-2 gap-3 mb-4 mt-4">
           <div>
             <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Test Date</label>
-            <input
-              type="date"
+            <DateField
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
               className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2 text-[13px] text-neutral-200 focus:outline-none focus:border-neutral-600"

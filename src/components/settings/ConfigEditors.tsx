@@ -16,7 +16,7 @@ import {
   computeDietAutoValues, resolveDietValues, computeOverviewAutoValues, calculateAge,
   SUBJECT_COLOR_PALETTE,
 } from '../../lib/appConfig';
-import { Card, SectionHeading, RippleButton } from '../ui/Primitives';
+import { Card, SectionHeading, RippleButton, DateField, TimeField } from '../ui/Primitives';
 import { generateProfileTargets } from '../../lib/contentGen';
 
 export const btnGhost = 'cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors';
@@ -142,11 +142,11 @@ export function TimelineEditor() {
                   <div className="grid grid-cols-2 gap-2.5">
                     <div>
                       <label className={fieldLabel}>Start</label>
-                      <input type="time" value={slot.start} onChange={(e) => patch(i, { start: e.target.value })} className={fieldInput} />
+                      <TimeField value={slot.start} onChange={(e) => patch(i, { start: e.target.value })} className={fieldInput} />
                     </div>
                     <div>
                       <label className={fieldLabel}>End</label>
-                      <input type="time" value={slot.end} onChange={(e) => patch(i, { end: e.target.value })} className={fieldInput} />
+                      <TimeField value={slot.end} onChange={(e) => patch(i, { end: e.target.value })} className={fieldInput} />
                     </div>
                   </div>
                   <div>
@@ -623,7 +623,7 @@ export function ProfileEditor() {
         </div>
         <div>
           <label className={fieldLabel}>Birthdate</label>
-          <input type="date" value={draft.birthdate || ''} onChange={(e) => patch({ birthdate: e.target.value })} className={fieldInput} />
+          <DateField value={draft.birthdate || ''} onChange={(e) => patch({ birthdate: e.target.value })} className={fieldInput} />
           {draft.birthdate ? (
             <p className="mt-1 text-[11px] text-neutral-500">
               {calculateAge(draft.birthdate) !== null ? `${calculateAge(draft.birthdate)} years old — updates automatically` : 'Enter a valid date'}
@@ -765,11 +765,11 @@ export function CountdownEditor() {
             <div className="grid sm:grid-cols-2 gap-2">
               <div>
                 <label className={fieldLabel}>Target Date</label>
-                <input type="date" value={cd.targetDate || ''} onChange={(e) => patchItem(cd.id, { targetDate: e.target.value })} className={fieldInput} />
+                <DateField value={cd.targetDate || ''} onChange={(e) => patchItem(cd.id, { targetDate: e.target.value })} className={fieldInput} />
               </div>
               <div>
                 <label className={fieldLabel}>Target Time</label>
-                <input type="time" value={cd.targetTime || '00:00'} onChange={(e) => patchItem(cd.id, { targetTime: e.target.value })} className={fieldInput} />
+                <TimeField value={cd.targetTime || '00:00'} onChange={(e) => patchItem(cd.id, { targetTime: e.target.value })} className={fieldInput} />
               </div>
             </div>
             <div>
