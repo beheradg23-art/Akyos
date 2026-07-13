@@ -209,6 +209,54 @@ const inputCls = 'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 
 const labelCls = 'text-[11px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1.5';
 const hintCls = 'mt-1 text-[11px] text-neutral-600';
 
+// Shared three-region shell for every onboarding screen (intro, per-domain
+// questions, review). Previously each screen was one big block centered
+// with `items-center justify-center`, which meant the header, the form,
+// and the action buttons all floated together as a single unit — on tall
+// viewports that left large, uneven blank margins above and below (see the
+// screenshot this was built from), and on short viewports the footer
+// button could get pushed off-screen entirely.
+//
+// This replaces that with a fixed three-part layout that never centers as
+// one blob: a `sidebar` region (branding / step context — sticky within
+// the scroll area on desktop, stacked on top on mobile), a scrollable
+// `children` region for the actual form content, and a `footer` region
+// that's pinned to the bottom of the viewport and never scrolls out of
+// view. Each region keeps its own fixed place regardless of how much
+// content is in the others or how tall the screen is.
+function OnboardingShell({
+  sidebar,
+  children,
+  footer,
+}: {
+  sidebar: React.ReactNode;
+  children: React.ReactNode;
+  footer: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950">
+      <style>{NO_SELECT_CSS}</style>
+
+      {/* Scrollable middle region — sidebar + form. This is the only part
+          that ever scrolls; header and footer stay put. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 pt-8 pb-8 sm:max-w-lg sm:px-10 sm:pt-10 lg:max-w-6xl lg:flex-row lg:items-start lg:gap-16 lg:px-16 lg:pt-12 xl:max-w-7xl">
+          <div className="lg:sticky lg:top-12 lg:w-[360px] lg:shrink-0">{sidebar}</div>
+          <div className="min-w-0 flex-1 lg:max-w-2xl xl:max-w-3xl">{children}</div>
+        </div>
+      </div>
+
+      {/* Fixed footer region — always visible, always in the same spot,
+          aligned under the form column (not the sidebar) on desktop. */}
+      <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 backdrop-blur-sm">
+        <div className="mx-auto w-full max-w-md px-6 py-4 sm:max-w-lg sm:px-10 lg:max-w-6xl lg:px-16 xl:max-w-7xl">
+          <div className="lg:pl-[376px]">{footer}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Reusable "pick one" chip row — used throughout the per-domain question
 // screens below (currentLevel, fitnessGoal, dietType, etc.). Deliberately
 // tiny/local rather than a shared Primitives export: these option sets are
@@ -623,15 +671,9 @@ export default function OnboardingWizard({
   // ---------------- Intro ----------------
   if (stage === 'intro') {
     return (
-      <div className="fixed inset-0 z-[999] overflow-y-auto bg-zinc-950">
-        <style>{NO_SELECT_CSS}</style>
-        <div className="min-h-full flex items-center justify-center px-6 py-10 sm:px-10 lg:px-16">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-10 sm:max-w-lg lg:max-w-6xl lg:flex-row lg:items-start lg:gap-16 xl:max-w-7xl">
-          {/* Left panel — branding/context. Fixed width and sticky on large
-              screens instead of stacking above the form, so a wide viewport
-              actually gets used for two real columns rather than one
-              narrow one floating in blank space either side. */}
-          <div className="lg:sticky lg:top-16 lg:w-[360px] lg:shrink-0">
+      <OnboardingShell
+        sidebar={
+          <>
             <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
               <Sparkles className="h-5 w-5 text-neutral-950" strokeWidth={2} />
             </div>
@@ -639,82 +681,78 @@ export default function OnboardingWizard({
             <p className="text-[12.5px] leading-relaxed text-neutral-500 lg:text-[13.5px]">
               Nothing here is a template built for someone else. Pick whatever you're working toward — you can pick more than one — and we'll build your checklist, schedule, and plan around exactly that. Everything stays editable afterward.
             </p>
+          </>
+        }
+        footer={
+          <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-center">
+            <button
+              onClick={startQuestions}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:w-auto sm:px-8"
+            >
+              Continue <ArrowRight className="h-4 w-4" />
+            </button>
+            <button onClick={skip} className="text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400 sm:mr-auto">
+              Skip — I'll set everything up myself
+            </button>
+            {error && <p className="text-[12px] text-rose-400 sm:basis-full">{error}</p>}
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lg:col-span-1">
+              <label className={labelCls}>Name</label>
+              <input value={answers.name} onChange={(e) => setAnswers((a) => ({ ...a, name: e.target.value }))} placeholder="Optional" className={inputCls} />
+            </div>
+            <div className="lg:col-span-1">
+              <label className={labelCls}>Birthdate</label>
+              <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
+            </div>
+            <div className="lg:col-span-1">
+              <label className={labelCls}>Wake time</label>
+              <TimeField value={answers.wake} onChange={(e) => setAnswers((a) => ({ ...a, wake: e.target.value }))} className={inputCls} />
+            </div>
+            <div className="lg:col-span-1">
+              <label className={labelCls}>Sleep time</label>
+              <TimeField value={answers.sleep} onChange={(e) => setAnswers((a) => ({ ...a, sleep: e.target.value }))} className={inputCls} />
+            </div>
           </div>
 
-          {/* Right panel — the actual form. */}
-          <div className="min-w-0 flex-1 lg:max-w-2xl xl:max-w-3xl">
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="lg:col-span-1">
-                  <label className={labelCls}>Name</label>
-                  <input value={answers.name} onChange={(e) => setAnswers((a) => ({ ...a, name: e.target.value }))} placeholder="Optional" className={inputCls} />
-                </div>
-                <div className="lg:col-span-1">
-                  <label className={labelCls}>Birthdate</label>
-                  <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
-                </div>
-                <div className="lg:col-span-1">
-                  <label className={labelCls}>Wake time</label>
-                  <TimeField value={answers.wake} onChange={(e) => setAnswers((a) => ({ ...a, wake: e.target.value }))} className={inputCls} />
-                </div>
-                <div className="lg:col-span-1">
-                  <label className={labelCls}>Sleep time</label>
-                  <TimeField value={answers.sleep} onChange={(e) => setAnswers((a) => ({ ...a, sleep: e.target.value }))} className={inputCls} />
-                </div>
-              </div>
+          <div>
+            <label className={labelCls}>Target date (optional)</label>
+            <DateField value={answers.targetDate} onChange={(e) => setAnswers((a) => ({ ...a, targetDate: e.target.value }))} className={inputCls} />
+            <p className={hintCls}>Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
+          </div>
 
-              <div>
-                <label className={labelCls}>Target date (optional)</label>
-                <DateField value={answers.targetDate} onChange={(e) => setAnswers((a) => ({ ...a, targetDate: e.target.value }))} className={inputCls} />
-                <p className={hintCls}>Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
-              </div>
-
-              <div>
-                <label className={labelCls}>What are you working toward? Pick all that apply.</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {GOAL_DOMAINS.map((d) => {
-                    const Icon = DOMAIN_ICONS[d.key];
-                    const active = answers.domains.includes(d.key);
-                    return (
-                      <button
-                        key={d.key}
-                        type="button"
-                        onClick={() => toggleDomain(d.key)}
-                        className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-                          active
-                            ? 'border-violet-500/60 bg-violet-500/10'
-                            : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-700'
-                        }`}
-                      >
-                        <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-violet-400' : 'text-neutral-500'}`} strokeWidth={2} />
-                        <div>
-                          <div className={`text-[12.5px] font-semibold ${active ? 'text-violet-300' : 'text-neutral-300'}`}>{d.label}</div>
-                          <div className="text-[11.5px] text-neutral-500">{d.blurb}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {error && <p className="text-[12px] text-rose-400">{error}</p>}
-
-              <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-center">
-                <button
-                  onClick={startQuestions}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:w-auto sm:px-8"
-                >
-                  Continue <ArrowRight className="h-4 w-4" />
-                </button>
-                <button onClick={skip} className="text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400">
-                  Skip — I'll set everything up myself
-                </button>
-              </div>
+          <div>
+            <label className={labelCls}>What are you working toward? Pick all that apply.</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {GOAL_DOMAINS.map((d) => {
+                const Icon = DOMAIN_ICONS[d.key];
+                const active = answers.domains.includes(d.key);
+                return (
+                  <button
+                    key={d.key}
+                    type="button"
+                    onClick={() => toggleDomain(d.key)}
+                    className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
+                      active
+                        ? 'border-violet-500/60 bg-violet-500/10'
+                        : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-700'
+                    }`}
+                  >
+                    <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-violet-400' : 'text-neutral-500'}`} strokeWidth={2} />
+                    <div>
+                      <div className={`text-[12.5px] font-semibold ${active ? 'text-violet-300' : 'text-neutral-300'}`}>{d.label}</div>
+                      <div className="text-[11.5px] text-neutral-500">{d.blurb}</div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
-        </div>
-      </div>
+      </OnboardingShell>
     );
   }
 
@@ -859,14 +897,9 @@ export default function OnboardingWizard({
     }
 
     return (
-      <div className="fixed inset-0 z-[999] overflow-y-auto bg-zinc-950">
-        <style>{NO_SELECT_CSS}</style>
-        <div className="min-h-full flex items-center justify-center px-6 py-10 sm:px-10 lg:px-16">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-10 sm:max-w-lg lg:max-w-6xl lg:flex-row lg:items-start lg:gap-16 xl:max-w-7xl">
-          {/* Left panel — sticky progress + step context, mirrors the intro
-              screen's split so the wizard reads as one consistent layout
-              rather than switching shape stage to stage. */}
-          <div className="lg:sticky lg:top-16 lg:w-[360px] lg:shrink-0">
+      <OnboardingShell
+        sidebar={
+          <>
             <div className="mb-1.5 flex items-center gap-2">
               {selectedDomains.map((_, i) => (
                 <span key={i} className={`h-1 flex-1 rounded-full ${i <= domainStep ? 'bg-violet-500' : 'bg-neutral-800'}`} />
@@ -880,30 +913,27 @@ export default function OnboardingWizard({
               </div>
               <h1 className="text-[16px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">{domainMeta.label}</h1>
             </div>
+          </>
+        }
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={goBackDomain}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-[13px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" /> Back
+            </button>
+            <button
+              onClick={goNextDomain}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 lg:flex-none lg:px-10"
+            >
+              {isLast ? 'Generate my setup' : 'Next'} <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
-
-          {/* Right panel — this domain's questions. */}
-          <div className="min-w-0 flex-1 lg:max-w-2xl xl:max-w-3xl">
-            {fields}
-
-            <div className="mt-6 flex gap-3">
-              <button
-                onClick={goBackDomain}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-[13px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" /> Back
-              </button>
-              <button
-                onClick={goNextDomain}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 lg:flex-none lg:px-10"
-              >
-                {isLast ? 'Generate my setup' : 'Next'} <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-        </div>
-      </div>
+        }
+      >
+        {fields}
+      </OnboardingShell>
     );
   }
 
@@ -968,21 +998,28 @@ export default function OnboardingWizard({
   };
 
   return (
-    <div className="fixed inset-0 z-[999] overflow-y-auto bg-zinc-950">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950">
       <style>{NO_SELECT_CSS}</style>
-      <div className="min-h-full flex flex-col items-center justify-center px-6 py-10 sm:px-10 lg:px-16">
-      <div className="w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
-        <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">Here's what we built</h1>
-        <p className="mb-4 max-w-2xl text-[12.5px] leading-relaxed text-neutral-500">
-          Not quite right? Regenerate any section, or just continue — everything below stays fully editable in Settings afterward.
-        </p>
 
-        {Object.values(usedFallback).some(Boolean) && (
-          <div className="mb-4 rounded-xl border border-amber-700/40 bg-amber-950/10 px-4 py-2.5 text-[12px] leading-relaxed text-amber-400/90">
-            One or more sections below (marked "Generic — not generated") couldn't be built from your goal and are showing generic placeholder content instead of a real plan. Regenerate them, or edit directly in Settings once you're in.
-          </div>
-        )}
+      {/* Header segment — fixed at the top, never scrolls, never moves
+          together with the card grid below it. */}
+      <div className="shrink-0 border-b border-neutral-900 px-6 pt-8 pb-4 sm:px-10 lg:px-16 lg:pt-10">
+        <div className="mx-auto w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
+          <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">Here's what we built</h1>
+          <p className="max-w-2xl text-[12.5px] leading-relaxed text-neutral-500">
+            Not quite right? Regenerate any section, or just continue — everything below stays fully editable in Settings afterward.
+          </p>
+          {Object.values(usedFallback).some(Boolean) && (
+            <div className="mt-3 rounded-xl border border-amber-700/40 bg-amber-950/10 px-4 py-2.5 text-[12px] leading-relaxed text-amber-400/90">
+              One or more sections below (marked "Generic — not generated") couldn't be built from your goal and are showing generic placeholder content instead of a real plan. Regenerate them, or edit directly in Settings once you're in.
+            </div>
+          )}
+        </div>
+      </div>
 
+      {/* Content segment — the only part that scrolls. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 sm:px-10 lg:px-16">
+        <div className="mx-auto w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
         {/* Bento-style grid on wider screens — each section card is a
             self-contained block, so laying them out 2-3 across uses the
             freed-up width instead of one long single-file column. */}
@@ -1054,19 +1091,23 @@ export default function OnboardingWizard({
             </>
           ))}
         </div>
+        </div>
+      </div>
 
-        <div className="mt-6 max-w-sm">
+      {/* Footer segment — fixed at the bottom, always visible regardless
+          of how tall the card grid above ends up being. */}
+      <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 px-6 py-4 backdrop-blur-sm sm:px-10 lg:px-16">
+        <div className="mx-auto flex w-full max-w-lg flex-col gap-3 sm:max-w-xl sm:flex-row sm:items-center sm:justify-between md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
+          <button onClick={() => { setStage('intro'); setDomainStep(0); }} className="order-2 text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400 sm:order-1">
+            Start over
+          </button>
           <button
             onClick={finish}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90"
+            className="order-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:order-2 sm:w-auto sm:px-8"
           >
             Looks good — Enter Akyos <ArrowRight className="h-4 w-4" />
           </button>
-          <button onClick={() => { setStage('intro'); setDomainStep(0); }} className="mt-3 w-full text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400">
-            Start over
-          </button>
         </div>
-      </div>
       </div>
     </div>
   );
