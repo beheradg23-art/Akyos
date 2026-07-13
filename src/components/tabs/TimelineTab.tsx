@@ -15,6 +15,10 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
   // dashboard's bento cards, just tracked per-row here instead of via
   // CardHoverContext since these blocks are a flat list, not <Card>s.
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  // Hover flag for the "Enable Block Reminders" pill — same sweep overlay
+  // technique as the timeline blocks below, just a single boolean since
+  // there's only one button.
+  const [reminderHovered, setReminderHovered] = useState(false);
   const typeStyle = {
     study: 'border-l-indigo-500',
     gym: 'border-l-violet-500',
@@ -34,17 +38,48 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
     <div className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
         <EditableSectionHeading id="tl_master" defaultTitle="Master Timeline" defaultIcon={Clock3} subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
-        <RippleButton
-          onClick={onToggleNotifications}
-          className={`cursor-target shrink-0 flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
-            notificationsEnabled
-              ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15'
-              : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
-          }`}
+        <div
+          className="relative shrink-0"
+          onMouseEnter={() => setReminderHovered(true)}
+          onMouseLeave={() => setReminderHovered(false)}
         >
-          {notificationsEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-          {notificationsEnabled ? 'Block Reminders On' : 'Enable Block Reminders'}
-        </RippleButton>
+          <RippleButton
+            onClick={onToggleNotifications}
+            className={`cursor-target flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
+              notificationsEnabled
+                ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15'
+                : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
+            }`}
+          >
+            {notificationsEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
+            {notificationsEnabled ? 'Block Reminders On' : 'Enable Block Reminders'}
+          </RippleButton>
+          {reminderHovered && (
+            // Same animated gradient sweep border as the timeline blocks,
+            // Syllabus Month pills, and day-selector pills — ring-only
+            // cutout filled with the shared liquidFillStyle() brand
+            // gradient, revealed via the --akyos-sweep mask on hover-in.
+            // Sits in a wrapper div (not inside RippleButton) since
+            // RippleButton doesn't forward onMouseEnter/Leave to its
+            // underlying <button>.
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-full"
+              style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+            >
+              <div
+                className="absolute inset-0 rounded-full"
+                style={{
+                  padding: '1.5px',
+                  WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                  WebkitMaskComposite: 'xor',
+                  maskComposite: 'exclude',
+                  ...liquidFillStyle(),
+                } as React.CSSProperties}
+              />
+            </div>
+          )}
+        </div>
       </div>
       {notificationPermission === 'denied' && (
         <p className="text-[11.5px] text-rose-400/80 mb-4">

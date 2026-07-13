@@ -4,13 +4,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CheckCircle2, Circle, Timer, Calendar } from 'lucide-react';
 import { ConfigContext, getDayName, TrackerItem, TabLabelKey } from '../../lib/appConfig';
-import { liquidFillStyle } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../../lib/liquidFill';
 import { useRipple } from '../ui/Primitives';
 import { haptic } from '../../lib/haptics';
 
 export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { item: TrackerItem; isChecked: boolean; onToggle: (id: string) => void; isDerived?: boolean }) {
   const ref = useRef(null);
   const [pressed, setPressed] = useState(false);
+  const [hovering, setHovering] = useState(false);
   const [spawnRipple, rippleNodes] = useRipple();
 
   const handleDown = (e) => {
@@ -29,7 +30,8 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
       onClick={handleClick}
       onMouseDown={handleDown}
       onMouseUp={handleUp}
-      onMouseLeave={handleUp}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => { handleUp(); setHovering(false); }}
       onTouchStart={handleDown}
       onTouchEnd={handleUp}
       title={isDerived ? 'Auto-synced from the Fuel Matrix meal log — click to go log meals' : undefined}
@@ -45,6 +47,29 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
+      {hovering && (
+        // Same animated gradient sweep border as the dashboard's <Card>
+        // bento boxes, Master Timeline blocks, Syllabus Month pills, and
+        // day-selector pills — ring-only cutout filled with the shared
+        // moving liquidFillStyle() brand gradient, revealed via the
+        // corner-to-corner --akyos-sweep mask on hover-in.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-xl"
+          style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+        >
+          <div
+            className="absolute inset-0 rounded-xl"
+            style={{
+              padding: '1.5px',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              ...liquidFillStyle(),
+            } as React.CSSProperties}
+          />
+        </div>
+      )}
       <div className="flex w-full justify-between items-start mb-2.5">
         {isChecked ? (
           <CheckCircle2 className="h-4.5 w-4.5 text-violet-400 shrink-0" strokeWidth={2} />

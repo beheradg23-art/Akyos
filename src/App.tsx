@@ -36,7 +36,7 @@ import {
   CONFIG_STORAGE_KEY, TABS, HUNTER_RANKS, ICON_OPTIONS,
 } from './lib/appConfig';
 import { resolveTabKeysForDomains, type GoalDomain } from './lib/questionnaire';
-import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES } from './lib/liquidFill';
+import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from './lib/liquidFill';
 import {
   useRipple, MagneticCursor, GlobalDetailModal, QuestClearNotification,
   StreakFlame, MobileStatusStrip,
@@ -79,6 +79,11 @@ export default function JEEDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  // Which header badge (rank or EQ) currently has the pointer over it —
+  // drives the animated gradient sweep border, same hover-gated overlay
+  // <Card> uses in Primitives.tsx, tracked here since these two pills are
+  // plain divs, not <Card>s.
+  const [hoveredBadge, setHoveredBadge] = useState<null | 'rank' | 'eq'>(null);
   const [modal, setModal] = useState(null);
 
   // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
@@ -654,15 +659,62 @@ export default function JEEDashboard() {
             <MobileStatusStrip streak={currentStreak} hunterRank={hunterRank} overallPct={overallPct} />
             <StreakFlame streak={currentStreak} />
             <div
-              className="hidden lg:flex items-center gap-2 rounded-full border px-3.5 py-1.5 transition-colors duration-500"
+              onMouseEnter={() => setHoveredBadge('rank')}
+              onMouseLeave={() => setHoveredBadge((cur) => (cur === 'rank' ? null : cur))}
+              className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border px-3.5 py-1.5 transition-colors duration-500"
               style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
             >
+              {hoveredBadge === 'rank' && (
+                // Same animated gradient sweep border as the dashboard's
+                // <Card> bento boxes / Master Timeline blocks / Syllabus
+                // Month pills / day-selector pills: a ring-only cutout
+                // filled with the shared moving liquidFillStyle() brand
+                // gradient, revealed via the --akyos-sweep mask on hover-in.
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
               <Swords className="h-3 w-3" style={{ color: hunterRank.color }} />
               <span className="text-[11.5px] font-medium" style={{ color: hunterRank.color }}>
                 {hunterRank.label}
               </span>
             </div>
-            <div className="hidden lg:flex items-center gap-2 rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5">
+            <div
+              onMouseEnter={() => setHoveredBadge('eq')}
+              onMouseLeave={() => setHoveredBadge((cur) => (cur === 'eq' ? null : cur))}
+              className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5"
+            >
+              {hoveredBadge === 'eq' && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
               <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
               <span className="text-[11.5px] font-medium text-neutral-400">Execution Quotient: <span className="text-violet-400 tabular-nums">{overallPct}%</span></span>
             </div>
