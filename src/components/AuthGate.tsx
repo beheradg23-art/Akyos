@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, GraduationCap } from 'lucide-react';
+import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, GraduationCap, BookOpen, Sparkles, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import {
   pullFromCloud,
@@ -32,6 +32,18 @@ const GRAIN_DATA_URI =
 const AMBIENT_DRIFT_KEYFRAMES = `
   @keyframes akyos-drift-a { 0% { transform: translate(0, 0); } 100% { transform: translate(-4%, 3%); } }
   @keyframes akyos-drift-b { 0% { transform: translate(0, 0); } 100% { transform: translate(3%, -4%); } }
+`;
+
+// Slow up/down levitation for the metallic decorative icons in
+// SignInVisualPanel — a gentle bob, not a bounce, so it reads as "floating
+// object" rather than an active UI animation. Each icon runs this at its
+// own duration/delay (set inline) so the four never sync up and drift in
+// and out of phase with each other, the way real floating objects would.
+const METAL_FLOAT_KEYFRAMES = `
+  @keyframes akyos-metal-float {
+    0%, 100% { transform: translateY(0) rotate(var(--float-rot, 0deg)); }
+    50% { transform: translateY(-16px) rotate(var(--float-rot, 0deg)); }
+  }
 `;
 
 // --- shared "liquid" animated gradient fill ------------------------------
@@ -92,36 +104,78 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// The left-half visual panel for the desktop sign-in layout.
-//
-// Deliberately calm rather than busy: a near-black panel with a faint
-// grain texture, a dim dot grid, and two very soft, slow-drifting brand-
-// colored glows in the corners for a hint of color and depth. The one
-// interactive touch is a "spotlight" — a brighter patch of the same dot
-// grid, masked to a soft circle that follows the cursor — the same
-// technique behind the hero backgrounds on sites like Linear and Vercel.
-// No animation loop is needed for the spotlight: a single CSS custom
-// property is written directly on mousemove and a CSS mask does the rest,
-// so this whole panel costs nothing when the mouse isn't moving.
-function SignInVisualPanel() {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    el.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
-    el.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
-  };
-
+// A single decorative icon rendered in "shiny cast metal" style for the
+// sign-in visual panel: a Lucide icon whose stroke is repainted with a
+// brushed-steel gradient (via CSS `stroke: url(#id)`, referencing the
+// shared <linearGradient> defined once in SignInVisualPanel) instead of a
+// flat color, plus a drop-shadow so it reads as an embossed object resting
+// in front of the panel rather than a flat line icon. Wrapped in its own
+// bobbing div so each can float at a different speed/phase.
+function MetallicFloatIcon({
+  icon: Icon, style, size = 44, duration = 6, delay = 0, rotate = 0,
+}: { icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; style: React.CSSProperties; size?: number; duration?: number; delay?: number; rotate?: number }) {
   return (
     <div
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center"
-      style={{ ['--spot-x' as any]: '50%', ['--spot-y' as any]: '50%' }}
+      className="pointer-events-none absolute"
+      style={{
+        ...style,
+        animation: `akyos-metal-float ${duration}s ease-in-out infinite`,
+        animationDelay: `${delay}s`,
+        ['--float-rot' as any]: `${rotate}deg`,
+      }}
     >
+      <Icon
+        className="drop-shadow-[0_6px_10px_rgba(0,0,0,0.55)]"
+        style={{
+          width: size,
+          height: size,
+          stroke: 'url(#akyos-metal-shine)',
+          strokeWidth: 1.4,
+          transform: `rotate(${rotate}deg)`,
+        } as React.CSSProperties}
+      />
+    </div>
+  );
+}
+
+// The left-half visual panel for the desktop sign-in layout.
+//
+// A near-black panel with a faint grain texture, two very soft, slow-
+// drifting brand-colored glows in the corners for a hint of color and
+// depth, and four slowly-levitating "cast metal" icons (book, sparkle,
+// bolt, grad cap) that bob up and down at their own pace for a bit of
+// life without competing with the form on the other side.
+function SignInVisualPanel() {
+  return (
+    <div className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center">
       <style>{AMBIENT_DRIFT_KEYFRAMES}</style>
+      <style>{METAL_FLOAT_KEYFRAMES}</style>
+
+      {/* Shared brushed-steel gradient definition, referenced by every
+          MetallicFloatIcon below via `stroke: url(#akyos-metal-shine)`.
+          Lives in a zero-size <svg> since it has nothing to render on its
+          own — it just holds the <defs> the other icons point at. The
+          <animateTransform> slowly slides the gradient across itself so
+          the "shine" drifts along the icons over time instead of sitting
+          static. */}
+      <svg width="0" height="0" className="absolute">
+        <defs>
+          <linearGradient id="akyos-metal-shine" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stopColor="#e2e8f0" />
+            <stop offset="25%" stopColor="#94a3b8" />
+            <stop offset="50%" stopColor="#f8fafc" />
+            <stop offset="75%" stopColor="#7c8a9e" />
+            <stop offset="100%" stopColor="#e2e8f0" />
+            <animateTransform
+              attributeName="gradientTransform"
+              type="translate"
+              values="-0.4 0; 0.4 0; -0.4 0"
+              dur="7s"
+              repeatCount="indefinite"
+            />
+          </linearGradient>
+        </defs>
+      </svg>
 
       {/* Two soft, mostly-static brand-colored glows for a touch of color
           and depth. Slow enough that they read as "alive" without being
@@ -135,23 +189,14 @@ function SignInVisualPanel() {
         style={{ backgroundImage: `url("${GRAIN_DATA_URI}")` }}
       />
 
-      {/* Dim base dot grid. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px)', backgroundSize: '26px 26px' }}
-      />
-
-      {/* Brighter dot grid, masked to a soft circle that tracks the
-          cursor — the "spotlight" reveal. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(196,181,253,0.85) 1px, transparent 1px)',
-          backgroundSize: '26px 26px',
-          WebkitMaskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
-          maskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
-        }}
-      />
+      {/* Four slowly-levitating cast-metal decorative icons, roughly
+          matching the sparkle/book/bolt/cap arrangement sketched out for
+          this panel — each floats on its own duration/delay so they never
+          bob in sync. */}
+      <MetallicFloatIcon icon={Sparkles} style={{ left: '34%', top: '11%' }} size={40} duration={6.5} delay={0} rotate={-8} />
+      <MetallicFloatIcon icon={BookOpen} style={{ left: '12%', top: '48%' }} size={64} duration={7.5} delay={0.8} rotate={-14} />
+      <MetallicFloatIcon icon={Zap} style={{ left: '86%', top: '50%' }} size={58} duration={6} delay={1.6} rotate={10} />
+      <MetallicFloatIcon icon={GraduationCap} style={{ left: '50%', top: '80%' }} size={56} duration={8} delay={0.3} rotate={-6} />
 
       {/* The actual brand mark, centered — same icon badge + name used in
           the app's own header, so this panel reads as unmistakably
