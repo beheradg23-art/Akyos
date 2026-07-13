@@ -107,8 +107,8 @@ export function OverviewTab({ setModal }: { setModal: (data: ModalData | null) =
           <EditableSectionHeading id="ov_shape" defaultTitle="Today's Shape" defaultIcon={Clock3} subtitle="Session load map summary" />
           <div className="space-y-2">
             {[
-              { label: 'Study Sessions', value: shapeValues.studySessions, icon: BookOpen },
-              { label: 'Gym / Training', value: shapeValues.training, icon: Dumbbell },
+              { label: 'Sessions', value: shapeValues.studySessions, icon: BookOpen },
+              { label: 'Training', value: shapeValues.training, icon: Dumbbell },
               { label: 'Meals', value: shapeValues.meals, icon: Utensils },
               { label: 'Sleep Lock', value: shapeValues.sleep, icon: Moon },
             ].map((r) => (
