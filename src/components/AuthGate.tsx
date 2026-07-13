@@ -79,6 +79,18 @@ function liquidFillStyle(extra: React.CSSProperties = {}): React.CSSProperties {
   };
 }
 
+// Standard Google "G" mark, used by the "Continue with Google" button.
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+      <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z" />
+      <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+      <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 01-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" />
+    </svg>
+  );
+}
+
 // The left-half visual panel for the desktop sign-in layout.
 //
 // Deliberately calm rather than busy: a near-black panel with a faint
@@ -713,6 +725,22 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [signupNotice, setSignupNotice] = useState('');
   const emailInputRef = useRef<HTMLInputElement>(null);
 
+  // --- which sign-in method is showing: email/password or phone OTP ---
+  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
+
+  // --- Google OAuth state ---
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleError, setGoogleError] = useState('');
+
+  // --- phone (SMS code) sign-in/signup state ---
+  const [phone, setPhone] = useState('');
+  const [phoneOtp, setPhoneOtp] = useState('');
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const phoneOtpInputRef = useRef<HTMLInputElement>(null);
+
   // --- "choose your passcode" (signup) state ---
   const [pcSetupPhase, setPcSetupPhase] = useState<'enter' | 'confirm'>('enter');
   const [pcSetupFirst, setPcSetupFirst] = useState('');
@@ -751,7 +779,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   useEffect(() => {
     if (showOnePercentIntro || stage !== 'auth' || authCascadeStartedRef.current) return;
     authCascadeStartedRef.current = true;
-    const totalMs = INTRO_REVEAL_AT_MS + 8 * CASCADE_STEP_MS + 750;
+    const totalMs = INTRO_REVEAL_AT_MS + 9 * CASCADE_STEP_MS + 750;
     const t = setTimeout(() => setAuthCascadeDone(true), totalMs);
     return () => clearTimeout(t);
   }, [stage, showOnePercentIntro]);
@@ -845,11 +873,23 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       // animation finishes means the cursor is already blinking inside the
       // box the instant it's visually settled, instead of the person having
       // to click into it first before they can type.
-      const focusDelay = INTRO_REVEAL_AT_MS + 3 * CASCADE_STEP_MS + 750;
+      const focusDelay = INTRO_REVEAL_AT_MS + 5 * CASCADE_STEP_MS + 750;
       const t = setTimeout(() => emailInputRef.current?.focus(), focusDelay);
       return () => clearTimeout(t);
     }
   }, [stage, showOnePercentIntro]);
+
+  useEffect(() => {
+    if (showOnePercentIntro || stage !== 'auth' || authMethod !== 'phone') return;
+    const t = setTimeout(() => phoneInputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [authMethod, stage, showOnePercentIntro]);
+
+  useEffect(() => {
+    if (!phoneOtpSent) return;
+    const t = setTimeout(() => phoneOtpInputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [phoneOtpSent]);
 
   // --- returning-user passcode check ---
   useEffect(() => {
@@ -1009,6 +1049,60 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setGoogleError('');
+    setGoogleBusy(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
+      // Supabase takes the browser to Google's consent screen and back —
+      // there's nothing more to do here. The redirect back lands on a
+      // fresh mount of this component, whose existing getSession() check
+      // on mount picks up the new session and continues the normal flow.
+    } catch (err: any) {
+      setGoogleError(err?.message || 'Could not start Google sign-in. Try again.');
+      setGoogleBusy(false);
+    }
+  };
+
+  const handleSendPhoneOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneError('');
+    setPhoneBusy(true);
+    try {
+      // signInWithOtp on a phone number transparently creates the account
+      // on first use — there's no separate "sign up" step for phone auth.
+      const { error } = await supabase.auth.signInWithOtp({ phone });
+      if (error) throw error;
+      setPhoneOtpSent(true);
+    } catch (err: any) {
+      setPhoneError(err?.message || 'Could not send the code. Check the number and try again.');
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPhoneError('');
+    setPhoneBusy(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ phone, token: phoneOtp, type: 'sms' });
+      if (error) throw error;
+      if (data.session?.user) {
+        await syncThenContinue(data.session.user.id);
+        return;
+      }
+    } catch (err: any) {
+      setPhoneError(err?.message || "That code didn't work. Try again.");
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
   const handleSendResetEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setResetError('');
@@ -1086,78 +1180,179 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
           </div>
 
-          <h1 className={`text-[15px] font-semibold tracking-tight text-neutral-50 ${authMode === 'signin' ? 'mb-8' : 'mb-1.5'}`} style={authCascadeStyle(1)}>
-            {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+          <h1 className={`text-[15px] font-semibold tracking-tight text-neutral-50 ${authMode === 'signin' || authMethod === 'phone' ? 'mb-8' : 'mb-1.5'}`} style={authCascadeStyle(1)}>
+            {authMethod === 'phone' ? 'Sign In' : authMode === 'signin' ? 'Sign In' : 'Create Account'}
           </h1>
-          {authMode !== 'signin' && (
+          {authMethod === 'email' && authMode !== 'signin' && (
             <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={authCascadeStyle(2)}>
               You'll pick your own passcode right after this.
             </p>
           )}
 
-          <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
-            <input
-              ref={emailInputRef}
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email"
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-              style={authCascadeStyle(3)}
-            />
-            <PasswordField
-              value={password}
-              onChange={setPassword}
-              required
-              minLength={8}
-              autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
-              placeholder="Password (min 8 characters)"
-              showStrength={authMode === 'signup'}
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-              style={authCascadeStyle(4)}
-            />
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={googleBusy}
+            className="mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+            style={authCascadeStyle(2)}
+          >
+            <GoogleIcon className="h-4 w-4" />
+            {googleBusy ? 'Connecting…' : 'Continue with Google'}
+          </button>
+          {googleError && <p className="mb-4 max-w-xs text-center text-[12px] text-rose-400">{googleError}</p>}
 
-            {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
-            {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
+          <div className="mb-4 flex w-full max-w-xs items-center gap-3" style={authCascadeStyle(3)}>
+            <div className="h-px flex-1 bg-neutral-800" />
+            <span className="text-[10.5px] font-semibold uppercase tracking-wider text-neutral-600">or</span>
+            <div className="h-px flex-1 bg-neutral-800" />
+          </div>
 
+          <div className="mb-5 flex w-full max-w-xs rounded-xl bg-neutral-900/80 p-1" style={authCascadeStyle(4)}>
             <button
-              type="submit"
-              disabled={authBusy}
-              className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
-              style={liquidFillStyle(authCascadeStyle(5))}
+              type="button"
+              onClick={() => setAuthMethod('email')}
+              className={`flex-1 rounded-lg py-2 text-[12.5px] font-semibold transition-colors ${authMethod === 'email' ? 'bg-neutral-800 text-neutral-50' : 'text-neutral-500 hover:text-neutral-300'}`}
             >
-              {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+              Email
             </button>
-          </form>
-
-          {authMode === 'signin' && (
             <button
-              onClick={() => {
-                setResetEmail(email);
-                setResetError('');
-                setResetSent(false);
-                setStage('forgotPassword');
-              }}
-              className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
-              style={authCascadeStyle(6)}
+              type="button"
+              onClick={() => setAuthMethod('phone')}
+              className={`flex-1 rounded-lg py-2 text-[12.5px] font-semibold transition-colors ${authMethod === 'phone' ? 'bg-neutral-800 text-neutral-50' : 'text-neutral-500 hover:text-neutral-300'}`}
             >
-              Forgot password?
+              Phone
             </button>
+          </div>
+
+          {authMethod === 'email' && (
+            <>
+              <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
+                <input
+                  ref={emailInputRef}
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                  style={authCascadeStyle(5)}
+                />
+                <PasswordField
+                  value={password}
+                  onChange={setPassword}
+                  required
+                  minLength={8}
+                  autoComplete={authMode === 'signin' ? 'current-password' : 'new-password'}
+                  placeholder="Password (min 8 characters)"
+                  showStrength={authMode === 'signup'}
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                  style={authCascadeStyle(6)}
+                />
+
+                {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
+                {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
+
+                <button
+                  type="submit"
+                  disabled={authBusy}
+                  className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                  style={liquidFillStyle(authCascadeStyle(7))}
+                >
+                  {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
+                </button>
+              </form>
+
+              {authMode === 'signin' && (
+                <button
+                  onClick={() => {
+                    setResetEmail(email);
+                    setResetError('');
+                    setResetSent(false);
+                    setStage('forgotPassword');
+                  }}
+                  className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+                  style={authCascadeStyle(8)}
+                >
+                  Forgot password?
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
+                  setAuthError('');
+                  setSignupNotice('');
+                }}
+                className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+                style={authCascadeStyle(9)}
+              >
+                {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              </button>
+            </>
           )}
 
-          <button
-            onClick={() => {
-              setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
-              setAuthError('');
-              setSignupNotice('');
-            }}
-            className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
-            style={authCascadeStyle(7)}
-          >
-            {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-          </button>
+          {authMethod === 'phone' && (
+            !phoneOtpSent ? (
+              <form onSubmit={handleSendPhoneOtp} className="w-full max-w-xs space-y-3">
+                <input
+                  ref={phoneInputRef}
+                  type="tel"
+                  required
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Phone number (e.g. +1 555 123 4567)"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                  style={authCascadeStyle(5)}
+                />
+                {phoneError && <p className="text-[12px] text-rose-400">{phoneError}</p>}
+                <button
+                  type="submit"
+                  disabled={phoneBusy}
+                  className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                  style={liquidFillStyle(authCascadeStyle(6))}
+                >
+                  {phoneBusy ? 'Sending…' : 'Send Code'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyPhoneOtp} className="w-full max-w-xs space-y-3">
+                <p className="text-center text-[12px] text-neutral-500">Enter the code sent to {phone}</p>
+                <input
+                  ref={phoneOtpInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  autoComplete="one-time-code"
+                  value={phoneOtp}
+                  onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="6-digit code"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-center text-[15px] tracking-[0.3em] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                />
+                {phoneError && <p className="text-[12px] text-rose-400">{phoneError}</p>}
+                <button
+                  type="submit"
+                  disabled={phoneBusy}
+                  className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                  style={liquidFillStyle()}
+                >
+                  {phoneBusy ? 'Verifying…' : 'Verify Code'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneOtpSent(false);
+                    setPhoneOtp('');
+                    setPhoneError('');
+                  }}
+                  className="w-full text-center text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+                >
+                  Use a different number
+                </button>
+              </form>
+            )
+          )}
         </div>
       </div>
     );
