@@ -4,7 +4,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Clock3, Dumbbell, BookOpen, Target, GraduationCap, Ruler, Weight,
-  Droplets, Moon, Utensils, Flame, TrendingUp, Activity, Calendar,
+  Droplets, Moon, Utensils, Flame, Activity, Calendar,
   ArrowUpRight, Settings,
 } from 'lucide-react';
 import { ConfigContext, resolveDietValues, resolveOverviewValues, calculateAge } from '../../lib/appConfig';
@@ -67,8 +67,8 @@ export function OverviewTab({ setModal }: { setModal: (data: ModalData | null) =
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <StatPill icon={Ruler} label="Height" value={`${profile.height} cm`} />
             <StatPill icon={Weight} label="Weight" value={latestWeight ? `${latestWeight.weight} kg` : `${profile.weight} kg`} />
-            <StatPill icon={Target} label="Category" value={profile.category} accent="amber" />
-            <StatPill icon={TrendingUp} label={profile.baselineLabel || 'Baseline'} value={`${profile.baseline}${typeof profile.baseline === 'number' && profile.baseline <= 100 ? ' %ile' : ''}`} accent="blue" />
+            <StatPill icon={Calendar} label="Age" value={`${calculateAge(profile.birthdate) ?? '—'} yrs`} accent="amber" />
+            <StatPill icon={Target} label="Goal" value={profile.goalLabel} accent="blue" />
           </div>
           {profile.boards ? (
             <p className="mt-3 text-[12px] text-neutral-500 leading-relaxed">
