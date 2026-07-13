@@ -14,25 +14,9 @@ import {
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
-import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, liquidFillStyle } from '../lib/liquidFill';
+import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES } from '../lib/liquidFill';
 
 const PASSCODE_LENGTH = 6;
-
-// A quiet grain texture (classic Linear/Vercel/Stripe touch) — a tiny
-// inline SVG turbulence filter turned into a repeating background image,
-// kept at very low opacity so it just adds a bit of tooth to the flat
-// dark panel instead of reading as pure noise.
-const GRAIN_DATA_URI =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E";
-
-// Keyframes for the two ambient glows below — defined once, referenced
-// via Tailwind's arbitrary `animate-[name_time_...]` syntax. The browser
-// resolves the keyframe name from any stylesheet on the page, so this
-// plain <style> tag is all that's needed (no tailwind.config changes).
-const AMBIENT_DRIFT_KEYFRAMES = `
-  @keyframes akyos-drift-a { 0% { transform: translate(0, 0); } 100% { transform: translate(-4%, 3%); } }
-  @keyframes akyos-drift-b { 0% { transform: translate(0, 0); } 100% { transform: translate(3%, -4%); } }
-`;
 
 // --- shared "liquid" animated gradient fill ------------------------------
 //
@@ -92,133 +76,17 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// A small looped replay of the app's boot splash (IntroLoader): the 0 ->
-// 100% count-up, held for a beat on the full brand reveal, then a quick
-// fade back to 0 to start again. Runs on a single requestAnimationFrame
-// driven by elapsed-time-mod-cycle-length rather than chained setTimeouts,
-// so it can loop indefinitely without ever drifting or stacking timers.
-function LoopingIntroReplay() {
-  const [percent, setPercent] = useState(0);
-  const [stage, setStage] = useState<'counting' | 'reveal' | 'fadeOut'>('counting');
-
-  useEffect(() => {
-    const reduceMotion =
-      typeof window !== 'undefined' &&
-      window.matchMedia &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    if (reduceMotion) {
-      setPercent(100);
-      setStage('reveal');
-      return;
-    }
-
-    const COUNT_MS = 1900;
-    const REVEAL_HOLD_MS = 900;
-    const FADE_OUT_MS = 450;
-    const PAUSE_MS = 350;
-    const CYCLE_MS = COUNT_MS + REVEAL_HOLD_MS + FADE_OUT_MS + PAUSE_MS;
-
-    let raf: number;
-    const start = performance.now();
-
-    const tick = (now: number) => {
-      const elapsed = (now - start) % CYCLE_MS;
-
-      if (elapsed < COUNT_MS) {
-        const t = elapsed / COUNT_MS;
-        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic, matches IntroLoader
-        setPercent(Math.round(eased * 100));
-        setStage('counting');
-      } else if (elapsed < COUNT_MS + REVEAL_HOLD_MS) {
-        setPercent(100);
-        setStage('reveal');
-      } else if (elapsed < COUNT_MS + REVEAL_HOLD_MS + FADE_OUT_MS) {
-        setStage('fadeOut');
-      } else {
-        setPercent(0);
-        setStage('counting');
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  return (
-    <div
-      className={`flex flex-col items-center transition-opacity duration-[450ms] ease-out ${
-        stage === 'fadeOut' ? 'opacity-0' : 'opacity-100'
-      }`}
-    >
-      <div
-        className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
-        style={liquidFillStyle()}
-      >
-        <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
-      </div>
-
-      <span className="mb-6 text-[10px] font-medium uppercase tracking-[0.35em] text-neutral-500">Akyos</span>
-
-      <div className="flex items-start leading-none tabular-nums">
-        <span
-          className="font-extralight text-transparent bg-clip-text bg-gradient-to-br from-neutral-50 to-neutral-500"
-          style={{ fontSize: 'clamp(2.75rem, 9vw, 4.25rem)' }}
-        >
-          {percent}
-        </span>
-        <span
-          className="mt-1 font-extralight text-neutral-600"
-          style={{ fontSize: 'clamp(1rem, 2.6vw, 1.4rem)' }}
-        >
-          %
-        </span>
-      </div>
-
-      <div className="mt-6 h-px w-36 sm:w-44 overflow-hidden rounded-full bg-neutral-800">
-        <div className="h-full transition-[width] duration-100 ease-linear" style={liquidFillStyle({ width: `${percent}%` })} />
-      </div>
-
-      <div className={`mt-5 text-center transition-opacity duration-300 ${stage === 'reveal' ? 'opacity-100' : 'opacity-0'}`}>
-        <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
-        <p className="mt-1 text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
-      </div>
-    </div>
-  );
-}
-
 // The left-half visual panel for the desktop sign-in layout.
 //
-// Blanked back to a plain near-black panel — no dot grid, no cursor
-// spotlight — with just the two soft, slow-drifting brand-colored glows
-// left for a hint of color and depth, and the app's own boot-splash
-// animation (LoopingIntroReplay) looping in the center instead of a
-// static icon + name. Keeps the panel animated and alive without the
-// dot-grid texture.
+// Deliberately blank rather than busy: just a near-black panel with the
+// same "1% → Better Every Day. → liquid zoom → badge reveal" beat used for
+// the app's own boot intro (see PanelBrandLoop below) looping quietly in
+// the middle of it, so the panel stays animated and on-brand without a
+// static dot grid or icon sitting there doing nothing.
 function SignInVisualPanel() {
   return (
     <div className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center">
-      <style>{AMBIENT_DRIFT_KEYFRAMES}</style>
-
-      {/* Two soft, mostly-static brand-colored glows for a touch of color
-          and depth. Slow enough that they read as "alive" without being
-          distracting next to a login form. */}
-      <div className="pointer-events-none absolute -top-1/4 left-1/4 h-[55vmin] w-[55vmin] rounded-full bg-violet-600/[0.10] blur-[130px] animate-[akyos-drift-a_24s_ease-in-out_infinite_alternate]" />
-      <div className="pointer-events-none absolute bottom-[-10%] right-[-5%] h-[48vmin] w-[48vmin] rounded-full bg-indigo-500/[0.09] blur-[130px] animate-[akyos-drift-b_28s_ease-in-out_infinite_alternate]" />
-
-      {/* Faint grain for texture. */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.05] mix-blend-overlay"
-        style={{ backgroundImage: `url("${GRAIN_DATA_URI}")` }}
-      />
-
-      {/* Looped replay of the app's boot splash, centered in place of the
-          old static icon + dot grid. */}
-      <div className="relative">
-        <LoopingIntroReplay />
-      </div>
+      <PanelBrandLoop />
     </div>
   );
 }
@@ -720,6 +588,262 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- Looping brand-reveal animation for the sign-in visual panel ---------
+//
+// The exact same "1% → Better Every Day. → liquid zoom → badge reveal" beat
+// as OnePercentIntro above, just adapted to run *inside* the panel instead
+// of full-screen, and to loop forever instead of handing off once: sizes
+// itself off the panel's own bounding box (via ResizeObserver) rather than
+// the window, positions everything `absolute` within a `relative` wrapper
+// instead of `fixed` to the viewport, and — instead of calling onComplete
+// once — waits out a short blank beat after each fade-out and remounts
+// itself (via an incrementing `key`) to play again from 0%. Every timing
+// constant, the zoom easing curve, and the keyframes are shared with
+// OnePercentIntro so the loop reads as literally the same animation, not a
+// smaller lookalike.
+type PanelPhase = 'intro' | 'wordsOut' | 'gradientIn' | 'zoomOut' | 'badgeReveal' | 'finalFade';
+
+const PANEL_LOOP_GAP_MS = 550; // blank beat on the panel before the next pass starts
+const PANEL_BADGE_SIZE_PX = 44; // matches the panel's old static badge size
+const PANEL_TEXT_CLASS = 'text-[clamp(1rem,3.2vw,2.35rem)] leading-[1.15]';
+
+function panelBlobStyle(phase: PanelPhase, zoomProgress: number, fullSizePx: number): React.CSSProperties {
+  const visible = phase === 'gradientIn' || phase === 'zoomOut' || phase === 'badgeReveal' || phase === 'finalFade';
+  const settled = phase === 'badgeReveal' || phase === 'finalFade';
+  const t = settled ? 1 : phase === 'zoomOut' ? zoomProgress : 0;
+  const size = fullSizePx + (PANEL_BADGE_SIZE_PX - fullSizePx) * t;
+  const radius = fullSizePx / 2 + (14 - fullSizePx / 2) * t; // circle -> rounded-xl badge
+  return {
+    ...liquidFillStyle(),
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: `${size}px`,
+    height: `${size}px`,
+    borderRadius: `${radius}px`,
+    transform: 'translate(-50%, -50%)',
+    opacity: visible ? 1 : 0,
+    boxShadow: settled ? '0 10px 30px -6px rgba(124,58,237,0.45)' : 'none',
+    transition: `opacity ${ONE_PCT_GRADIENT_IN_MS}ms ease-in-out, box-shadow 380ms ease-out`,
+    zIndex: 2,
+  };
+}
+
+// One pass of the animation, from a fresh 0%. Remounted by PanelBrandLoop
+// (via `key`) every time it finishes, so all of its state resets cleanly
+// instead of needing a manual rewind.
+function PanelBrandPass({ fullSizePx, onLoop }: { fullSizePx: number; onLoop: () => void }) {
+  const [phase, setPhase] = useState<PanelPhase>('intro');
+  const [countLabel, setCountLabel] = useState('0.0%');
+  const [visibleWordCount, setVisibleWordCount] = useState(0);
+  const [zoomProgress, setZoomProgress] = useState(0);
+
+  useEffect(() => {
+    if (phase !== 'zoomOut') return;
+    let rafId = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / ONE_PCT_ZOOM_OUT_MS, 1);
+      setZoomProgress(zoomOutEase(t));
+      if (t < 1) rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [phase]);
+
+  useEffect(() => {
+    let rafId = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / ONE_PCT_COUNT_MS, 1);
+      const eased = easeOutCubic(t);
+      if (t >= 1) {
+        setCountLabel(`${ONE_PCT_TARGET}%`);
+        return;
+      }
+      setCountLabel(`${(eased * ONE_PCT_TARGET).toFixed(1)}%`);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+
+    ONE_PCT_WORDS.forEach((_, i) => {
+      timers.push(
+        setTimeout(() => setVisibleWordCount(i + 1), ONE_PCT_WORD_START_MS + i * ONE_PCT_WORD_STAGGER_MS)
+      );
+    });
+
+    const wordsOutAt = ONE_PCT_TOTAL_MS;
+    const gradientInAt = wordsOutAt + ONE_PCT_WORDS_OUT_MS;
+    const zoomOutAt = gradientInAt + ONE_PCT_GRADIENT_IN_MS + ONE_PCT_GRADIENT_HOLD_MS;
+    const badgeRevealAt = zoomOutAt + ONE_PCT_ZOOM_OUT_MS;
+    const finalFadeAt = badgeRevealAt + ONE_PCT_BADGE_REVEAL_MS + ONE_PCT_BADGE_HOLD_MS;
+    const loopAt = finalFadeAt + ONE_PCT_FINAL_FADE_MS + PANEL_LOOP_GAP_MS;
+
+    timers.push(setTimeout(() => setPhase('wordsOut'), wordsOutAt));
+    timers.push(setTimeout(() => setPhase('gradientIn'), gradientInAt));
+    timers.push(setTimeout(() => setPhase('zoomOut'), zoomOutAt));
+    timers.push(setTimeout(() => setPhase('badgeReveal'), badgeRevealAt));
+    timers.push(setTimeout(() => setPhase('finalFade'), finalFadeAt));
+    timers.push(setTimeout(onLoop, loopAt));
+
+    return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const wordsCollapsing = phase !== 'intro';
+  const onePctVisible = phase === 'intro' || phase === 'wordsOut';
+  const badgeContentVisible = phase === 'badgeReveal' || phase === 'finalFade';
+
+  return (
+    <div
+      className="absolute inset-0 flex items-center justify-center px-6 transition-opacity ease-out"
+      style={{ transitionDuration: `${ONE_PCT_FINAL_FADE_MS}ms`, opacity: phase === 'finalFade' ? 0 : 1 }}
+      aria-hidden="true"
+    >
+      {/* Soft glow echoing IntroReveal's own pulse. */}
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 h-20 w-20 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/25 blur-2xl animate-[akyos-intro-pulse_1.6s_ease-out_infinite]"
+        style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out`, zIndex: 1 }}
+      />
+
+      {/* The liquid blob: dissolves into view, then zooms down into the
+          badge shape — sized off the panel, not the viewport. */}
+      <div style={panelBlobStyle(phase, zoomProgress, fullSizePx)}>
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ opacity: badgeContentVisible ? 1 : 0, transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out` }}
+        >
+          <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+        </div>
+      </div>
+
+      {/* Wordmark, revealed alongside the settled badge. */}
+      <div
+        className="absolute left-1/2 text-center"
+        style={{
+          top: 'calc(50% + 36px)',
+          transform: 'translateX(-50%)',
+          opacity: badgeContentVisible ? 1 : 0,
+          transition: `opacity ${ONE_PCT_BADGE_REVEAL_MS}ms ease-out 90ms`,
+          zIndex: 2,
+        }}
+      >
+        <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
+        <p className="text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
+      </div>
+
+      <div
+        className="relative flex flex-nowrap items-baseline justify-center gap-x-1.5 text-center whitespace-nowrap"
+        style={{ fontFamily: "'Poppins', sans-serif", zIndex: 3 }}
+      >
+        <span
+          className="relative inline-block align-baseline"
+          style={{
+            animation: 'akyos-glow-pulse 2.2s ease-in-out infinite',
+            opacity: onePctVisible ? 1 : 0,
+            transition: 'opacity 180ms ease-out',
+          }}
+        >
+          <span
+            className={`inline-block min-w-[3ch] text-center tabular-nums font-extrabold ${PANEL_TEXT_CLASS}`}
+            style={{
+              animation: 'akyos-liquid-gradient 3s ease-in-out infinite',
+              backgroundImage:
+                'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
+              backgroundSize: '250% 100%',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              color: 'transparent',
+            }}
+          >
+            {countLabel}
+          </span>
+        </span>
+
+        <div
+          className="flex items-baseline gap-x-1.5 overflow-hidden"
+          style={{
+            maxWidth: wordsCollapsing ? '0px' : '420px',
+            opacity: wordsCollapsing ? 0 : 1,
+            transition: `max-width ${ONE_PCT_WORDS_OUT_MS}ms cubic-bezier(0.65,0,0.35,1), opacity ${ONE_PCT_WORDS_OUT_MS}ms ease-in`,
+          }}
+        >
+          {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
+            <span
+              key={word}
+              className={`inline-block text-white font-semibold ${PANEL_TEXT_CLASS}`}
+              style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Wrapper that measures the panel, respects reduced-motion, and keeps
+// PanelBrandPass looping by bumping a `key` every time one pass finishes.
+function PanelBrandLoop() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [loopKey, setLoopKey] = useState(0);
+  const [fullSizePx, setFullSizePx] = useState(600);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(mq.matches);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = (width: number, height: number) => {
+      // Same idea as OnePercentIntro's `fullSizePx`: the blob should start
+      // at least as big as the panel's own diagonal so its edge is visible
+      // from frame one instead of shrinking invisibly off-panel first.
+      setFullSizePx(Math.sqrt(width ** 2 + height ** 2) * 1.08);
+    };
+    measure(el.clientWidth, el.clientHeight);
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      measure(width, height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+      <style>{ONE_PCT_KEYFRAMES}</style>
+      <style>{INTRO_PULSE_KEYFRAMES}</style>
+      {reduceMotion ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+            style={liquidFillStyle()}
+          >
+            <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+          </div>
+          <div className="text-center">
+            <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
+            <p className="text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
+          </div>
+        </div>
+      ) : (
+        <PanelBrandPass key={loopKey} fullSizePx={fullSizePx} onLoop={() => setLoopKey((k) => k + 1)} />
+      )}
     </div>
   );
 }
