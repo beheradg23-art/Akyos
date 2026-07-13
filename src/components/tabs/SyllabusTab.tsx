@@ -11,12 +11,18 @@ import { TOPIC_DETAILS } from '../../lib/staticContent';
 import { Card, RippleButton, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 import { generateTopicDetails } from '../../lib/contentGen';
+import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../../lib/liquidFill';
 
 export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) => void }) {
   const { subjects, syllabus } = React.useContext(ConfigContext);
   const allSyllabusTopics = useMemo(() => getAllSyllabusTopics(syllabus), [syllabus]);
   const [activePhase, setActivePhase] = useState(1);
   const phase = syllabus.find((p) => p.phase === activePhase) || syllabus[0];
+  // Which Month pill (by phase number) currently has the pointer over it —
+  // drives the animated gradient sweep border, the same hover-gated
+  // overlay <Card> uses in Primitives.tsx, tracked per-pill here since
+  // these are plain buttons, not <Card>s.
+  const [hoveredPhase, setHoveredPhase] = useState<number | null>(null);
 
   const [revisionLog, setRevisionLog] = useState<Record<string, string>>(() => {
     try {
@@ -135,12 +141,37 @@ export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) =
           <button
             key={p.phase}
             onClick={() => setActivePhase(p.phase)}
-            className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
+            onMouseEnter={() => setHoveredPhase(p.phase)}
+            onMouseLeave={() => setHoveredPhase((cur) => (cur === p.phase ? null : cur))}
+            className={`relative overflow-hidden flex items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
               activePhase === p.phase
                 ? 'border-indigo-500/40 bg-indigo-500/[0.08]'
                 : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700'
             }`}
           >
+            {hoveredPhase === p.phase && (
+              // Same animated gradient sweep border as the dashboard's
+              // <Card> bento boxes / Master Timeline blocks: a ring-only
+              // cutout filled with the shared moving liquidFillStyle()
+              // brand gradient, revealed via the corner-to-corner
+              // --akyos-sweep mask on hover-in.
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-xl"
+                style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+              >
+                <div
+                  className="absolute inset-0 rounded-xl"
+                  style={{
+                    padding: '1.5px',
+                    WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                    WebkitMaskComposite: 'xor',
+                    maskComposite: 'exclude',
+                    ...liquidFillStyle(),
+                  } as React.CSSProperties}
+                />
+              </div>
+            )}
             <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${activePhase === p.phase ? 'bg-indigo-500/20 text-indigo-300' : 'bg-neutral-800 text-neutral-400'}`}>
               {p.phase}
             </span>
