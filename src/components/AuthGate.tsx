@@ -40,20 +40,28 @@ const AMBIENT_DRIFT_KEYFRAMES = `
 // own duration/delay (set inline) so the four never sync up and drift in
 // and out of phase with each other, the way real floating objects would.
 //
-// `--mx` is the horizontal parallax offset driven by mouse position across
-// the whole window (see SignInVisualPanel below) — registering it via
-// `@property` makes it a real animatable value rather than a plain string,
-// which is what lets the `transition: --mx ...` on each icon smooth out
-// the mouse updates instead of the icon snapping to each new position.
+// `--mx`/`--my` are the horizontal/vertical parallax offset driven by
+// mouse position across the whole window (see SignInVisualPanel below) —
+// registering them via `@property` makes them real animatable values
+// rather than plain strings, which is what lets the `transition: --mx,
+// --my ...` on each icon smooth out the mouse updates instead of the icon
+// snapping to each new position. The bob itself is layered on top of
+// `--my` (rather than replacing it) so the icon still floats up/down on
+// its own even while the mouse sits still.
 const METAL_FLOAT_KEYFRAMES = `
   @property --mx {
     syntax: '<length>';
     inherits: true;
     initial-value: 0px;
   }
+  @property --my {
+    syntax: '<length>';
+    inherits: true;
+    initial-value: 0px;
+  }
   @keyframes akyos-metal-float {
-    0%, 100% { transform: translate(var(--mx, 0px), 0) rotate(var(--float-rot, 0deg)); }
-    50% { transform: translate(var(--mx, 0px), -16px) rotate(var(--float-rot, 0deg)); }
+    0%, 100% { transform: translate(var(--mx, 0px), var(--my, 0px)) rotate(var(--float-rot, 0deg)); }
+    50% { transform: translate(var(--mx, 0px), calc(var(--my, 0px) - 16px)) rotate(var(--float-rot, 0deg)); }
   }
 `;
 
@@ -115,15 +123,15 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// A single decorative icon rendered in the app's own "liquid" animated
-// brand gradient (the same indigo → violet → fuchsia sheen used on every
-// button/badge elsewhere via liquidFillStyle) instead of a flat color —
-// achieved with CSS `stroke: url(#id)`, referencing the shared
-// <linearGradient> defined once in SignInVisualPanel — plus a drop-shadow
-// so it reads as an object resting in front of the panel rather than a
-// flat line icon. Wrapped in its own bobbing div (forwarded via `wrapRef`)
-// so each can float at a different speed/phase, and shift left/right with
-// the rest of the group as the mouse moves across the page.
+// A single decorative icon rendered in a shiny animated silver gradient
+// (both stroked AND filled, so it reads as a solid cast object rather than
+// an outline) — achieved with CSS `stroke`/`fill: url(#id)`, referencing
+// the shared <linearGradient> defined once in SignInVisualPanel — plus a
+// drop-shadow so it reads as an object resting in front of the panel
+// rather than a flat line icon. Wrapped in its own bobbing div (forwarded
+// via `wrapRef`) so each can float at a different speed/phase, and shift
+// with the rest of the group as the mouse moves across the whole page
+// (both horizontally and vertically).
 const MetallicFloatIcon = React.forwardRef<HTMLDivElement, {
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   style: React.CSSProperties; size?: number; duration?: number; delay?: number; rotate?: number;
@@ -136,17 +144,19 @@ const MetallicFloatIcon = React.forwardRef<HTMLDivElement, {
         ...style,
         animation: `akyos-metal-float ${duration}s ease-in-out infinite`,
         animationDelay: `${delay}s`,
-        transition: '--mx 500ms cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: '--mx 150ms ease-out, --my 150ms ease-out',
         ['--float-rot' as any]: `${rotate}deg`,
       }}
     >
       <Icon
-        className="drop-shadow-[0_8px_14px_rgba(0,0,0,0.55)]"
+        className="drop-shadow-[0_10px_18px_rgba(0,0,0,0.55)]"
         style={{
           width: size,
           height: size,
-          stroke: 'url(#akyos-liquid-shine)',
-          strokeWidth: 1.4,
+          stroke: 'url(#akyos-metal-shine)',
+          fill: 'url(#akyos-metal-shine)',
+          fillOpacity: 0.85,
+          strokeWidth: 1.2,
           transform: `rotate(${rotate}deg)`,
         } as React.CSSProperties}
       />
@@ -154,25 +164,26 @@ const MetallicFloatIcon = React.forwardRef<HTMLDivElement, {
   );
 });
 
-// Which icon, where, how big, and how far it parallaxes horizontally
-// relative to the mouse (`reach`, in px at the extreme left/right edge of
-// the window) — kept as data so the mousemove handler in SignInVisualPanel
-// can walk the same list the JSX renders from instead of duplicating it.
+// Which icon, where, how big, and how far it parallaxes relative to the
+// mouse (`reachX`/`reachY`, in px at the extreme edge of the window) —
+// kept as data so the mousemove handler in SignInVisualPanel can walk the
+// same list the JSX renders from instead of duplicating it.
 const FLOAT_ICONS = [
-  { icon: Sparkles, style: { left: '34%', top: '11%' }, size: 60, duration: 6.5, delay: 0, rotate: -8, reach: 18 },
-  { icon: BookOpen, style: { left: '10%', top: '46%' }, size: 100, duration: 7.5, delay: 0.8, rotate: -14, reach: 30 },
-  { icon: Zap, style: { left: '84%', top: '50%' }, size: 90, duration: 6, delay: 1.6, rotate: 10, reach: 30 },
-  { icon: GraduationCap, style: { left: '50%', top: '78%' }, size: 92, duration: 8, delay: 0.3, rotate: -6, reach: 24 },
+  { icon: Sparkles, style: { left: '30%', top: '8%' }, size: 92, duration: 6.5, delay: 0, rotate: -8, reachX: 22, reachY: 16 },
+  { icon: BookOpen, style: { left: '6%', top: '42%' }, size: 158, duration: 7.5, delay: 0.8, rotate: -14, reachX: 34, reachY: 24 },
+  { icon: Zap, style: { left: '80%', top: '46%' }, size: 138, duration: 6, delay: 1.6, rotate: 10, reachX: 34, reachY: 24 },
+  { icon: GraduationCap, style: { left: '46%', top: '74%' }, size: 148, duration: 8, delay: 0.3, rotate: -6, reachX: 28, reachY: 20 },
 ];
 
 // The left-half visual panel for the desktop sign-in layout.
 //
 // A near-black panel with a faint grain texture, two very soft, slow-
 // drifting brand-colored glows in the corners for a hint of color and
-// depth, and four slowly-levitating liquid-gradient icons (book, sparkle,
-// bolt, grad cap) that bob up and down at their own pace and drift
-// left/right together as the cursor moves across the whole page — a
-// gentle parallax rather than anything that tracks the cursor precisely.
+// depth, and four slowly-levitating shiny-silver icons (book, sparkle,
+// bolt, grad cap) that bob up and down at their own pace and drift with
+// the cursor — both horizontally and vertically — as it moves across the
+// whole page, a gentle parallax rather than anything that tracks the
+// cursor precisely.
 function SignInVisualPanel() {
   const iconRefs = useRef<Array<HTMLDivElement | null>>([]);
 
@@ -182,11 +193,16 @@ function SignInVisualPanel() {
       if (rafId) return; // coalesce to at most one update per frame
       rafId = requestAnimationFrame(() => {
         rafId = 0;
-        // -1 at the far left edge of the window, +1 at the far right —
-        // so each icon's own `reach` just scales how far it drifts.
-        const norm = (e.clientX / window.innerWidth) * 2 - 1;
+        // -1 at the far left/top edge of the window, +1 at the far
+        // right/bottom — each icon's own reachX/reachY just scales how
+        // far it drifts in that direction.
+        const normX = (e.clientX / window.innerWidth) * 2 - 1;
+        const normY = (e.clientY / window.innerHeight) * 2 - 1;
         FLOAT_ICONS.forEach((cfg, i) => {
-          iconRefs.current[i]?.style.setProperty('--mx', `${norm * cfg.reach}px`);
+          const el = iconRefs.current[i];
+          if (!el) return;
+          el.style.setProperty('--mx', `${normX * cfg.reachX}px`);
+          el.style.setProperty('--my', `${normY * cfg.reachY}px`);
         });
       });
     };
@@ -202,30 +218,28 @@ function SignInVisualPanel() {
       <style>{AMBIENT_DRIFT_KEYFRAMES}</style>
       <style>{METAL_FLOAT_KEYFRAMES}</style>
 
-      {/* Shared liquid-gradient definition, referenced by every
-          MetallicFloatIcon below via `stroke: url(#akyos-liquid-shine)`.
-          Same indigo/violet/fuchsia stops as liquidFillStyle()'s own
-          brand gradient, just expressed as an SVG <linearGradient> since
-          `stroke` (unlike a CSS `background`) needs one. Lives in a
-          zero-size <svg> since it has nothing to render on its own — it
-          just holds the <defs> the icons point at. The <animateTransform>
-          slowly slides the gradient across itself, mirroring the same
-          "background-position drift" liquidFillStyle() does everywhere
-          else, so the icons read as the same moving material. */}
+      {/* Shared shiny-silver gradient definition, referenced by every
+          MetallicFloatIcon below via `stroke`/`fill: url(#akyos-metal-
+          shine)`. Lives in a zero-size <svg> since it has nothing to
+          render on its own — it just holds the <defs> the icons point
+          at. The <animateTransform> slowly slides the gradient across
+          itself so the "shine" sweeps along the icons over time instead
+          of sitting static. */}
       <svg width="0" height="0" className="absolute">
         <defs>
-          <linearGradient id="akyos-liquid-shine" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
-            <stop offset="0%" stopColor="#4f46e5" />
-            <stop offset="22%" stopColor="#7c3aed" />
-            <stop offset="45%" stopColor="#d946ef" />
-            <stop offset="68%" stopColor="#7c3aed" />
-            <stop offset="85%" stopColor="#4f46e5" />
-            <stop offset="100%" stopColor="#d946ef" />
+          <linearGradient id="akyos-metal-shine" x1="0%" y1="0%" x2="100%" y2="100%" gradientUnits="objectBoundingBox">
+            <stop offset="0%" stopColor="#cbd5e1" />
+            <stop offset="20%" stopColor="#64748b" />
+            <stop offset="40%" stopColor="#f8fafc" />
+            <stop offset="50%" stopColor="#ffffff" />
+            <stop offset="60%" stopColor="#f1f5f9" />
+            <stop offset="80%" stopColor="#94a3b8" />
+            <stop offset="100%" stopColor="#e2e8f0" />
             <animateTransform
               attributeName="gradientTransform"
               type="translate"
               values="-0.4 0; 0.4 0; -0.4 0"
-              dur="6s"
+              dur="5s"
               repeatCount="indefinite"
             />
           </linearGradient>
