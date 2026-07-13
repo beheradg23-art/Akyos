@@ -68,8 +68,8 @@ export const LIQUID_GRADIENT_FILL: React.CSSProperties = {
 // luminance mode in some engines, where transparent-to-*black* reads as
 // "zero luminance either way" and never reveals anything.
 //
-// `to top right` is a real CSS gradient keyword, not an approximated
-// angle — it points exactly from the bottom-left corner to the opposite
+// `to bottom left` is a real CSS gradient keyword, not an approximated
+// angle — it points exactly from the top-right corner to the opposite
 // corner regardless of the element's own aspect ratio, which is what was
 // asked for (a 36px square icon badge and a wide card both get a true
 // corner-to-corner sweep, not just a similar-looking one).
@@ -96,8 +96,8 @@ export const SWEEP_REVEAL_ANIMATION = 'akyos-sweep-reveal 3s cubic-bezier(0.16, 
 // `--akyos-sweep` custom property above changes), spread into an
 // element's style alongside SWEEP_REVEAL_ANIMATION.
 export const SWEEP_REVEAL_STYLE: React.CSSProperties = {
-  WebkitMaskImage: `linear-gradient(to top right, transparent calc(var(--akyos-sweep) - ${SWEEP_FEATHER_PCT}%), white calc(var(--akyos-sweep) + ${SWEEP_FEATHER_PCT}%))`,
-  maskImage: `linear-gradient(to top right, transparent calc(var(--akyos-sweep) - ${SWEEP_FEATHER_PCT}%), white calc(var(--akyos-sweep) + ${SWEEP_FEATHER_PCT}%))`,
+  WebkitMaskImage: `linear-gradient(to bottom left, transparent calc(var(--akyos-sweep) - ${SWEEP_FEATHER_PCT}%), white calc(var(--akyos-sweep) + ${SWEEP_FEATHER_PCT}%))`,
+  maskImage: `linear-gradient(to bottom left, transparent calc(var(--akyos-sweep) - ${SWEEP_FEATHER_PCT}%), white calc(var(--akyos-sweep) + ${SWEEP_FEATHER_PCT}%))`,
   WebkitMaskSize: '100% 100%',
   maskSize: '100% 100%',
   WebkitMaskRepeat: 'no-repeat',
