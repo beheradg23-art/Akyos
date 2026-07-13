@@ -584,24 +584,49 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
   // gradient the rest of the app (buttons, avatars, progress fills) uses,
   // via liquidFillStyle() from liquidFill.ts, so this reads as one
   // consistent "live" material rather than a one-off card-specific effect.
+  //
+  // Both the badge and the title are built as two stacked layers rather
+  // than one element whose style flips on hover. The base layer (neutral
+  // icon/border, solid white text) is always rendered at full opacity —
+  // it never disappears. A second, absolutely-positioned copy carrying
+  // the gradient fill sits on top of it and is the only thing the sweep
+  // animation touches; the sweep's mask only ever affects *that* copy's
+  // own opacity, revealing it progressively over the static base
+  // underneath. So instead of the text/icon vanishing wherever the sweep
+  // hasn't reached yet (which is what a single swapped-style element
+  // gives you, since the "hidden" state of a bg-clip-text element is
+  // nothing at all), the base stays put everywhere and the gradient
+  // simply overrides on top of it as it sweeps through — a premium
+  // "coating" look rather than a flicker.
   const hovering = useContext(CardHoverContext);
   return (
     <div className="flex items-center gap-3 mb-5">
       <div
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors duration-300"
-        style={
-          hovering
-            ? { ...liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }), borderColor: 'transparent' }
-            : { backgroundColor: 'rgba(38, 38, 38, 0.8)', borderColor: 'rgba(64, 64, 64, 0.6)' }
-        }
+        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+        style={{ backgroundColor: 'rgba(38, 38, 38, 0.8)', borderColor: 'rgba(64, 64, 64, 0.6)' }}
       >
-        <Icon className={`h-4.5 w-4.5 transition-colors duration-300 ${hovering ? 'text-neutral-950' : 'text-neutral-300'}`} strokeWidth={1.75} />
+        <Icon className="h-4.5 w-4.5 text-neutral-300" strokeWidth={1.75} />
+        {hovering && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg"
+            style={{ ...liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }), borderColor: 'transparent' }}
+          >
+            <Icon className="h-4.5 w-4.5 text-neutral-950" strokeWidth={1.75} />
+          </div>
+        )}
       </div>
-      <h2
-        className={`text-[15px] font-semibold tracking-tight transition-colors duration-300 ${hovering ? 'bg-clip-text text-transparent' : 'text-neutral-100'}`}
-        style={hovering ? liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }) : undefined}
-      >
+      <h2 className="relative text-[15px] font-semibold tracking-tight text-neutral-100">
         {title}
+        {hovering && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-clip-text text-transparent"
+            style={liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE })}
+          >
+            {title}
+          </span>
+        )}
       </h2>
     </div>
   );
