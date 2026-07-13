@@ -14,7 +14,7 @@ import {
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
-import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../lib/liquidFill';
+import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES } from '../lib/liquidFill';
 
 const PASSCODE_LENGTH = 6;
 
@@ -1498,6 +1498,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     <>
       <style>{NO_SELECT_CSS}</style>
       <style>{LIQUID_GRADIENT_KEYFRAMES}</style>
+      {/* The `akyos-sweep-reveal` keyframes (and the `--akyos-sweep`
+          @property they animate) live in lib/liquidFill.ts alongside the
+          rest of the app's sweep effect, but AuthGate renders before the
+          main App component ever mounts its own copy of these — so the
+          Email/Password focus sweep added here needs its own injection,
+          same as the liquid-fill keyframes just above. */}
+      <style>{SWEEP_REVEAL_KEYFRAMES}</style>
       {/* Stage content (and its cascade-in) only mounts once the "1%
           Better Every Day." beat has cleared, so its cascade timers —
           and IntroReveal's — start together right after, instead of
