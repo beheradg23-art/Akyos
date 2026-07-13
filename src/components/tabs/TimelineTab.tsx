@@ -25,45 +25,6 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
 
   return (
     <div className="animate-fadeIn">
-      <style>{`
-        /* Rotating "sweep stroke" for the Master Timeline blocks: a bright
-           arc travels endlessly around each block's border ring. Built as
-           a ::before layered on top of the block, masked with
-           mask-composite: exclude so only the border-width ring (padding
-           below) is ever painted — the content-box middle is punched out
-           of the mask entirely, so the label/time/icon text underneath is
-           never touched by this, only the box's own border area is. */
-        @property --tl-sweep-angle {
-          syntax: '<angle>';
-          inherits: false;
-          initial-value: 0deg;
-        }
-        .tl-sweep-box {
-          position: relative;
-        }
-        .tl-sweep-box::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          padding: 1.5px;
-          background: conic-gradient(from var(--tl-sweep-angle),
-            transparent 0deg,
-            transparent 264deg,
-            rgba(167,139,250,0.85) 300deg,
-            rgba(216,180,254,1) 315deg,
-            rgba(167,139,250,0.85) 330deg,
-            transparent 360deg);
-          -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          -webkit-mask-composite: xor;
-          mask-composite: exclude;
-          animation: tl-sweep-rotate 4.5s linear infinite;
-          pointer-events: none;
-        }
-        @keyframes tl-sweep-rotate {
-          to { --tl-sweep-angle: 360deg; }
-        }
-      `}</style>
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
         <EditableSectionHeading id="tl_master" defaultTitle="Master Timeline" defaultIcon={Clock3} subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
         <RippleButton
@@ -103,7 +64,7 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
                 arrayTitle: 'Tactical Blueprint',
                 arrayItems: slot.subject ? ['Execute active recall models', 'Avoid passive consumption modes', 'Track mistake logs inside errors catalog'] : ['Execute standard systemic recovery actions']
               })}
-              className={`tl-sweep-box flex items-center gap-4 rounded-xl border border-neutral-800 bg-neutral-900/50 border-l-2 ${typeStyle[slot.type]} px-4 py-3.5 cursor-pointer transition-all hover:bg-neutral-900/90 hover:translate-x-1`}
+              className={`flex items-center gap-4 rounded-xl border border-neutral-800 bg-neutral-900/50 border-l-2 ${typeStyle[slot.type]} px-4 py-3.5 cursor-pointer transition-all hover:bg-neutral-900/90 hover:translate-x-1`}
             >
               <div className="w-[92px] shrink-0 tabular-nums text-[12.5px] font-medium text-neutral-400">
                 {slot.start === slot.end ? slot.start : `${slot.start}–${slot.end}`}
