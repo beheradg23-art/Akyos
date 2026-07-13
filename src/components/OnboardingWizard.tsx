@@ -623,9 +623,9 @@ export default function OnboardingWizard({
   // ---------------- Intro ----------------
   if (stage === 'intro') {
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto sm:px-10">
         <style>{NO_SELECT_CSS}</style>
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md sm:max-w-lg md:max-w-xl">
           <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
             <Sparkles className="h-5 w-5 text-neutral-950" strokeWidth={2} />
           </div>
@@ -635,7 +635,7 @@ export default function OnboardingWizard({
           </p>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Name</label>
                 <input value={answers.name} onChange={(e) => setAnswers((a) => ({ ...a, name: e.target.value }))} placeholder="Optional" className={inputCls} />
@@ -646,7 +646,7 @@ export default function OnboardingWizard({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Wake time</label>
                 <TimeField value={answers.wake} onChange={(e) => setAnswers((a) => ({ ...a, wake: e.target.value }))} className={inputCls} />
@@ -849,9 +849,9 @@ export default function OnboardingWizard({
     }
 
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 py-10 overflow-y-auto sm:px-10">
         <style>{NO_SELECT_CSS}</style>
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-md sm:max-w-lg md:max-w-xl">
           <div className="mb-1.5 flex items-center gap-2">
             {selectedDomains.map((_, i) => (
               <span key={i} className={`h-1 flex-1 rounded-full ${i <= domainStep ? 'bg-violet-500' : 'bg-neutral-800'}`} />
@@ -948,9 +948,9 @@ export default function OnboardingWizard({
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col items-center bg-zinc-950 px-6 py-10 overflow-y-auto">
+    <div className="fixed inset-0 z-[999] flex flex-col items-center bg-zinc-950 px-6 py-10 overflow-y-auto sm:px-10">
       <style>{NO_SELECT_CSS}</style>
-      <div className="w-full max-w-lg">
+      <div className="w-full max-w-lg sm:max-w-xl md:max-w-2xl">
         <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50">Here's what we built</h1>
         <p className="mb-4 text-[12.5px] leading-relaxed text-neutral-500">
           Not quite right? Regenerate any section, or just continue — everything below stays fully editable in Settings afterward.
