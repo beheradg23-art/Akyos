@@ -56,7 +56,7 @@ import {
 // in PHASE_9_PART1_HANDOFF.md — config.timeline/config.diet items need a
 // resolved `.icon` component, not just an `iconName` string, or the
 // Timeline/Training & Fuel tabs crash trying to render `<slot.icon />`).
-import { hydrateTimeline, hydrateDiet, DEFAULT_DIET_OVERRIDES, type DietOverrideKey } from '../lib/appConfig';
+import { hydrateTimeline, hydrateDiet, DEFAULT_DIET_OVERRIDES, DEFAULT_PROFILE, type DietOverrideKey } from '../lib/appConfig';
 // Same moving, glossy gradient treatment used for the icon badge and
 // primary buttons on the sign-in screen (AuthGate) and the main app
 // header/nav (App.tsx) — shared here so the wizard's icon badges and CTA
@@ -680,7 +680,21 @@ export default function OnboardingWizard({
       trackerItems: fallbackChecklist(),
       timeline: hydrateTimeline(fallbackTimeline(answers.wake, answers.sleep)) as TimelineBlock[],
       training: fallbackTraining(true),
-      profile: { name: answers.name || 'Your Name', goalLabel: 'Add your goal', birthdate: answers.birthdate || defaultBirthdate() } as any,
+      // Bug fix: this used to only set {name, goalLabel, birthdate}. App.tsx's
+      // updateConfig() does a shallow `{...prev, ...partial}` merge, so a
+      // partial `profile` here REPLACES the entire default profile rather
+      // than merging into it — that left `profile.targets` (and height/
+      // weight/category/baseline/boards/targetDate) undefined, and
+      // OverviewTab's `profile.targets.map(...)` crashed on the very next
+      // render. Spread DEFAULT_PROFILE first so every field the dashboard
+      // reads is always defined, same as the `finish()` path above.
+      profile: {
+        ...DEFAULT_PROFILE,
+        ...fallbackTargets(''),
+        name: answers.name || 'Your Name',
+        goalLabel: 'Add your goal',
+        birthdate: answers.birthdate || defaultBirthdate(),
+      },
       subjects: fb.subjects,
       syllabus: fb.syllabus,
       // "Skip" never asked about domains, so this intentionally leaves
