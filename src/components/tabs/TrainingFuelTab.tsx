@@ -113,7 +113,7 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
   return (
     <div className="space-y-8 animate-fadeIn">
       {showWorkout && (
-      <div>
+      <Card>
         <EditableSectionHeading id="tf_workout" defaultTitle="Hybrid Vascularity Workout Split" defaultIcon={Dumbbell} subtitle="Select day to map active routines. Click any individual exercise to view strict mechanical form guides." />
         <div className="flex flex-wrap gap-2 mb-4">
           {training.map((d) => (
@@ -157,13 +157,13 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
             ))}
           </div>
         </Card>
-      </div>
+      </Card>
       )}
 
       <WeightTrackerCard />
 
       {showFuel && (
-      <div>
+      <Card>
         <EditableSectionHeading id="tf_fuel" defaultTitle="Fuel Matrix" defaultIcon={Flame} subtitle="Meals, targets & icons" />
         <div className="mb-4 flex flex-wrap gap-2.5">
           <StatPill icon={Flame} label="Calorie Target" value={dietValues.calories} accent="amber" />
@@ -259,7 +259,7 @@ export function TrainingFuelTab({ setModal, dietLog, setDietLog, currentDateStr 
             );
           })}
         </div>
-      </div>
+      </Card>
       )}
 
       {!showWorkout && !showFuel && (
