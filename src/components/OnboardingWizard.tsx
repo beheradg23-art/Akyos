@@ -229,26 +229,42 @@ const hintCls = 'mt-1 text-[11px] text-neutral-600';
 // pattern used in App.tsx), a scrollable `children` region for the actual
 // form content, and a `footer` region pinned to the bottom of the
 // viewport. Each region keeps its own fixed place regardless of how much
-// content is in the others or how tall the screen is — on mobile the
-// sidebar stacks above the header instead of living in a side column.
+// content is in the others or how tall the screen is.
+//
+// On tablet/mobile, stacking the full sidebar block on top of the header
+// ate too much vertical space and left barely any room for the scrollable
+// form beneath it. When `mobileHeader` is passed, the sidebar is hidden
+// below the `lg` breakpoint entirely and its context folds into the
+// header instead (swapped icon + single-line title, no subtext) — so on
+// small screens there's just one compact header row, then content. Only
+// affects <lg; the desktop layout (full sidebar column + full brand
+// header) is unchanged either way.
 function OnboardingShell({
   sidebar,
   children,
   footer,
+  mobileHeader,
 }: {
   sidebar: React.ReactNode;
   children: React.ReactNode;
   footer: React.ReactNode;
+  mobileHeader?: { icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; title: string };
 }) {
+  const MobileIcon = mobileHeader?.icon;
   return (
     <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950 lg:flex-row">
       <style>{NO_SELECT_CSS}{LIQUID_GRADIENT_KEYFRAMES}</style>
 
       {/* Sidebar segment — its own fixed, left-aligned column on desktop.
           Independent of the content area's scroll (gets its own scroll
-          only if its content ever runs long); on mobile it's a stacked
-          block above the header instead. */}
-      <div className="shrink-0 border-b border-neutral-900 px-6 pt-8 pb-6 text-left sm:px-10 lg:w-[340px] lg:border-b-0 lg:border-r lg:overflow-y-auto lg:px-10 lg:py-12 xl:w-[380px]">
+          only if its content ever runs long). Below lg, it's either a
+          stacked block above the header (default) or hidden entirely in
+          favor of the compact mobileHeader row (when provided). */}
+      <div
+        className={`shrink-0 border-b border-neutral-900 px-6 pt-8 pb-6 text-left sm:px-10 lg:block lg:w-[340px] lg:border-b-0 lg:border-r lg:overflow-y-auto lg:px-10 lg:py-12 xl:w-[380px] ${
+          mobileHeader ? 'hidden' : ''
+        }`}
+      >
         {sidebar}
       </div>
 
@@ -257,10 +273,22 @@ function OnboardingShell({
         {/* Header segment — the app's own branding, fixed at the top and
             never scrolls, same mark used for the main app header. */}
         <div className="flex shrink-0 items-center gap-3 border-b border-neutral-900 px-6 py-4 sm:px-10 lg:px-12">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20" style={liquidFillStyle()}>
+          {mobileHeader && (
+            <>
+              {/* Mobile/tablet compact header — swapped-in icon + single
+                  title, no subtext, vertically centered next to the icon. */}
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20 lg:hidden" style={liquidFillStyle()}>
+                {MobileIcon && <MobileIcon className="h-4 w-4 text-neutral-950" strokeWidth={2} />}
+              </div>
+              <h2 className="min-w-0 truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50 lg:hidden">
+                {mobileHeader.title}
+              </h2>
+            </>
+          )}
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20 ${mobileHeader ? 'hidden lg:flex' : ''}`} style={liquidFillStyle()}>
             <GraduationCap className="h-4.5 w-4.5 text-neutral-950" strokeWidth={2} />
           </div>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${mobileHeader ? 'hidden lg:block' : ''}`}>
             <h2 className="truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50">Akyos</h2>
             <p className="mt-0.5 truncate text-[11px] text-neutral-500">Your Answer to Chaos</p>
           </div>
@@ -695,6 +723,7 @@ export default function OnboardingWizard({
   if (stage === 'intro') {
     return (
       <OnboardingShell
+        mobileHeader={{ icon: Sparkles, title: "Let's Set-Up Akyos for You" }}
         sidebar={
           <>
             <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
