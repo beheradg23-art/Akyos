@@ -217,13 +217,15 @@ const hintCls = 'mt-1 text-[11px] text-neutral-600';
 // screenshot this was built from), and on short viewports the footer
 // button could get pushed off-screen entirely.
 //
-// This replaces that with a fixed three-part layout that never centers as
-// one blob: a `sidebar` region (branding / step context — sticky within
-// the scroll area on desktop, stacked on top on mobile), a scrollable
-// `children` region for the actual form content, and a `footer` region
-// that's pinned to the bottom of the viewport and never scrolls out of
-// view. Each region keeps its own fixed place regardless of how much
-// content is in the others or how tall the screen is.
+// This is a fixed four-part layout that never centers as one blob: a
+// `sidebar` region (per-step branding/context) pinned as its own
+// left-aligned column that never scrolls with the form, a `header` region
+// above the form carrying the app's own branding (matching the header
+// pattern used in App.tsx), a scrollable `children` region for the actual
+// form content, and a `footer` region pinned to the bottom of the
+// viewport. Each region keeps its own fixed place regardless of how much
+// content is in the others or how tall the screen is — on mobile the
+// sidebar stacks above the header instead of living in a side column.
 function OnboardingShell({
   sidebar,
   children,
@@ -234,23 +236,39 @@ function OnboardingShell({
   footer: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950">
+    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950 lg:flex-row">
       <style>{NO_SELECT_CSS}</style>
 
-      {/* Scrollable middle region — sidebar + form. This is the only part
-          that ever scrolls; header and footer stay put. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-6 pt-8 pb-8 sm:max-w-lg sm:px-10 sm:pt-10 lg:max-w-6xl lg:flex-row lg:items-start lg:gap-16 lg:px-16 lg:pt-12 xl:max-w-7xl">
-          <div className="lg:sticky lg:top-12 lg:w-[360px] lg:shrink-0">{sidebar}</div>
-          <div className="min-w-0 flex-1 lg:max-w-2xl xl:max-w-3xl">{children}</div>
-        </div>
+      {/* Sidebar segment — its own fixed, left-aligned column on desktop.
+          Independent of the content area's scroll (gets its own scroll
+          only if its content ever runs long); on mobile it's a stacked
+          block above the header instead. */}
+      <div className="shrink-0 border-b border-neutral-900 px-6 pt-8 pb-6 text-left sm:px-10 lg:w-[340px] lg:border-b-0 lg:border-r lg:overflow-y-auto lg:px-10 lg:py-12 xl:w-[380px]">
+        {sidebar}
       </div>
 
-      {/* Fixed footer region — always visible, always in the same spot,
-          aligned under the form column (not the sidebar) on desktop. */}
-      <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 backdrop-blur-sm">
-        <div className="mx-auto w-full max-w-md px-6 py-4 sm:max-w-lg sm:px-10 lg:max-w-6xl lg:px-16 xl:max-w-7xl">
-          <div className="lg:pl-[376px]">{footer}</div>
+      {/* Right column: branded header (fixed) + scrollable content + fixed footer. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Header segment — the app's own branding, fixed at the top and
+            never scrolls, same mark used for the main app header. */}
+        <div className="flex shrink-0 items-center gap-3 border-b border-neutral-900 px-6 py-4 sm:px-10 lg:px-12">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-md shadow-violet-500/20">
+            <GraduationCap className="h-4.5 w-4.5 text-neutral-950" strokeWidth={2} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50">Akyos</h2>
+            <p className="mt-0.5 truncate text-[11px] text-neutral-500">Your Answer to Chaos</p>
+          </div>
+        </div>
+
+        {/* Content segment — the only part of the right column that scrolls. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6 sm:px-10 lg:px-12">
+          <div className="mx-auto w-full max-w-2xl">{children}</div>
+        </div>
+
+        {/* Footer segment — fixed at the bottom, always visible. */}
+        <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 px-6 py-4 backdrop-blur-sm sm:px-10 lg:px-12">
+          {footer}
         </div>
       </div>
     </div>
