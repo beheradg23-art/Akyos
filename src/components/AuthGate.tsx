@@ -14,7 +14,7 @@ import {
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
-import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES } from '../lib/liquidFill';
+import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, liquidFillStyle } from '../lib/liquidFill';
 
 const PASSCODE_LENGTH = 6;
 
@@ -92,35 +92,114 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-// The left-half visual panel for the desktop sign-in layout.
-//
-// Deliberately calm rather than busy: a near-black panel with a faint
-// grain texture, a dim dot grid, and two very soft, slow-drifting brand-
-// colored glows in the corners for a hint of color and depth. The one
-// interactive touch is a "spotlight" — a brighter patch of the same dot
-// grid, masked to a soft circle that follows the cursor — the same
-// technique behind the hero backgrounds on sites like Linear and Vercel.
-// No animation loop is needed for the spotlight: a single CSS custom
-// property is written directly on mousemove and a CSS mask does the rest,
-// so this whole panel costs nothing when the mouse isn't moving.
-function SignInVisualPanel() {
-  const containerRef = useRef<HTMLDivElement>(null);
+// A small looped replay of the app's boot splash (IntroLoader): the 0 ->
+// 100% count-up, held for a beat on the full brand reveal, then a quick
+// fade back to 0 to start again. Runs on a single requestAnimationFrame
+// driven by elapsed-time-mod-cycle-length rather than chained setTimeouts,
+// so it can loop indefinitely without ever drifting or stacking timers.
+function LoopingIntroReplay() {
+  const [percent, setPercent] = useState(0);
+  const [stage, setStage] = useState<'counting' | 'reveal' | 'fadeOut'>('counting');
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    el.style.setProperty('--spot-x', `${e.clientX - rect.left}px`);
-    el.style.setProperty('--spot-y', `${e.clientY - rect.top}px`);
-  };
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reduceMotion) {
+      setPercent(100);
+      setStage('reveal');
+      return;
+    }
+
+    const COUNT_MS = 1900;
+    const REVEAL_HOLD_MS = 900;
+    const FADE_OUT_MS = 450;
+    const PAUSE_MS = 350;
+    const CYCLE_MS = COUNT_MS + REVEAL_HOLD_MS + FADE_OUT_MS + PAUSE_MS;
+
+    let raf: number;
+    const start = performance.now();
+
+    const tick = (now: number) => {
+      const elapsed = (now - start) % CYCLE_MS;
+
+      if (elapsed < COUNT_MS) {
+        const t = elapsed / COUNT_MS;
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic, matches IntroLoader
+        setPercent(Math.round(eased * 100));
+        setStage('counting');
+      } else if (elapsed < COUNT_MS + REVEAL_HOLD_MS) {
+        setPercent(100);
+        setStage('reveal');
+      } else if (elapsed < COUNT_MS + REVEAL_HOLD_MS + FADE_OUT_MS) {
+        setStage('fadeOut');
+      } else {
+        setPercent(0);
+        setStage('counting');
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   return (
     <div
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center"
-      style={{ ['--spot-x' as any]: '50%', ['--spot-y' as any]: '50%' }}
+      className={`flex flex-col items-center transition-opacity duration-[450ms] ease-out ${
+        stage === 'fadeOut' ? 'opacity-0' : 'opacity-100'
+      }`}
     >
+      <div
+        className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+        style={liquidFillStyle()}
+      >
+        <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+      </div>
+
+      <span className="mb-6 text-[10px] font-medium uppercase tracking-[0.35em] text-neutral-500">Akyos</span>
+
+      <div className="flex items-start leading-none tabular-nums">
+        <span
+          className="font-extralight text-transparent bg-clip-text bg-gradient-to-br from-neutral-50 to-neutral-500"
+          style={{ fontSize: 'clamp(2.75rem, 9vw, 4.25rem)' }}
+        >
+          {percent}
+        </span>
+        <span
+          className="mt-1 font-extralight text-neutral-600"
+          style={{ fontSize: 'clamp(1rem, 2.6vw, 1.4rem)' }}
+        >
+          %
+        </span>
+      </div>
+
+      <div className="mt-6 h-px w-36 sm:w-44 overflow-hidden rounded-full bg-neutral-800">
+        <div className="h-full transition-[width] duration-100 ease-linear" style={liquidFillStyle({ width: `${percent}%` })} />
+      </div>
+
+      <div className={`mt-5 text-center transition-opacity duration-300 ${stage === 'reveal' ? 'opacity-100' : 'opacity-0'}`}>
+        <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
+        <p className="mt-1 text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
+      </div>
+    </div>
+  );
+}
+
+// The left-half visual panel for the desktop sign-in layout.
+//
+// Blanked back to a plain near-black panel — no dot grid, no cursor
+// spotlight — with just the two soft, slow-drifting brand-colored glows
+// left for a hint of color and depth, and the app's own boot-splash
+// animation (LoopingIntroReplay) looping in the center instead of a
+// static icon + name. Keeps the panel animated and alive without the
+// dot-grid texture.
+function SignInVisualPanel() {
+  return (
+    <div className="relative hidden h-full overflow-hidden bg-zinc-950 lg:flex lg:w-1/2 lg:items-center lg:justify-center">
       <style>{AMBIENT_DRIFT_KEYFRAMES}</style>
 
       {/* Two soft, mostly-static brand-colored glows for a touch of color
@@ -135,38 +214,10 @@ function SignInVisualPanel() {
         style={{ backgroundImage: `url("${GRAIN_DATA_URI}")` }}
       />
 
-      {/* Dim base dot grid. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.09) 1px, transparent 1px)', backgroundSize: '26px 26px' }}
-      />
-
-      {/* Brighter dot grid, masked to a soft circle that tracks the
-          cursor — the "spotlight" reveal. */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(196,181,253,0.85) 1px, transparent 1px)',
-          backgroundSize: '26px 26px',
-          WebkitMaskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
-          maskImage: 'radial-gradient(240px circle at var(--spot-x) var(--spot-y), black, transparent 72%)',
-        }}
-      />
-
-      {/* The actual brand mark, centered — same icon badge + name used in
-          the app's own header, so this panel reads as unmistakably
-          "this app" rather than generic decoration. */}
-      <div className="relative flex flex-col items-center gap-3">
-        <div
-          className="flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
-          style={liquidFillStyle()}
-        >
-          <GraduationCap className="h-5 w-5 text-neutral-950" strokeWidth={2} />
-        </div>
-        <div className="text-center">
-          <p className="text-[13px] font-semibold tracking-tight text-neutral-200">Akyos</p>
-          <p className="text-[11.5px] text-neutral-600">Your Answer to Chaos</p>
-        </div>
+      {/* Looped replay of the app's boot splash, centered in place of the
+          old static icon + dot grid. */}
+      <div className="relative">
+        <LoopingIntroReplay />
       </div>
     </div>
   );
