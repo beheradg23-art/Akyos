@@ -89,7 +89,7 @@ export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) =
   };
 
   return (
-    <Card className="animate-fadeIn">
+    <div className="animate-fadeIn">
       <EditableSectionHeading id="syl_runway" defaultTitle="Syllabus Runway" defaultIcon={BookOpen} subtitle="Absolute deadline stack. Click on any topic/chapter box to reveal specific deep focus items." />
 
       {staleTopics.length > 0 && (
@@ -215,7 +215,7 @@ export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) =
             );
           })}
       </div>
-    </Card>
+    </div>
   );
 }
 
