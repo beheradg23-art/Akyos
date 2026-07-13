@@ -739,19 +739,21 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [newPasswordBusy, setNewPasswordBusy] = useState(false);
   const [newPasswordError, setNewPasswordError] = useState('');
 
-  // The staggered cascade-in (cascadeStyle) is only meant to play once,
-  // timed against the intro loader finishing. Without this, navigating
-  // away from the sign-in form (e.g. to "Forgot password?") and back
-  // would remount those elements and replay the same multi-hundred-ms
-  // staggered delay every time, making the form feel slow to reappear.
-  const authFirstShowRef = useRef(true);
+  // The staggered cascade-in (cascadeStyle) is only meant to play once, on
+  // the initial page load, timed against the intro loader finishing. This
+  // timer starts the moment the component mounts and fires once the full
+  // cascade sequence would have finished playing; after that, the sign-in
+  // screen always renders instantly, e.g. when returning to it from
+  // "Forgot password?", instead of replaying the staggered entrance.
+  const [authCascadeDone, setAuthCascadeDone] = useState(false);
   useEffect(() => {
-    if (stage === 'auth') {
-      authFirstShowRef.current = false;
-    }
-  }, [stage]);
+    const totalMs = INTRO_REVEAL_AT_MS + 8 * CASCADE_STEP_MS + 750;
+    const t = setTimeout(() => setAuthCascadeDone(true), totalMs);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const authCascadeStyle = (index: number): React.CSSProperties =>
-    authFirstShowRef.current ? cascadeStyle(index) : {};
+    authCascadeDone ? {} : cascadeStyle(index);
 
   const decidePostSyncStage = (userId: string) => {
     setPendingUserId(userId);
