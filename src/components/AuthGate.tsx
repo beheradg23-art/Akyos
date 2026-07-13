@@ -750,6 +750,9 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   // --- forgot-password (send reset email) state ---
   const [resetEmail, setResetEmail] = useState('');
+  // Same focus-gated sweep as the sign-in email field, for the "Reset
+  // Your Password" email box.
+  const [resetEmailFocused, setResetEmailFocused] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -1335,15 +1338,43 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
           {!resetSent ? (
             <form onSubmit={handleSendResetEmail} className="w-full max-w-xs space-y-3">
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-                placeholder="Email"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-              />
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  onFocus={() => setResetEmailFocused(true)}
+                  onBlur={() => setResetEmailFocused(false)}
+                  placeholder="Email"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                />
+                {resetEmailFocused && (
+                  // Same focus-gated sweep as the sign-in email field —
+                  // ring-only cutout filled with the local
+                  // liquidFillStyle() brand gradient, revealed via the
+                  // --akyos-sweep mask (keyframes already injected page-
+                  // wide by the <style> tag at the bottom of this
+                  // component).
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 rounded-xl"
+                    style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                  >
+                    <div
+                      className="absolute inset-0 rounded-xl"
+                      style={{
+                        padding: '1.5px',
+                        WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                        WebkitMaskComposite: 'xor',
+                        maskComposite: 'exclude',
+                        ...liquidFillStyle(),
+                      } as React.CSSProperties}
+                    />
+                  </div>
+                )}
+              </div>
               {resetError && <p className="text-[12px] text-rose-400">{resetError}</p>}
               <button
                 type="submit"
