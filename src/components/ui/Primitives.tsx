@@ -677,29 +677,21 @@ export function Card({ children, className = '', onClick }: { children: React.Re
         // interior — then that ring is filled with the exact same moving
         // liquidFillStyle() gradient used for badges/buttons/avatars
         // elsewhere, so it reads as the same "material" everywhere.
-        // The sweep-reveal animation (below) also animates `mask-image`, to
-        // move the soft diagonal edge across — which would fight the ring's
-        // own mask (used for the content-box cutout, just above). So the
-        // sweep goes on an outer wrapper instead: a parent's mask/opacity
-        // clips the already-ring-shaped child underneath it, letting both
-        // effects stack without either one overwriting the other's
-        // mask-image value.
+        // clip-path (used for the sweep, via liquidFillStyle's animation
+        // merge below) is independent of `mask` — it doesn't fight the
+        // ring's own content-box cutout mask above, so no wrapper element
+        // is needed; both apply cleanly on this one div.
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 rounded-2xl"
-          style={{ animation: SWEEP_REVEAL_ANIMATION }}
-        >
-          <div
-            className="absolute inset-0 rounded-2xl"
-            style={{
-              padding: '1.5px',
-              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-              WebkitMaskComposite: 'xor',
-              maskComposite: 'exclude',
-              ...liquidFillStyle(),
-            } as React.CSSProperties}
-          />
-        </div>
+          style={{
+            padding: '1.5px',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMaskComposite: 'xor',
+            maskComposite: 'exclude',
+            ...liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION }),
+          } as React.CSSProperties}
+        />
       )}
       {onClick && rippleNodes}
       <CardHoverContext.Provider value={hovering}>

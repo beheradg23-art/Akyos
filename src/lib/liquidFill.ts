@@ -37,36 +37,53 @@ export const LIQUID_GRADIENT_FILL: React.CSSProperties = {
 //
 // Previously every hover-triggered gradient (icon badge fill, heading text
 // fill, the card's animated ring) just snapped in at full opacity the
-// moment `hovering` became true. This adds a single-play sweep that masks
-// each of those in behind a soft diagonal edge which travels across the
+// moment `hovering` became true. This adds a single-play sweep that clips
+// each of those in behind a slanted leading edge which grows across the
 // element once, so the gradient reveals itself rather than appearing
 // instantly — the "fade in swipe" effect layers on top of (not instead
 // of) the existing infinite liquid drift, the same way a one-off entrance
 // animation is combined with a looping one elsewhere in this file.
 //
-// The travel direction is 120° measured anticlockwise. CSS gradient angles
-// increase *clockwise* from "0deg = to top", so 120° anticlockwise is
-// -120deg, i.e. 240deg in gradient-angle terms. If the sweep ever needs to
-// run the other way, flip this single constant.
-const SWEEP_ANGLE_DEG = 240;
+// This is `clip-path: polygon(...)`, not an animated mask gradient — a
+// first attempt animated `mask-image` stop offsets directly, but that
+// turned out to be unreliable on two counts: (1) unprefixed `mask-image`
+// defaults to luminance-based masking in some engines, where a
+// transparent-to-*black* gradient reads as "zero luminance either way" and
+// never actually reveals anything (this file's other mask, a few lines
+// down, sidesteps that by using `#fff`, not black); (2) animating a
+// gradient's own stop offsets across keyframes isn't reliably interpolated
+// cross-browser — several engines just snap straight to the end frame.
+// clip-path polygons don't have either problem: two polygons with the same
+// point count always interpolate smoothly, and it doesn't touch `mask` at
+// all, so it layers cleanly on top of the ring's own content-box cutout
+// mask with no wrapper element needed.
+//
+// SWEEP_SKEW is how many percentage points the leading edge's bottom point
+// is offset from its top point — the diagonal "tilt" — approximating the
+// requested 120°-anticlockwise travel. It's an approximation rather than a
+// literal angle because clip-path percentages are relative to each
+// element's own box, and a literal degree would look different on a 36px
+// square icon badge than on a wide card. Flip the sign to tilt the other
+// way; the polygon's other coordinates (-50%/250%/150%) are just generous
+// overshoot so the sweep is fully off-box at 0% and fully on-box at 100%
+// regardless of the element's aspect ratio.
+const SWEEP_SKEW = 80;
 
 export const SWEEP_REVEAL_KEYFRAMES = `
   @keyframes akyos-sweep-reveal {
     0% {
       opacity: 0;
-      -webkit-mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent 0%, transparent 100%, black 130%);
-      mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent 0%, transparent 100%, black 130%);
+      clip-path: polygon(-50% -50%, -50% -50%, ${-50 - SWEEP_SKEW}% 150%, -50% 150%);
     }
-    40% { opacity: 1; }
+    35% { opacity: 1; }
     100% {
       opacity: 1;
-      -webkit-mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent -130%, transparent -30%, black 0%);
-      mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent -130%, transparent -30%, black 0%);
+      clip-path: polygon(-50% -50%, 250% -50%, ${250 - SWEEP_SKEW}% 150%, -50% 150%);
     }
   }
 `;
-// Single play, holds its end state (fully unmasked) once done — `both`
-// fill-mode so the element sits at 0% opacity/fully-masked for the instant
+// Single play, holds its end state (fully unclipped) once done — `both`
+// fill-mode so the element sits at 0% opacity/fully-clipped for the instant
 // before the animation engine kicks in, then stays fully revealed after.
 export const SWEEP_REVEAL_ANIMATION = 'akyos-sweep-reveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both';
 
