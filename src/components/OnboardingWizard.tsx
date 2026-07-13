@@ -57,6 +57,11 @@ import {
 // resolved `.icon` component, not just an `iconName` string, or the
 // Timeline/Training & Fuel tabs crash trying to render `<slot.icon />`).
 import { hydrateTimeline, hydrateDiet, DEFAULT_DIET_OVERRIDES, type DietOverrideKey } from '../lib/appConfig';
+// Same moving, glossy gradient treatment used for the icon badge and
+// primary buttons on the sign-in screen (AuthGate) and the main app
+// header/nav (App.tsx) — shared here so the wizard's icon badges and CTA
+// buttons animate identically instead of sitting flat next to them.
+import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES } from '../lib/liquidFill';
 
 // ---------- First-run setup ----------
 // Shown once, right after a new account picks its passcode (see App.tsx —
@@ -237,7 +242,7 @@ function OnboardingShell({
 }) {
   return (
     <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950 lg:flex-row">
-      <style>{NO_SELECT_CSS}</style>
+      <style>{NO_SELECT_CSS}{LIQUID_GRADIENT_KEYFRAMES}</style>
 
       {/* Sidebar segment — its own fixed, left-aligned column on desktop.
           Independent of the content area's scroll (gets its own scroll
@@ -252,7 +257,7 @@ function OnboardingShell({
         {/* Header segment — the app's own branding, fixed at the top and
             never scrolls, same mark used for the main app header. */}
         <div className="flex shrink-0 items-center gap-3 border-b border-neutral-900 px-6 py-4 sm:px-10 lg:px-12">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-md shadow-violet-500/20">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20" style={liquidFillStyle()}>
             <GraduationCap className="h-4.5 w-4.5 text-neutral-950" strokeWidth={2} />
           </div>
           <div className="min-w-0">
@@ -692,7 +697,7 @@ export default function OnboardingWizard({
       <OnboardingShell
         sidebar={
           <>
-            <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20">
+            <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
               <Sparkles className="h-5 w-5 text-neutral-950" strokeWidth={2} />
             </div>
             <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50 lg:text-[22px]">Let's set up Akyos for you</h1>
@@ -705,7 +710,8 @@ export default function OnboardingWizard({
           <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-center">
             <button
               onClick={startQuestions}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:w-auto sm:px-8"
+              className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:w-auto sm:px-8"
+              style={liquidFillStyle()}
             >
               Continue <ArrowRight className="h-4 w-4" />
             </button>
@@ -920,13 +926,17 @@ export default function OnboardingWizard({
           <>
             <div className="mb-1.5 flex items-center gap-2">
               {selectedDomains.map((_, i) => (
-                <span key={i} className={`h-1 flex-1 rounded-full ${i <= domainStep ? 'bg-violet-500' : 'bg-neutral-800'}`} />
+                <span
+                  key={i}
+                  className={`h-1 flex-1 rounded-full ${i <= domainStep ? '' : 'bg-neutral-800'}`}
+                  style={i <= domainStep ? liquidFillStyle() : undefined}
+                />
               ))}
             </div>
             <p className="mb-4 text-[11px] text-neutral-600">Step {domainStep + 1} of {selectedDomains.length}</p>
 
             <div className="flex items-center gap-2.5 lg:flex-col lg:items-start lg:gap-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/20 shrink-0 lg:h-11 lg:w-11">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20 shrink-0 lg:h-11 lg:w-11" style={liquidFillStyle()}>
                 <Icon className="h-4 w-4 text-neutral-950 lg:h-5 lg:w-5" strokeWidth={2} />
               </div>
               <h1 className="text-[16px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">{domainMeta.label}</h1>
@@ -943,7 +953,8 @@ export default function OnboardingWizard({
             </button>
             <button
               onClick={goNextDomain}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 lg:flex-none lg:px-10"
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 lg:flex-none lg:px-10"
+              style={liquidFillStyle()}
             >
               {isLast ? 'Generate my setup' : 'Next'} <ArrowRight className="h-4 w-4" />
             </button>
@@ -1017,7 +1028,7 @@ export default function OnboardingWizard({
 
   return (
     <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950">
-      <style>{NO_SELECT_CSS}</style>
+      <style>{NO_SELECT_CSS}{LIQUID_GRADIENT_KEYFRAMES}</style>
 
       {/* Header segment — fixed at the top, never scrolls, never moves
           together with the card grid below it. */}
@@ -1121,7 +1132,8 @@ export default function OnboardingWizard({
           </button>
           <button
             onClick={finish}
-            className="order-1 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-sky-400 via-violet-500 to-fuchsia-500 py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:order-2 sm:w-auto sm:px-8"
+            className="order-1 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:order-2 sm:w-auto sm:px-8"
+            style={liquidFillStyle()}
           >
             Looks good — Enter Akyos <ArrowRight className="h-4 w-4" />
           </button>
