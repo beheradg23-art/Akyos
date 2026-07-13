@@ -140,13 +140,6 @@ function SignInVisualPanel() {
         }}
       />
 
-      {/* Oversized, near-invisible wordmark in the corner — a quiet
-          branding touch borrowed from the same minimal-auth-page school
-          (Linear, Raycast) rather than decoration for its own sake. */}
-      <span className="pointer-events-none absolute -bottom-10 -left-4 select-none text-[210px] font-black leading-none tracking-tighter text-white/[0.035]">
-        Akyos
-      </span>
-
       {/* The actual brand mark, centered — same icon badge + name used in
           the app's own header, so this panel reads as unmistakably
           "this app" rather than generic decoration. */}
@@ -746,6 +739,20 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [newPasswordBusy, setNewPasswordBusy] = useState(false);
   const [newPasswordError, setNewPasswordError] = useState('');
 
+  // The staggered cascade-in (cascadeStyle) is only meant to play once,
+  // timed against the intro loader finishing. Without this, navigating
+  // away from the sign-in form (e.g. to "Forgot password?") and back
+  // would remount those elements and replay the same multi-hundred-ms
+  // staggered delay every time, making the form feel slow to reappear.
+  const authFirstShowRef = useRef(true);
+  useEffect(() => {
+    if (stage === 'auth') {
+      authFirstShowRef.current = false;
+    }
+  }, [stage]);
+  const authCascadeStyle = (index: number): React.CSSProperties =>
+    authFirstShowRef.current ? cascadeStyle(index) : {};
+
   const decidePostSyncStage = (userId: string) => {
     setPendingUserId(userId);
     const cachedHash = localStorage.getItem(PASSCODE_HASH_KEY);
@@ -1069,19 +1076,19 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
           <div
             className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
-            style={liquidFillStyle(cascadeStyle(0))}
+            style={liquidFillStyle(authCascadeStyle(0))}
           >
             <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
           </div>
 
-          <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+          <h1 className={`text-[15px] font-semibold tracking-tight text-neutral-50 ${authMode === 'signin' ? 'mb-8' : 'mb-1.5'}`} style={authCascadeStyle(1)}>
             {authMode === 'signin' ? 'Sign In' : 'Create Account'}
           </h1>
-          <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
-            {authMode === 'signin'
-              ? 'Sign in to sync your command center across devices.'
-              : "You'll pick your own passcode right after this."}
-          </p>
+          {authMode !== 'signin' && (
+            <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={authCascadeStyle(2)}>
+              You'll pick your own passcode right after this.
+            </p>
+          )}
 
           <form onSubmit={handleAuthSubmit} className="w-full max-w-xs space-y-3">
             <input
@@ -1093,7 +1100,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Email"
               className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-              style={cascadeStyle(3)}
+              style={authCascadeStyle(3)}
             />
             <PasswordField
               value={password}
@@ -1104,7 +1111,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               placeholder="Password (min 8 characters)"
               showStrength={authMode === 'signup'}
               className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-              style={cascadeStyle(4)}
+              style={authCascadeStyle(4)}
             />
 
             {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
@@ -1114,7 +1121,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               type="submit"
               disabled={authBusy}
               className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
-              style={liquidFillStyle(cascadeStyle(5))}
+              style={liquidFillStyle(authCascadeStyle(5))}
             >
               {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
             </button>
@@ -1129,7 +1136,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 setStage('forgotPassword');
               }}
               className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
-              style={cascadeStyle(6)}
+              style={authCascadeStyle(6)}
             >
               Forgot password?
             </button>
@@ -1142,7 +1149,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               setSignupNotice('');
             }}
             className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
-            style={cascadeStyle(7)}
+            style={authCascadeStyle(7)}
           >
             {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
@@ -1217,54 +1224,58 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   if (stage === 'forgotPassword') {
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
-          <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+      <div className="fixed inset-0 z-[999] flex bg-zinc-950">
+        <SignInVisualPanel />
+
+        <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
+          <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
+            <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+          </div>
+
+          <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">
+            Reset Your Password
+          </h1>
+          <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+            {resetSent
+              ? "Check your inbox — we've sent a link to reset your password."
+              : "Enter your account email and we'll send you a reset link."}
+          </p>
+
+          {!resetSent ? (
+            <form onSubmit={handleSendResetEmail} className="w-full max-w-xs space-y-3">
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                placeholder="Email"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+              />
+              {resetError && <p className="text-[12px] text-rose-400">{resetError}</p>}
+              <button
+                type="submit"
+                disabled={resetBusy}
+                className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                style={liquidFillStyle()}
+              >
+                {resetBusy ? 'Sending…' : 'Send Reset Link'}
+              </button>
+            </form>
+          ) : (
+            <CheckCircle2 className="h-8 w-8 text-violet-400" strokeWidth={2} />
+          )}
+
+          <button
+            onClick={() => {
+              setAuthError('');
+              setStage('auth');
+            }}
+            className="mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+          >
+            Back to sign in
+          </button>
         </div>
-
-        <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">
-          Reset Your Password
-        </h1>
-        <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
-          {resetSent
-            ? "Check your inbox — we've sent a link to reset your password."
-            : "Enter your account email and we'll send you a reset link."}
-        </p>
-
-        {!resetSent ? (
-          <form onSubmit={handleSendResetEmail} className="w-full max-w-xs space-y-3">
-            <input
-              type="email"
-              required
-              autoComplete="email"
-              value={resetEmail}
-              onChange={(e) => setResetEmail(e.target.value)}
-              placeholder="Email"
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-            />
-            {resetError && <p className="text-[12px] text-rose-400">{resetError}</p>}
-            <button
-              type="submit"
-              disabled={resetBusy}
-              className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
-              style={liquidFillStyle()}
-            >
-              {resetBusy ? 'Sending…' : 'Send Reset Link'}
-            </button>
-          </form>
-        ) : (
-          <CheckCircle2 className="h-8 w-8 text-violet-400" strokeWidth={2} />
-        )}
-
-        <button
-          onClick={() => {
-            setAuthError('');
-            setStage('auth');
-          }}
-          className="mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
-        >
-          Back to sign in
-        </button>
       </div>
     );
   }
