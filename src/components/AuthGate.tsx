@@ -594,13 +594,22 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
 // --- One-time "1% Better Every Day." animation for the sign-in panel -----
 //
 // A trimmed-down version of the "1%" beat from OnePercentIntro above: the
-// counter eases up to 1%, then "Better Every Day." drifts in one word at a
+// counter climbs to 1%, then "Better Every Day." drifts in one word at a
 // time. Once the last word has finished writing itself in, it just stops —
 // no zoom, no badge reveal, no fade-out, no loop. The panel is left sitting
-// on that frozen final line. Shares its timing constants, easing, and
-// keyframes with OnePercentIntro so it reads as the same animation, just
-// without the handoff choreography that only made sense full-screen.
+// on that frozen final line.
+//
+// The count-up runs on its own, slower, *linear* clock rather than
+// OnePercentIntro's ease-out-cubic: eased-out easing front-loads almost all
+// of the 0.0→1.0 change into the first ~150ms (fine against a big
+// full-screen number with other things also happening), then the digit
+// just sits at 0.9%/1.0% doing nothing for the rest of the duration — for
+// this small, quiet panel readout that read as the number barely counting
+// at all before snapping straight to "1%". Linear pacing over a longer
+// stretch keeps each tenth on screen for an even, readable beat.
 const PANEL_TEXT_CLASS = 'text-[clamp(1rem,3.2vw,2.35rem)] leading-[1.15]';
+const PANEL_COUNT_MS = 1900; // slower than OnePercentIntro's count — this is the whole show here
+const PANEL_COUNT_PAUSE_MS = 400; // "1%" sits settled before the words start
 
 function PanelBrandIntro() {
   const [countLabel, setCountLabel] = useState('0.0%');
@@ -622,13 +631,14 @@ function PanelBrandIntro() {
     let rafId = 0;
     const start = performance.now();
     const tick = (now: number) => {
-      const t = Math.min((now - start) / ONE_PCT_COUNT_MS, 1);
-      const eased = easeOutCubic(t);
+      const t = Math.min((now - start) / PANEL_COUNT_MS, 1);
       if (t >= 1) {
         setCountLabel(`${ONE_PCT_TARGET}%`);
         return;
       }
-      setCountLabel(`${(eased * ONE_PCT_TARGET).toFixed(1)}%`);
+      // Linear, not eased — every tenth-percent step gets an equal, visible
+      // share of the duration instead of bunching near the start.
+      setCountLabel(`${(t * ONE_PCT_TARGET).toFixed(1)}%`);
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -637,10 +647,11 @@ function PanelBrandIntro() {
 
   useEffect(() => {
     if (reduceMotion) return;
+    const wordStartAt = PANEL_COUNT_MS + PANEL_COUNT_PAUSE_MS;
     const timers: ReturnType<typeof setTimeout>[] = [];
     ONE_PCT_WORDS.forEach((_, i) => {
       timers.push(
-        setTimeout(() => setVisibleWordCount(i + 1), ONE_PCT_WORD_START_MS + i * ONE_PCT_WORD_STAGGER_MS)
+        setTimeout(() => setVisibleWordCount(i + 1), wordStartAt + i * ONE_PCT_WORD_STAGGER_MS)
       );
     });
     return () => timers.forEach(clearTimeout);
