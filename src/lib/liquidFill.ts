@@ -33,6 +33,43 @@ export const LIQUID_GRADIENT_FILL: React.CSSProperties = {
   animation: LIQUID_ANIMATION,
 };
 
+// --- one-shot "swipe reveal" played the instant a hover starts -----------
+//
+// Previously every hover-triggered gradient (icon badge fill, heading text
+// fill, the card's animated ring) just snapped in at full opacity the
+// moment `hovering` became true. This adds a single-play sweep that masks
+// each of those in behind a soft diagonal edge which travels across the
+// element once, so the gradient reveals itself rather than appearing
+// instantly — the "fade in swipe" effect layers on top of (not instead
+// of) the existing infinite liquid drift, the same way a one-off entrance
+// animation is combined with a looping one elsewhere in this file.
+//
+// The travel direction is 120° measured anticlockwise. CSS gradient angles
+// increase *clockwise* from "0deg = to top", so 120° anticlockwise is
+// -120deg, i.e. 240deg in gradient-angle terms. If the sweep ever needs to
+// run the other way, flip this single constant.
+const SWEEP_ANGLE_DEG = 240;
+
+export const SWEEP_REVEAL_KEYFRAMES = `
+  @keyframes akyos-sweep-reveal {
+    0% {
+      opacity: 0;
+      -webkit-mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent 0%, transparent 100%, black 130%);
+      mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent 0%, transparent 100%, black 130%);
+    }
+    40% { opacity: 1; }
+    100% {
+      opacity: 1;
+      -webkit-mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent -130%, transparent -30%, black 0%);
+      mask-image: linear-gradient(${SWEEP_ANGLE_DEG}deg, transparent -130%, transparent -30%, black 0%);
+    }
+  }
+`;
+// Single play, holds its end state (fully unmasked) once done — `both`
+// fill-mode so the element sits at 0% opacity/fully-masked for the instant
+// before the animation engine kicks in, then stays fully revealed after.
+export const SWEEP_REVEAL_ANIMATION = 'akyos-sweep-reveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both';
+
 // Merges the liquid gradient fill into an element's style, safely combining
 // its infinite animation with any one-shot animation the element already
 // has (e.g. a fade/slide-in) instead of one overwriting the other.

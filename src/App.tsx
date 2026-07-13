@@ -36,7 +36,7 @@ import {
   CONFIG_STORAGE_KEY, TABS, HUNTER_RANKS, ICON_OPTIONS,
 } from './lib/appConfig';
 import { resolveTabKeysForDomains, type GoalDomain } from './lib/questionnaire';
-import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES } from './lib/liquidFill';
+import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES } from './lib/liquidFill';
 import {
   useRipple, MagneticCursor, GlobalDetailModal, QuestClearNotification,
   StreakFlame, MobileStatusStrip,
@@ -754,6 +754,7 @@ export default function JEEDashboard() {
           }
         }
         ${LIQUID_GRADIENT_KEYFRAMES}
+        ${SWEEP_REVEAL_KEYFRAMES}
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }
           to { opacity: 1; transform: scale(1); }

@@ -1,659 +1,779 @@
-// Account tab: profile summary, data backup/restore, password change, cloud
-// sync + push notification cards, and the performance calendar heatmap.
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+// Shared, presentation-only UI primitives used across almost every tab and
+// card in the app: ripple-click buttons/cards, section headings, stat
+// pills, the magnetic cursor, the global detail modal, quest-clear toast,
+// streak flame, and the mobile status strip. Pulled out of App.tsx since
+// these have no dependency on any single tab — everything else imports
+// from here.
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import {
-  Sun, Calendar, ArrowUpRight, ChevronLeft, Download, Upload, ShieldCheck,
-  Settings, UserCircle2, KeyRound, LogOut, Trash2, AlertTriangle,
+  Target, Flame, AlertTriangle, ChevronRight, X, FlameKindling, Swords,
+  Loader2, Calendar, Clock3,
 } from 'lucide-react';
-import { ConfigContext, SECTION_LABEL_ROWS, getLocalDateString, getDayName, DailyCheckLog } from '../../lib/appConfig';
-import { liquidFillStyle } from '../../lib/liquidFill';
-import { Card, RippleButton, SectionHeading, ModalData } from '../ui/Primitives';
-import { EditableSectionHeading } from '../shared/EditableSectionHeading';
-import CloudSyncCard from '../CloudSyncCard';
-import PushNotificationsCard from '../PushNotificationsCard';
-import { supabase } from '../../lib/supabaseClient';
-import { toast } from '../../lib/toast';
-import { haptic } from '../../lib/haptics';
-import PasswordField from '../PasswordField';
-import PasscodeChangeCard from '../PasscodeChangeCard';
-import {
-  SYNC_KEYS, resetLocalAccountState, LAST_ACTIVE_USER_KEY,
-  hashPasscode, getPasscodeHash, PASSCODE_HASH_KEY,
-} from '../../lib/cloudSync';
+import { ConfigContext, HunterRank } from '../../lib/appConfig';
+import { liquidFillStyle, SWEEP_REVEAL_ANIMATION } from '../../lib/liquidFill';
 
-export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHistory: DailyCheckLog; setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>> }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+// Lets a Card tell whatever it's wrapping (SectionHeading, in practice)
+// that the pointer is currently over it, without every one of the 30+
+// call sites needing to pass a `hovering` prop down manually. Card is the
+// producer (below); SectionHeading is the only consumer today. Defaults to
+// false so a SectionHeading rendered outside a Card (shouldn't happen, but
+// not enforced) just never lights up instead of crashing.
+export const CardHoverContext = createContext(false);
 
-  // Built from cloudSync's SYNC_KEYS — the same list that already has to be
-  // kept up to date for cloud sync to work — instead of a second,
-  // independently hand-maintained list. Add a key to SYNC_KEYS once and both
-  // cloud sync *and* backup/restore pick it up automatically.
-  const collectBackupPayload = () => {
-    const payload: Record<string, unknown> = {
-      _meta: {
-        app: 'Akyos',
-        exportedAt: new Date().toISOString(),
-        version: 1,
-      },
-    };
-    SYNC_KEYS.forEach((key) => {
-      // globalHistory is the live in-memory copy of jee_command_history_v2 —
-      // prefer it over localStorage so an export always reflects what's on
-      // screen, not whatever was last flushed to disk.
-      payload[key] = key === 'jee_command_history_v2' ? globalHistory : localStorage.getItem(key);
-    });
-    return payload;
-  };
-
-  const handleExport = () => {
-    try {
-      const payload = collectBackupPayload();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `command-center-backup-${getLocalDateString()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Backup downloaded — keep it somewhere safe (Drive, email to yourself, etc).');
-    } catch {
-      toast.error('Could not create the backup file. Try again.');
-    }
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(String(evt.target?.result || ''));
-        if (!parsed || typeof parsed !== 'object' || !parsed.jee_command_history_v2) {
-          throw new Error('Not a valid backup file');
-        }
-
-        setGlobalHistory(parsed.jee_command_history_v2);
-
-        // Restore every other SYNC_KEYS entry present in the file. Driven by
-        // the same list as the export above (and as cloud sync), so a backup
-        // taken after a new feature ships restores that feature's data too,
-        // without this card needing a matching manual update.
-        SYNC_KEYS.forEach((key) => {
-          if (key === 'jee_command_history_v2') return; // handled above
-          if (parsed[key] !== undefined && parsed[key] !== null) {
-            localStorage.setItem(key, parsed[key]);
-          }
-        });
-
-        toast.success('Restored — reloading to apply everything…');
-        setTimeout(() => window.location.reload(), 1100);
-      } catch {
-        toast.error('That file is invalid or corrupted — nothing was changed.');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const dayCount = Object.keys(globalHistory || {}).length;
-
+// ---------------------------------------------------------------------------
+// DateField / TimeField
+// ---------------------------------------------------------------------------
+// Native <input type="date"/"time"> picker icons render in whatever color
+// the browser feels like (usually a near-black glyph), and that color
+// can't be reliably controlled cross-browser — filter/invert tricks on
+// ::-webkit-calendar-picker-indicator are Chromium-only, inconsistent
+// across versions, and easy for something elsewhere in the cascade to
+// override, which is exactly why it kept looking wrong here. Instead: hide
+// the native icon (opacity: 0, stretched over the whole input so the real
+// click target — and therefore the real native picker — still opens no
+// matter where on the field you click) and draw our own Lucide icon on top,
+// fully controlled by normal Tailwind text-color classes, no filter voodoo.
+export function DateField({
+  value,
+  onChange,
+  className = '',
+  iconClassName = 'text-neutral-300',
+  ...rest
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+  iconClassName?: string;
+  [key: string]: any;
+}) {
   return (
-    <Card className="animate-fadeIn">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <EditableSectionHeading
-          id="ac_backup"
-          defaultTitle="Data Backup & Restore"
-          defaultIcon={ShieldCheck}
-          subtitle={`${dayCount} day${dayCount === 1 ? '' : 's'} of history, stored only in this browser`}
-        />
-        <div className="flex items-center gap-2 shrink-0">
-          <RippleButton
-            onClick={handleExport}
-            className="cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-200 hover:bg-neutral-800 transition-colors"
-          >
-            <Download className="h-3.5 w-3.5" /> Export
-          </RippleButton>
-          <RippleButton
-            onClick={handleImportClick}
-            className="cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-200 hover:bg-neutral-800 transition-colors"
-          >
-            <Upload className="h-3.5 w-3.5" /> Import
-          </RippleButton>
-          <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleFileChange} />
-        </div>
-      </div>
-
-      <p className="mt-4 text-[12.5px] text-neutral-500 leading-relaxed">
-        Everything here — the Daily Matrix history, streak, Hunter Rank, mock test scores, and weight log — lives only in this browser's storage. Clearing site data, switching devices, or reinstalling the browser erases it permanently, with no way to recover it. Export a backup file regularly, and import it to restore everything on a new device or after a reset.
-      </p>
-    </Card>
-  );
-}
-
-// ---------- Change Password (inside Account Menu) ----------
-
-export function ChangePasswordCard() {
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  // Inline error stays for form validation (wrong length / mismatch) since
-  // that's tied to a specific field the person needs to look at right now.
-  // The final outcome (saved / failed) goes through the shared toast so it
-  // reads the same way as every other "Saved ✓" moment in the app.
-  const [fieldError, setFieldError] = useState('');
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFieldError('');
-    if (newPassword.length < 8) {
-      setFieldError('Password must be at least 8 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setFieldError("Those didn't match — try again.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
-      haptic.success();
-      toast.success('Password updated.');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err: any) {
-      haptic.error();
-      toast.error(err?.message || 'Could not update your password.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-950/60 p-4 sm:p-5">
-      <div className="flex items-center gap-3 mb-3.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={liquidFillStyle()}>
-          <KeyRound className="h-4.5 w-4.5 text-neutral-950" strokeWidth={2} />
-        </div>
-        <h3 className="text-[13.5px] font-bold text-neutral-100">Change Password</h3>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-2.5">
-        <PasswordField
-          value={newPassword}
-          onChange={setNewPassword}
-          placeholder="New password (min 8 characters)"
-          autoComplete="new-password"
-          minLength={8}
-          showStrength
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
-        />
-        <PasswordField
-          value={confirmPassword}
-          onChange={setConfirmPassword}
-          placeholder="Confirm new password"
-          autoComplete="new-password"
-          minLength={8}
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
-        />
-        {fieldError && <p className="text-[12px] text-rose-400">{fieldError}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-lg py-2.5 text-[12.5px] font-semibold text-neutral-950 transition-opacity disabled:opacity-50"
-          style={liquidFillStyle()}
-        >
-          {busy ? 'Saving…' : 'Update Password'}
-        </button>
-      </form>
+    <div className="relative">
+      <input
+        type="date"
+        value={value}
+        onChange={onChange}
+        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+        {...rest}
+      />
+      <Calendar className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
     </div>
   );
 }
 
-// ---------- Delete Account (inside Account Menu) ----------
-//
-// Required auth, two layers:
-// 1. Client-side gate (this component): the person must re-enter their
-//    current 6-digit app passcode — verified the same way
-//    PasscodeChangeCard.tsx verifies it, against the cached/cloud hash —
-//    and then type the literal word DELETE, before the delete request is
-//    ever sent. Either step failing/being skipped means no request goes
-//    out.
-// 2. Server-side gate (api/delete-account.ts): deleting a Supabase Auth
-//    user requires the *service role* key, a secret that must never reach
-//    the browser, so the actual deletion can only happen in that
-//    serverless function. It independently re-verifies the caller's
-//    Supabase session token (never trusting a user id from the request
-//    body) before deleting anything — so even a request that somehow
-//    skipped step 1 still can't delete an account without a currently
-//    valid session for that exact account.
-//
-// This is deliberately NOT reachable from ChangePasswordCard/PasscodeChangeCard
-// above — it's its own card so the destructive action has its own,
-// separate confirmation flow rather than living as a mode of something
-// else.
-const DELETE_PASSCODE_LENGTH = 6;
-type DeleteStep = 'warning' | 'passcode' | 'confirm-text';
+export function TimeField({
+  value,
+  onChange,
+  className = '',
+  iconClassName = 'text-neutral-300',
+  ...rest
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+  iconClassName?: string;
+  [key: string]: any;
+}) {
+  return (
+    <div className="relative">
+      <input
+        type="time"
+        value={value}
+        onChange={onChange}
+        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+        {...rest}
+      />
+      <Clock3 className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
+    </div>
+  );
+}
 
-export function DeleteAccountCard() {
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<DeleteStep>('warning');
-  const [passcode, setPasscode] = useState('');
-  const [passcodeError, setPasscodeError] = useState(false);
-  const [confirmText, setConfirmText] = useState('');
-  const [userId, setUserId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const passcodeRef = useRef<HTMLInputElement>(null);
-  const confirmRef = useRef<HTMLInputElement>(null);
+export function useRipple() {
+  const [ripples, setRipples] = useState([]);
+
+  const spawnRipple = (e, el) => {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const point = e.touches && e.touches[0] ? e.touches[0] : e;
+    const x = point.clientX - rect.left;
+    const y = point.clientY - rect.top;
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setRipples((prev) => [...prev, { id, x, y }]);
+    setTimeout(() => {
+      setRipples((prev) => prev.filter((r) => r.id !== id));
+    }, 650);
+  };
+
+  const rippleNodes = ripples.map((r) => (
+    <span
+      key={r.id}
+      className="pointer-events-none absolute h-2 w-2 rounded-full bg-white/25 animate-ripple"
+      style={{ left: r.x, top: r.y }}
+    />
+  ));
+
+  return [spawnRipple, rippleNodes];
+}
+
+export function MagneticCursor() {
+  const dotRef = useRef(null);
+  const ringRef = useRef(null);
+  const target = useRef({ x: 0, y: 0 });
+  const pos = useRef({ x: 0, y: 0 });
+  const [active, setActive] = useState(false);
+  const [hovering, setHovering] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    // Everything below is wrapped in a try/catch: this cursor is a cosmetic
+    // enhancement, and the native cursor must never disappear because of a
+    // bug in it. `document.documentElement.classList.add('magnetic-cursor-active')`
+    // is the ONLY thing that hides the native cursor (see the scoped CSS
+    // rule in App.tsx) — if this effect throws or bails out before adding
+    // that class, the browser's normal cursor stays visible.
+    let cleanup = () => {};
+    try {
+      const isFine = window.matchMedia && window.matchMedia('(pointer: fine)').matches;
+      const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (!isFine || reducedMotion) return;
+      setActive(true);
+      document.documentElement.classList.add('magnetic-cursor-active');
+
+      const handleMove = (e) => {
+        target.current.x = e.clientX;
+        target.current.y = e.clientY;
+      };
+      const handleOver = (e) => {
+        if (e.target.closest && e.target.closest('.cursor-target')) setHovering(true);
+      };
+      const handleOut = (e) => {
+        if (e.target.closest && e.target.closest('.cursor-target')) setHovering(false);
+      };
+
+      window.addEventListener('mousemove', handleMove, { passive: true });
+      document.addEventListener('mouseover', handleOver);
+      document.addEventListener('mouseout', handleOut);
+
+      let raf;
+      const loop = () => {
+        try {
+          pos.current.x += (target.current.x - pos.current.x) * 0.18;
+          pos.current.y += (target.current.y - pos.current.y) * 0.18;
+          if (dotRef.current) {
+            dotRef.current.style.transform = `translate3d(${target.current.x}px, ${target.current.y}px, 0) translate(-50%, -50%)`;
+          }
+          if (ringRef.current) {
+            ringRef.current.style.transform = `translate3d(${pos.current.x}px, ${pos.current.y}px, 0) translate(-50%, -50%)`;
+          }
+          raf = requestAnimationFrame(loop);
+        } catch (err) {
+          // A runtime error mid-animation would otherwise kill the loop
+          // silently while cursor:none stayed active. Restore the native
+          // cursor immediately rather than leaving the user pointer-less.
+          console.error('[MagneticCursor] animation loop failed, restoring native cursor', err);
+          document.documentElement.classList.remove('magnetic-cursor-active');
+          setActive(false);
+        }
+      };
+      raf = requestAnimationFrame(loop);
+
+      cleanup = () => {
+        window.removeEventListener('mousemove', handleMove);
+        document.removeEventListener('mouseover', handleOver);
+        document.removeEventListener('mouseout', handleOut);
+        cancelAnimationFrame(raf);
+        document.documentElement.classList.remove('magnetic-cursor-active');
+      };
+    } catch (err) {
+      console.error('[MagneticCursor] failed to initialize, native cursor stays on', err);
+      document.documentElement.classList.remove('magnetic-cursor-active');
+      setActive(false);
+    }
+
+    return () => cleanup();
   }, []);
 
+  if (!active) return null;
+
+  return (
+    <>
+      <div ref={dotRef} className="pointer-events-none fixed left-0 top-0 z-[9999] h-1.5 w-1.5 rounded-full bg-neutral-50" style={{ willChange: 'transform' }} />
+      <div
+        ref={ringRef}
+        className={`pointer-events-none fixed left-0 top-0 z-[9999] rounded-full border bg-transparent mix-blend-difference transition-[width,height,border-color,border-width] duration-200 ease-out ${
+          hovering ? 'h-11 w-11 border-2 border-neutral-50' : 'h-8 w-8 border border-neutral-300/70'
+        }`}
+        style={{ willChange: 'transform' }}
+      />
+    </>
+  );
+}
+
+// ---------- Interactive Modular Overlay Engine ----------
+
+// Shape of the data any tab can hand to setModal() to open the shared
+// GlobalDetailModal. Every field is optional since different callers only
+// fill in the sections relevant to them (e.g. a syllabus topic shows
+// textBody + focusPoints + cues, an exercise guide shows arrayItems).
+export interface ModalData {
+  icon?: React.ComponentType<{ className?: string }>;
+  title: string;
+  subtitle?: string;
+  loading?: boolean;
+  textBody?: string;
+  arrayItems?: string[];
+  arrayTitle?: string;
+  focusPoints?: string[];
+  cues?: string;
+}
+
+export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData | null; onClose: () => void }) {
+  if (!modalData) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+      <div className="w-full max-w-lg overflow-hidden border border-neutral-800 bg-neutral-900 rounded-2xl shadow-2xl animate-modalPop">
+        <div className="flex items-center justify-between border-b border-neutral-800 p-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300">
+              {modalData.icon ? <modalData.icon className="h-4 w-4" /> : <FlameKindling className="h-4 w-4 text-indigo-400" />}
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-neutral-100">{modalData.title}</h3>
+              <p className="text-xs text-neutral-500">{modalData.subtitle || 'System Deep-Dive Data'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="cursor-target p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-all duration-150 active:scale-90">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="p-5 max-h-[70vh] overflow-y-auto space-y-4">
+          {modalData.loading && (
+            <div className="flex items-center gap-2.5 text-sm text-neutral-500 py-6 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading details…
+            </div>
+          )}
+
+          {modalData.textBody && (
+            <p className="text-sm text-neutral-400 leading-relaxed bg-neutral-950/40 border border-neutral-800/60 p-3 rounded-xl">{modalData.textBody}</p>
+          )}
+
+          {modalData.arrayItems && (
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{modalData.arrayTitle || 'Target Items'}</div>
+              <ul className="space-y-2">
+                {modalData.arrayItems.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-neutral-950/30 px-3 py-2 rounded-lg border border-neutral-800/40">
+                    <span className="text-xs text-neutral-600 mt-0.5 font-mono">[{idx + 1}]</span>
+                    <span className="leading-snug">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {modalData.focusPoints && (
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">High-Yield Exam Focus Areas</div>
+              <ul className="space-y-2">
+                {modalData.focusPoints.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-indigo-500/[0.03] border border-indigo-500/20 px-3 py-2 rounded-lg">
+                    <ChevronRight className="h-4 w-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {modalData.cues && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3">
+              <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs uppercase tracking-wide mb-1">
+                <AlertTriangle className="h-3.5 w-3.5" /> Critical Technique Cue
+              </div>
+              <p className="text-xs text-amber-200/80 leading-relaxed">{modalData.cues}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- "System" Quest-Clear Notification ----------
+// A small Solo Leveling homage: the moment the Daily Matrix hits 100%,
+// the game's iconic glowing blue system window drops in to acknowledge it.
+// Fires once per day, and calls out a Hunter Rank-up when the lifetime
+// streak of fully-cleared days crosses a new threshold.
+
+export function TypewriterText({ text }: { text: string }) {
+  const [shown, setShown] = useState('');
   useEffect(() => {
-    if (!open) return;
-    const t = setTimeout(() => {
-      if (step === 'passcode') passcodeRef.current?.focus();
-      if (step === 'confirm-text') confirmRef.current?.focus();
-    }, 50);
-    return () => clearTimeout(t);
-  }, [open, step]);
+    setShown('');
+    let i = 0;
+    const id = setInterval(() => {
+      i += 1;
+      setShown(text.slice(0, i));
+      if (i >= text.length) clearInterval(id);
+    }, 26);
+    return () => clearInterval(id);
+  }, [text]);
 
-  const reset = () => {
-    setStep('warning');
-    setPasscode('');
-    setPasscodeError(false);
-    setConfirmText('');
-  };
+  return (
+    <span>
+      {shown}
+      <span className="inline-block w-[2px] h-[0.95em] bg-indigo-300/80 ml-0.5 align-middle animate-questCursorBlink" />
+    </span>
+  );
+}
 
-  const closeCard = () => {
-    setOpen(false);
-    reset();
-  };
+export interface QuestClearData {
+  rank: HunterRank;
+  isNewRank: boolean;
+}
 
-  // --- verify current passcode, same check PasscodeChangeCard uses ---
+export function QuestClearNotification({ data, onDismiss }: { data: QuestClearData | null; onDismiss: () => void }) {
+  const { trackerItems } = React.useContext(ConfigContext);
+  const [phase, setPhase] = useState('in'); // 'in' | 'out'
+  const sparkles = useMemo(
+    () =>
+      Array.from({ length: 16 }, (_, i) => ({
+        id: i,
+        left: 6 + Math.random() * 88,
+        delay: Math.random() * 1.3,
+        duration: 1.8 + Math.random() * 1.6,
+        size: 2 + Math.random() * 3,
+      })),
+    [data]
+  );
+
   useEffect(() => {
-    if (step !== 'passcode' || passcode.length !== DELETE_PASSCODE_LENGTH || !userId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const hash = await hashPasscode(passcode, userId);
-        const cached = localStorage.getItem(PASSCODE_HASH_KEY) || (await getPasscodeHash(userId).catch(() => null));
-        if (cancelled) return;
-        if (hash === cached) {
-          setPasscodeError(false);
-          setStep('confirm-text');
-        } else {
-          haptic.error();
-          setPasscodeError(true);
-          setTimeout(() => {
-            if (cancelled) return;
-            setPasscode('');
-            setPasscodeError(false);
-            passcodeRef.current?.focus();
-          }, 500);
-        }
-      } catch {
-        if (cancelled) return;
-        toast.error('Could not verify your passcode — check your connection.');
-      }
-    })();
+    if (!data) return;
+    setPhase('in');
+    const outTimer = setTimeout(() => setPhase('out'), 4300);
+    const closeTimer = setTimeout(() => onDismiss(), 4800);
     return () => {
-      cancelled = true;
+      clearTimeout(outTimer);
+      clearTimeout(closeTimer);
     };
-  }, [passcode, step, userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
-  const handleDelete = async () => {
-    if (confirmText !== 'DELETE') return;
-    setBusy(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error('Your session has expired — sign in again and retry.');
+  if (!data) return null;
 
-      const res = await fetch('/api/delete-account', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || 'Could not delete your account.');
+  return (
+    <div
+      className={`fixed inset-0 z-[70] flex items-start justify-center pt-24 sm:pt-28 px-4 pointer-events-none ${
+        phase === 'out' ? 'animate-questOut' : 'animate-questIn'
+      }`}
+    >
+      <div className="relative w-full max-w-md pointer-events-auto">
+        <div className="absolute -inset-6 bg-indigo-500/20 blur-3xl rounded-3xl animate-pulseGlow" />
 
-      // Account is gone server-side — clear every local trace and the
-      // (now-invalid) session, same order handleSignOut uses and for the
-      // same reason: drop the session first, then wipe storage, so no
-      // in-flight autosync can push a stray write anywhere.
-      await supabase.auth.signOut();
-      resetLocalAccountState();
-      localStorage.removeItem(LAST_ACTIVE_USER_KEY);
-      sessionStorage.removeItem('dcc_cloud_synced_this_session');
-      haptic.success();
-      toast.success('Your account has been deleted.');
-      setTimeout(() => window.location.reload(), 900);
-    } catch (err: any) {
-      haptic.error();
-      toast.error(err?.message || 'Could not delete your account. Try again.');
-      setBusy(false);
-    }
+        <div className="absolute inset-0 overflow-hidden rounded-2xl">
+          {sparkles.map((s) => (
+            <span
+              key={s.id}
+              className="absolute bottom-0 rounded-full bg-indigo-300 animate-questSparkle"
+              style={{
+                left: `${s.left}%`,
+                width: s.size,
+                height: s.size,
+                animationDelay: `${s.delay}s`,
+                animationDuration: `${s.duration}s`,
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="relative rounded-2xl border border-indigo-400/40 bg-gradient-to-b from-[#0d0a1f]/95 to-[#08061a]/95 backdrop-blur-xl shadow-[0_0_50px_-8px_rgba(129,140,248,0.45)] overflow-hidden">
+          <span className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-indigo-300/80" />
+          <span className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-indigo-300/80" />
+          <span className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-indigo-300/80" />
+          <span className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-indigo-300/80" />
+
+          <div className="absolute inset-0 animate-questSweep bg-gradient-to-r from-transparent via-indigo-300/10 to-transparent" />
+
+          <div className="relative px-6 py-6 text-center">
+            <p className="text-[10px] tracking-[0.4em] uppercase text-indigo-400/70 font-semibold mb-2">— System —</p>
+            <h3 className="text-lg font-bold text-indigo-50 tracking-wide mb-1 min-h-[1.5em]">
+              <TypewriterText text="Daily Quest Cleared!" />
+            </h3>
+            <p className="text-[12px] text-indigo-200/60 mb-4">All {trackerItems.length} objectives completed for today.</p>
+
+            {data.isNewRank && (
+              <div className="mb-4 animate-fadeInUp" style={{ animationDelay: '1.3s' }}>
+                <div className="text-[10px] uppercase tracking-[0.3em] text-amber-300/70 font-semibold mb-1">Rank Up</div>
+                <div className="text-2xl font-black tracking-tight" style={{ color: data.rank.color }}>
+                  {data.rank.label}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 text-[11px] text-indigo-300/50">
+              <span className="h-1 w-1 rounded-full bg-indigo-400 animate-dotBreathe" />
+              Return to the grind, Hunter.
+              <span className="h-1 w-1 rounded-full bg-indigo-400 animate-dotBreathe" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Streak Flame ----------
+// A small "on fire" indicator for consecutive fully-cleared days — grows from
+// a single spark to a full blaze as the streak climbs, with drifting embers
+// and a flickering core. Purely decorative, purely earned.
+
+export function StreakFlame({ streak }: { streak: number }) {
+  const tier = streak >= 30 ? 'inferno' : streak >= 14 ? 'blaze' : streak >= 5 ? 'ember' : 'spark';
+
+  const emberCount = tier === 'inferno' ? 7 : tier === 'blaze' ? 5 : tier === 'ember' ? 3 : 2;
+  const embers = useMemo(
+    () =>
+      Array.from({ length: emberCount }, (_, i) => ({
+        id: i,
+        left: 20 + Math.random() * 60,
+        delay: Math.random() * 1.6,
+        duration: 1.3 + Math.random() * 1.1,
+        size: 1.5 + Math.random() * 2,
+      })),
+    [emberCount, streak]
+  );
+
+  const coreColor = tier === 'inferno' ? '#fef9c3' : tier === 'blaze' ? '#fb923c' : tier === 'ember' ? '#f97316' : '#f59e0b';
+  const glowColor = tier === 'inferno' ? 'bg-yellow-300/50' : tier === 'blaze' ? 'bg-orange-500/40' : 'bg-orange-500/30';
+
+  if (streak <= 0) return null;
+
+  return (
+    <div className="hidden lg:flex items-center gap-2 rounded-full border border-orange-500/30 bg-orange-500/[0.06] px-3.5 py-1.5">
+      <div className="relative w-4 h-4 flex items-center justify-center overflow-visible">
+        <span className={`absolute inset-0 rounded-full blur-md animate-flameGlow ${glowColor}`} />
+        {embers.map((e) => (
+          <span
+            key={e.id}
+            className="absolute bottom-0 rounded-full animate-emberRise"
+            style={{
+              left: `${e.left}%`,
+              width: e.size,
+              height: e.size,
+              background: 'radial-gradient(circle, #fef3c7, #f97316)',
+              animationDelay: `${e.delay}s`,
+              animationDuration: `${e.duration}s`,
+            }}
+          />
+        ))}
+        <Flame
+          className="relative h-3.5 w-3.5 animate-flameFlicker"
+          style={{ color: coreColor }}
+          strokeWidth={2.2}
+          fill={coreColor}
+          fillOpacity={0.28}
+        />
+      </div>
+      <span className="text-[11.5px] font-semibold tabular-nums" style={{ color: coreColor }}>
+        {streak}-Day Streak
+      </span>
+    </div>
+  );
+}
+
+// Compact, icon-only versions of the streak / hunter rank / execution quotient
+// badges for narrow phone widths where there isn't room for the full pills.
+// Tapping one expands it horizontally to reveal its label; tapping any other
+// badge (or anywhere outside the strip) collapses it again, and only one can
+// be expanded at a time.
+export function MobileStatusStrip({ streak, hunterRank, overallPct }: { streak: number; hunterRank: HunterRank; overallPct: number }) {
+  const [expanded, setExpanded] = useState<null | 'streak' | 'rank' | 'eq'>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setExpanded(null);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [expanded]);
+
+  const toggle = (key: 'streak' | 'rank' | 'eq') => {
+    setExpanded((prev) => (prev === key ? null : key));
   };
 
   return (
-    <div className="rounded-2xl border border-rose-900/40 bg-rose-950/[0.08] p-4 sm:p-5">
+    <div ref={containerRef} className="flex items-center gap-1.5 lg:hidden">
+      {streak > 0 && (
+        <button
+          onClick={() => toggle('streak')}
+          aria-label={`${streak}-day streak`}
+          className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-orange-500/30 bg-orange-500/[0.08] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            expanded === 'streak' ? 'max-w-[140px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+          }`}
+        >
+          <Flame className="h-3.5 w-3.5 shrink-0 text-orange-400" strokeWidth={2.2} fill="#f97316" fillOpacity={0.28} />
+          <span
+            className={`whitespace-nowrap text-[11px] font-semibold text-orange-300 tabular-nums overflow-hidden transition-all duration-200 ${
+              expanded === 'streak' ? 'max-w-[110px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+            }`}
+          >
+            {streak}-Day Streak
+          </span>
+        </button>
+      )}
+
       <button
-        onClick={() => (open ? closeCard() : setOpen(true))}
-        className="flex w-full items-center gap-3 text-left"
+        onClick={() => toggle('rank')}
+        aria-label={hunterRank.label}
+        className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          expanded === 'rank' ? 'max-w-[160px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+        }`}
+        style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
       >
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-950/40 border border-rose-900/40">
-          <Trash2 className="h-4.5 w-4.5 text-rose-300" strokeWidth={2} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[13.5px] font-bold text-rose-200">Delete Account</h3>
-          <p className="text-[11.5px] text-neutral-500">Permanently erase your account and all synced data</p>
-        </div>
+        <Swords className="h-3.5 w-3.5 shrink-0" style={{ color: hunterRank.color }} />
+        <span
+          className={`whitespace-nowrap text-[11px] font-medium overflow-hidden transition-all duration-200 ${
+            expanded === 'rank' ? 'max-w-[130px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+          }`}
+          style={{ color: hunterRank.color }}
+        >
+          {hunterRank.label}
+        </span>
       </button>
 
-      {open && (
-        <div className="mt-4 flex flex-col items-start gap-3 animate-fadeIn">
-          {step === 'warning' && (
-            <>
-              <div className="flex gap-2.5 rounded-lg border border-rose-900/40 bg-rose-950/20 p-3">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
-                <p className="text-[12px] leading-relaxed text-rose-200/90">
-                  This deletes your account, your cloud-synced data, and your passcode.
-                  Anything only stored on THIS device (see Data Backup & Restore above)
-                  is not touched by this — export a backup first if you want to keep it.
-                  This cannot be undone.
-                </p>
-              </div>
-              <button
-                onClick={() => setStep('passcode')}
-                className="rounded-lg border border-rose-800/60 bg-rose-950/40 px-3.5 py-2 text-[12px] font-semibold text-rose-200 hover:bg-rose-900/40 transition-colors"
-              >
-                I understand, continue
-              </button>
-            </>
-          )}
+      <button
+        onClick={() => toggle('eq')}
+        aria-label={`Execution Quotient ${overallPct}%`}
+        className={`flex h-8 shrink-0 items-center overflow-hidden rounded-full border border-neutral-800 bg-neutral-900/60 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          expanded === 'eq' ? 'max-w-[170px] px-3' : 'w-8 max-w-[32px] justify-center px-0'
+        }`}
+      >
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400 animate-pulse" />
+        <span
+          className={`whitespace-nowrap text-[11px] font-medium text-neutral-400 overflow-hidden transition-all duration-200 ${
+            expanded === 'eq' ? 'max-w-[140px] opacity-100 ml-1.5' : 'max-w-0 opacity-0 ml-0'
+          }`}
+        >
+          EQ: <span className="text-violet-400 tabular-nums">{overallPct}%</span>
+        </span>
+      </button>
+    </div>
+  );
+}
 
-          {step === 'passcode' && (
-            <>
-              <p className="text-[12px] text-neutral-400">Enter your current passcode to continue</p>
-              <input
-                ref={passcodeRef}
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value.replace(/\D/g, '').slice(0, DELETE_PASSCODE_LENGTH))}
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="off"
-                aria-label="Current passcode"
-                className={`w-32 rounded-lg border px-3 py-2.5 text-center text-[15px] tracking-[0.4em] outline-none transition-colors ${
-                  passcodeError
-                    ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300 animate-shake'
-                    : 'border-neutral-800 bg-neutral-950/60 text-neutral-100 focus:border-rose-500/50'
-                }`}
-              />
-            </>
-          )}
+// ---------- Standardized Scannable Structural UI Elements ----------
 
-          {step === 'confirm-text' && (
-            <>
-              <p className="text-[12px] text-neutral-400">
-                Type <span className="font-mono font-bold text-rose-300">DELETE</span> to permanently delete your account
-              </p>
-              <input
-                ref={confirmRef}
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                type="text"
-                autoComplete="off"
-                aria-label="Type DELETE to confirm"
-                placeholder="DELETE"
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] font-mono text-neutral-100 placeholder:text-neutral-700 outline-none focus:border-rose-500/50"
-              />
-              <button
-                onClick={handleDelete}
-                disabled={confirmText !== 'DELETE' || busy}
-                className="w-full rounded-lg bg-rose-600 py-2.5 text-[12.5px] font-semibold text-white transition-opacity hover:bg-rose-500 disabled:opacity-40 disabled:hover:bg-rose-600"
-              >
-                {busy ? 'Deleting…' : 'Permanently Delete My Account'}
-              </button>
-            </>
-          )}
+export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.ComponentType<{ className?: string }>; title: string; subtitle?: string }) {
+  // `subtitle` is intentionally no longer rendered — every card used to
+  // carry a small descriptive line under its title ("Core identity &
+  // academic baseline", "V-Taper matrix ratios", etc.) that added visual
+  // noise without adding information the icon + title didn't already
+  // convey. The prop is kept (rather than stripped from every call site)
+  // so nothing upstream needs to change — it's just quietly unused here.
+  // With the second line gone, the icon badge no longer needs the old
+  // items-start + mt-0.5 nudge to line up with where the title used to
+  // sit above the subtitle — it centers naturally against the single line.
+  void subtitle;
+  // Whether the enclosing <Card> currently has the pointer over it — see
+  // CardHoverContext above. Every card header lights up the same way on
+  // hover: icon badge and heading both pick up the same moving brand
+  // gradient the rest of the app (buttons, avatars, progress fills) uses,
+  // via liquidFillStyle() from liquidFill.ts, so this reads as one
+  // consistent "live" material rather than a one-off card-specific effect.
+  const hovering = useContext(CardHoverContext);
+  return (
+    <div className="flex items-center gap-3 mb-5">
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors duration-300"
+        style={
+          hovering
+            ? { ...liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION }), borderColor: 'transparent' }
+            : { backgroundColor: 'rgba(38, 38, 38, 0.8)', borderColor: 'rgba(64, 64, 64, 0.6)' }
+        }
+      >
+        <Icon className={`h-4.5 w-4.5 transition-colors duration-300 ${hovering ? 'text-neutral-950' : 'text-neutral-300'}`} strokeWidth={1.75} />
+      </div>
+      <h2
+        className={`text-[15px] font-semibold tracking-tight transition-colors duration-300 ${hovering ? 'bg-clip-text text-transparent' : 'text-neutral-100'}`}
+        style={hovering ? liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION }) : undefined}
+      >
+        {title}
+      </h2>
+    </div>
+  );
+}
 
-          <button
-            onClick={closeCard}
-            className="text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
-          >
-            Cancel
-          </button>
+export function Card({ children, className = '', onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) {
+  const ref = useRef(null);
+  const fineRef = useRef(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+  const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
+  const [spot, setSpot] = useState({ x: 50, y: 50 });
+  const [hovering, setHovering] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [spawnRipple, rippleNodes] = useRipple();
+
+  const handleMove = (e) => {
+    if (!fineRef.current || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    setTilt({ rx: (0.5 - py) * 7, ry: (px - 0.5) * 7 });
+    setSpot({ x: px * 100, y: py * 100 });
+    setHovering(true);
+  };
+
+  const handleLeave = () => {
+    setHovering(false);
+    setPressed(false);
+    setTilt({ rx: 0, ry: 0 });
+  };
+
+  const handleDown = (e) => {
+    setPressed(true);
+    if (onClick) spawnRipple(e, ref.current);
+  };
+
+  const handleUp = () => setPressed(false);
+
+  return (
+    <div
+      ref={ref}
+      onClick={onClick}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      onMouseDown={handleDown}
+      onMouseUp={handleUp}
+      onTouchStart={handleDown}
+      onTouchEnd={handleUp}
+      className={`cursor-target relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm p-5 will-change-transform ${
+        onClick ? 'cursor-pointer hover:border-neutral-700' : ''
+      } ${className}`}
+      style={{
+        transform: `perspective(900px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) scale(${pressed ? 0.975 : 1})`,
+        transition: hovering ? 'transform 100ms linear' : 'transform 500ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
+    >
+      {hovering && (
+        <div
+          className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+          style={{ background: `radial-gradient(420px circle at ${spot.x}% ${spot.y}%, rgba(255,255,255,0.06), transparent 65%)` }}
+        />
+      )}
+      {hovering && (
+        // The animated gradient outline. This is a separate overlay, not a
+        // real `border`, on purpose: several call sites pass their own
+        // `border ...`/background classes via `className` (the amber
+        // warning card in SyllabusTab, subject-colored cards, the tinted
+        // Countdown card, etc.) — touching the real border/background
+        // here would fight those. Instead, a `padding` on this absolutely-
+        // positioned, inset-0 layer defines a ring thickness, and a CSS
+        // mask cuts out everything except that ring (`content-box` minus
+        // the full box, via mask-composite exclude/xor) so only the edge
+        // itself is painted — the gradient never touches the card's
+        // interior — then that ring is filled with the exact same moving
+        // liquidFillStyle() gradient used for badges/buttons/avatars
+        // elsewhere, so it reads as the same "material" everywhere.
+        // The sweep-reveal animation (below) also animates `mask-image`, to
+        // move the soft diagonal edge across — which would fight the ring's
+        // own mask (used for the content-box cutout, just above). So the
+        // sweep goes on an outer wrapper instead: a parent's mask/opacity
+        // clips the already-ring-shaped child underneath it, letting both
+        // effects stack without either one overwriting the other's
+        // mask-image value.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{ animation: SWEEP_REVEAL_ANIMATION }}
+        >
+          <div
+            className="absolute inset-0 rounded-2xl"
+            style={{
+              padding: '1.5px',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              ...liquidFillStyle(),
+            } as React.CSSProperties}
+          />
         </div>
       )}
+      {onClick && rippleNodes}
+      <CardHoverContext.Provider value={hovering}>
+        <div className="relative">{children}</div>
+      </CardHoverContext.Provider>
     </div>
   );
 }
 
-// ---------- Account Menu ----------
-// Slide-over panel replacing the old standalone "Config & Settings" tab.
-// Holds account identity, cloud sync, password change, data backup/restore,
-// the entry point into Settings, and sign out — everything that isn't
-// day-to-day tracking content lives here now instead of the main nav.
+export function StatPill({ icon: Icon, label, value, accent = 'neutral' }: { icon: React.ComponentType<{ className?: string }>; label: string; value: React.ReactNode; accent?: 'neutral' | 'blue' | 'amber' | 'violet' | 'rose' }) {
+  const accents = {
+    neutral: 'text-neutral-300',
+    blue: 'text-indigo-400',
+    amber: 'text-amber-400',
+    violet: 'text-violet-400',
+    rose: 'text-rose-400'
+  };
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-950/60 px-3.5 py-2.5">
+      <Icon className={`h-4 w-4 shrink-0 ${accents[accent]}`} strokeWidth={1.75} />
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500 leading-none mb-1">{label}</div>
+        <div className="text-[13px] font-medium text-neutral-200 leading-none truncate">{value}</div>
+      </div>
+    </div>
+  );
+}
 
-export function AccountPage({
-  globalHistory, setGlobalHistory,
-}: {
-  globalHistory: DailyCheckLog;
-  setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>>;
-}) {
-  const [email, setEmail] = useState<string | null>(null);
+// ---------- Dynamic Engine: Countdown Matrix Widget ----------
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-  }, []);
+// Was hardcoded to two fixed JEE-specific dates ('2026-11-01' mocks,
+// '2027-01-22' JEE Main) shown to every account regardless of their actual
+// goal, then briefly tied to `profile.targetDate`. Now fully standalone —
+// driven by its own `countdown` config section (Settings > Countdown),
+// deliberately independent of `profile.targets` so someone can track a date
+// that isn't one of their formal priority targets. Ticks live: shows
+// "DD:HH:MM" while more than a day remains, and switches to a live
+// second-by-second "HH:MM:SS" once under 24 hours remain.
+// Renders every countdown the user has set up in Settings > Countdown.
+// A single shared 1s ticker drives all of them (one interval, not N) —
+// each countdown is rendered by CountdownEntry below, all inside one shared
+// card, sorted so the countdown ending soonest is always first. Zero
+// configured countdowns falls back to a single prompt card.
+export function RippleButton({
+  children, onClick, className = '', disabled = false, title, style, ariaLabel,
+}: { children: React.ReactNode; onClick?: () => void; className?: string; disabled?: boolean; title?: string; style?: React.CSSProperties; ariaLabel?: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [spawnRipple, rippleNodes] = useRipple();
 
-  const handleSignOut = async () => {
-    // PHASE 1 FIX: this used to only remove the passcode hash, leaving the
-    // config, routine, weight/diet logs, calendar, everything else sitting
-    // in localStorage for whoever signs into (or creates) the next account
-    // on this device to inherit. Now sign-out wipes every account-scoped
-    // key, and forgets which account this device belonged to —
-    // ensureAccountIsolation() (see cloudSync.ts) still double-checks this
-    // on the next login too, as a second line of defense.
-    //
-    // PHASE 2 FIX: order matters here. useCloudAutoSync (cloudSync.ts) has
-    // a 45s interval AND a `beforeunload` handler that both push whatever's
-    // currently in localStorage to this account's cloud row. If local
-    // storage were wiped BEFORE the session is actually invalidated, either
-    // of those could fire mid-sign-out and push an empty snapshot —
-    // silently overwriting the user's real saved data with blanks. Signing
-    // out FIRST means the Supabase client drops its session immediately, so
-    // any push that sneaks in after that point gets rejected by the
-    // database (no authenticated user_id match) instead of succeeding with
-    // the wrong data. Only once that's done do we touch localStorage.
-    await supabase.auth.signOut();
-    resetLocalAccountState();
-    localStorage.removeItem(LAST_ACTIVE_USER_KEY);
-    sessionStorage.removeItem('dcc_cloud_synced_this_session');
-    window.location.reload();
+  const handleDown = (e: any) => {
+    if (disabled) return;
+    spawnRipple(e, ref.current);
   };
 
   return (
-    <div className="max-w-xl space-y-5 animate-fadeIn">
-      <EditableSectionHeading id="ac_account" defaultTitle="Account" defaultIcon={UserCircle2} subtitle="Profile, cloud sync, security & backups" />
-
-      <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-gradient-to-br from-violet-500/[0.08] via-neutral-950 to-indigo-500/[0.05] p-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-neutral-950" style={liquidFillStyle()}>
-          {email ? email[0].toUpperCase() : <UserCircle2 className="h-6 w-6 text-neutral-950" />}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-neutral-100">{email || 'Not signed in'}</p>
-          <p className="text-[11.5px] text-neutral-500">Signed in via Supabase</p>
-        </div>
-      </div>
-
-      <CloudSyncCard />
-      <PushNotificationsCard />
-      <ChangePasswordCard />
-      <PasscodeChangeCard />
-
-      <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
-
-      <button
-        onClick={handleSignOut}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-900/40 bg-rose-950/20 px-4 py-3 text-[13px] font-semibold text-rose-300 transition-colors hover:bg-rose-950/40"
-      >
-        <LogOut className="h-4 w-4" />
-        Log Out
-      </button>
-
-      <DeleteAccountCard />
-    </div>
+    <button
+      ref={ref}
+      onClick={disabled ? undefined : onClick}
+      onMouseDown={handleDown}
+      onTouchStart={handleDown}
+      disabled={disabled}
+      title={title}
+      aria-label={ariaLabel || title}
+      className={`relative overflow-hidden ${className}`}
+      style={style}
+    >
+      {children}
+      {rippleNodes}
+    </button>
   );
 }
 
-export function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal }: { globalHistory: DailyCheckLog; setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>>; setModal: (data: ModalData | null) => void }) {
-  const { trackerItems } = React.useContext(ConfigContext);
-  const [currentNavDate, setCurrentNavDate] = useState(new Date());
-  
-  const year = currentNavDate.getFullYear();
-  const month = currentNavDate.getMonth();
-
-  const monthName = currentNavDate.toLocaleString('default', { month: 'long' });
-
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayIndex = new Date(year, month, 1).getDay();
-
-  const calendarDays = useMemo(() => {
-    const cells = [];
-    for (let i = 0; i < firstDayIndex; i++) {
-      cells.push(null);
-    }
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      cells.push(dayStr);
-    }
-    return cells;
-  }, [year, month, daysInMonth, firstDayIndex]);
-
-  const handlePastDateClick = (dateStr) => {
-    if (!dateStr) return;
-    const itemsCompleted = globalHistory[dateStr] || {};
-    const arrayItems = trackerItems.map(item => {
-      return `${itemsCompleted[item.id] ? '✅' : '❌'} ${item.label}`;
-    });
-    const completedCount = Object.values(itemsCompleted).filter(Boolean).length;
-    const percentage = Math.round((completedCount / trackerItems.length) * 100);
-
-    setModal({
-      title: `Execution Analysis: ${dateStr}`,
-      subtitle: `${getDayName(dateStr)} · Efficiency Index: ${percentage}%`,
-      icon: Calendar,
-      arrayTitle: `Logged Metric Parameters (${completedCount}/${trackerItems.length})`,
-      arrayItems: arrayItems,
-      cues: percentage === 100 ? 'Absolute perfect operation architecture verified.' : 'Identify points of focus slippage to correct trends.'
-    });
-  };
-
-  const getHeatmapColor = (dateStr) => {
-    if (!dateStr || !globalHistory[dateStr]) return 'bg-neutral-900 border-neutral-800 text-neutral-600';
-    const checks = globalHistory[dateStr];
-    const score = Object.values(checks).filter(Boolean).length;
-    const pct = score / trackerItems.length;
-
-    if (score === 0) return 'bg-neutral-900 border-neutral-800 text-neutral-500';
-    if (pct <= 0.3) return 'bg-rose-950/60 border-rose-800/40 text-rose-300 hover:bg-rose-900/50';
-    if (pct <= 0.6) return 'bg-amber-950/60 border-amber-800/40 text-amber-300 hover:bg-amber-900/50';
-    if (pct < 1) return 'bg-violet-950/40 border-violet-800/40 text-violet-300 hover:bg-violet-900/40';
-    return 'text-neutral-950 border-violet-400 font-bold';
-  };
-
-  // Perfect (100%) days get the animated liquid gradient fill instead of a
-  // flat one; this stays separate from getHeatmapColor because that helper
-  // only returns className strings, not inline style.
-  const isPerfectHeatmapDay = (dateStr: string) => {
-    if (!dateStr || !globalHistory[dateStr]) return false;
-    const checks = globalHistory[dateStr];
-    const score = Object.values(checks).filter(Boolean).length;
-    return score / trackerItems.length >= 1;
-  };
-
-  return (
-    <div className="space-y-5">
-      <Card className="animate-fadeIn">
-      <div className="flex items-center justify-between mb-6">
-        <EditableSectionHeading id="hist_heatmap" defaultTitle="Execution Heatmap Analytics" defaultIcon={Calendar} subtitle="Persistent performance velocity tracing" />
-        <div className="flex items-center gap-2 border border-neutral-800 bg-neutral-950/80 p-1 rounded-xl">
-          <button 
-            onClick={() => setCurrentNavDate(new Date(year, month - 1, 1))}
-            aria-label="Previous month"
-            className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-800 transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-xs font-semibold px-2 min-w-[100px] text-center text-neutral-200">{monthName} {year}</span>
-          <button 
-            onClick={() => setCurrentNavDate(new Date(year, month + 1, 1))}
-            aria-label="Next month"
-            className="p-1.5 rounded-lg text-neutral-400 hover:bg-neutral-800 transition-colors"
-          >
-            <ArrowUpRight className="h-4 w-4 rotate-45" />
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-bold tracking-wider text-neutral-500 uppercase mb-2">
-        <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-      </div>
-
-      <div className="grid grid-cols-7 gap-1.5">
-        {calendarDays.map((dateStr, idx) => {
-          const isCurrentDay = dateStr === getLocalDateString();
-          const dayChecks = dateStr && globalHistory[dateStr] ? Object.values(globalHistory[dateStr]).filter(Boolean).length : 0;
-          const dayPct = dateStr && trackerItems.length ? Math.round((dayChecks / trackerItems.length) * 100) : 0;
-          return (
-            <div
-              key={idx}
-              onClick={() => dateStr && handlePastDateClick(dateStr)}
-              title={dateStr ? `${dateStr}: ${dayPct}% complete${isCurrentDay ? ' (today)' : ''}` : undefined}
-              className={`aspect-square rounded-xl border flex flex-col items-center justify-center relative text-xs transition-all duration-150 ${
-                dateStr ? 'cursor-pointer hover:scale-105' : 'opacity-0 pointer-events-none'
-              } ${getHeatmapColor(dateStr)} ${isCurrentDay ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-neutral-950' : ''}`}
-              style={isPerfectHeatmapDay(dateStr) ? liquidFillStyle() : undefined}
-            >
-              {dateStr && (
-                <>
-                  <span className="font-mono">{parseInt(dateStr.split('-')[2])}</span>
-                  {globalHistory[dateStr] && Object.values(globalHistory[dateStr]).filter(Boolean).length > 0 && (
-                    <span className={`absolute bottom-1.5 h-1 w-1 rounded-full ${dateStr === getLocalDateString() || Object.values(globalHistory[dateStr]).filter(Boolean).length === trackerItems.length ? 'bg-neutral-950' : 'bg-current'}`} />
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-6 pt-4 border-t border-neutral-800 flex flex-wrap gap-4 items-center justify-between text-xs text-neutral-400">
-        <div className="flex items-center gap-1.5">
-          <span className="text-neutral-500 font-mono">Legend Matrix:</span>
-          <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-neutral-900 border border-neutral-800" /> <span>0%</span></div>
-          <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-rose-950/60 border border-rose-800/40" /> <span>1-30%</span></div>
-          <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-amber-950/60 border border-amber-800/40" /> <span>31-60%</span></div>
-          <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-violet-950/40 border border-violet-800/40" /> <span>61-99%</span></div>
-          <div className="flex items-center gap-1"><div className="h-3 w-3 rounded" style={liquidFillStyle()} /> <span>100%</span></div>
-        </div>
-        <p className="text-[11px] text-neutral-500">Click any historic metric square to trace detailed logs.</p>
-      </div>
-    </Card>
-    </div>
-  );
-}
-
-// ---------- Tab Subcomponent: Overview ----------
-
-// Renders a SectionHeading for a named sub-section of any tab, applying
-// any custom label/icon saved in Settings > Section Labels (falling back to
-// the shipped default whenever nothing's been overridden yet). `id` must
-// match a key registered in SECTION_LABEL_ROWS above.
+// Single digit that fades + slides out one direction and fades + slides in
+// from the opposite side — upward when the value the digit belongs to is
+// increasing (the live clock), downward when it's decreasing (the pomodoro
+// countdown). This replaces the earlier 3D flip mechanic with something
+// quieter and closer to an odometer roll.
