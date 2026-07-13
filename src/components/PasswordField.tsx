@@ -73,7 +73,7 @@ export default function PasswordField({
 
   return (
     <div className="w-full">
-      <div className="relative">
+      <div className="relative" style={style}>
         <input
           ref={inputRef}
           id={id}
@@ -84,7 +84,6 @@ export default function PasswordField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          style={style}
           className={
             className ||
             'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50'
