@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Clock3, Weight, ArrowUpRight, Bell, BellOff } from 'lucide-react';
 import { ConfigContext, getSubjectStyle } from '../../lib/appConfig';
-import { RippleButton, ModalData, Card } from '../ui/Primitives';
+import { RippleButton, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 
 export function TimelineTab({ setModal, notificationsEnabled, notificationPermission, onToggleNotifications }: { setModal: (data: ModalData | null) => void; notificationsEnabled: boolean; notificationPermission: NotificationPermission | 'unsupported'; onToggleNotifications: () => void }) {
@@ -24,7 +24,7 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
   };
 
   return (
-    <Card className="animate-fadeIn">
+    <div className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
         <EditableSectionHeading id="tl_master" defaultTitle="Master Timeline" defaultIcon={Clock3} subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
         <RippleButton
@@ -88,7 +88,7 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
           );
         })}
       </div>
-    </Card>
+    </div>
   );
 }
 
