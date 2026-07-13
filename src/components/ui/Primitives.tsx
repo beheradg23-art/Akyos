@@ -4,12 +4,21 @@
 // streak flame, and the mobile status strip. Pulled out of App.tsx since
 // these have no dependency on any single tab — everything else imports
 // from here.
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import {
   Target, Flame, AlertTriangle, ChevronRight, X, FlameKindling, Swords,
   Loader2, Calendar, Clock3,
 } from 'lucide-react';
 import { ConfigContext, HunterRank } from '../../lib/appConfig';
+import { liquidFillStyle } from '../../lib/liquidFill';
+
+// Lets a Card tell whatever it's wrapping (SectionHeading, in practice)
+// that the pointer is currently over it, without every one of the 30+
+// call sites needing to pass a `hovering` prop down manually. Card is the
+// producer (below); SectionHeading is the only consumer today. Defaults to
+// false so a SectionHeading rendered outside a Card (shouldn't happen, but
+// not enforced) just never lights up instead of crashing.
+export const CardHoverContext = createContext(false);
 
 // ---------------------------------------------------------------------------
 // DateField / TimeField
@@ -569,12 +578,31 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
   // items-start + mt-0.5 nudge to line up with where the title used to
   // sit above the subtitle — it centers naturally against the single line.
   void subtitle;
+  // Whether the enclosing <Card> currently has the pointer over it — see
+  // CardHoverContext above. Every card header lights up the same way on
+  // hover: icon badge and heading both pick up the same moving brand
+  // gradient the rest of the app (buttons, avatars, progress fills) uses,
+  // via liquidFillStyle() from liquidFill.ts, so this reads as one
+  // consistent "live" material rather than a one-off card-specific effect.
+  const hovering = useContext(CardHoverContext);
   return (
     <div className="flex items-center gap-3 mb-5">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60">
-        <Icon className="h-4.5 w-4.5 text-neutral-300" strokeWidth={1.75} />
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors duration-300"
+        style={
+          hovering
+            ? { ...liquidFillStyle(), borderColor: 'transparent' }
+            : { backgroundColor: 'rgba(38, 38, 38, 0.8)', borderColor: 'rgba(64, 64, 64, 0.6)' }
+        }
+      >
+        <Icon className={`h-4.5 w-4.5 transition-colors duration-300 ${hovering ? 'text-neutral-950' : 'text-neutral-300'}`} strokeWidth={1.75} />
       </div>
-      <h2 className="text-[15px] font-semibold tracking-tight text-neutral-100">{title}</h2>
+      <h2
+        className={`text-[15px] font-semibold tracking-tight transition-colors duration-300 ${hovering ? 'bg-clip-text text-transparent' : 'text-neutral-100'}`}
+        style={hovering ? liquidFillStyle() : undefined}
+      >
+        {title}
+      </h2>
     </div>
   );
 }
@@ -635,8 +663,36 @@ export function Card({ children, className = '', onClick }: { children: React.Re
           style={{ background: `radial-gradient(420px circle at ${spot.x}% ${spot.y}%, rgba(255,255,255,0.06), transparent 65%)` }}
         />
       )}
+      {hovering && (
+        // The animated gradient outline. This is a separate overlay, not a
+        // real `border`, on purpose: several call sites pass their own
+        // `border ...`/background classes via `className` (the amber
+        // warning card in SyllabusTab, subject-colored cards, the tinted
+        // Countdown card, etc.) — touching the real border/background
+        // here would fight those. Instead, a `padding` on this absolutely-
+        // positioned, inset-0 layer defines a ring thickness, and a CSS
+        // mask cuts out everything except that ring (`content-box` minus
+        // the full box, via mask-composite exclude/xor) so only the edge
+        // itself is painted — the gradient never touches the card's
+        // interior — then that ring is filled with the exact same moving
+        // liquidFillStyle() gradient used for badges/buttons/avatars
+        // elsewhere, so it reads as the same "material" everywhere.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-2xl"
+          style={{
+            padding: '1.5px',
+            WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+            WebkitMaskComposite: 'xor',
+            maskComposite: 'exclude',
+            ...liquidFillStyle(),
+          } as React.CSSProperties}
+        />
+      )}
       {onClick && rippleNodes}
-      <div className="relative">{children}</div>
+      <CardHoverContext.Provider value={hovering}>
+        <div className="relative">{children}</div>
+      </CardHoverContext.Provider>
     </div>
   );
 }
