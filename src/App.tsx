@@ -655,7 +655,11 @@ export default function JEEDashboard() {
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20 transition-transform active:scale-95 lg:pointer-events-none lg:cursor-default"
               style={liquidFillStyle()}
             >
-              <AkyosMark className="h-4 w-4 text-neutral-950" />
+              {/* Mark sized at the same ratio to its blob as the sidebar's
+                  h-4/h-8 (0.5) mark-to-badge ratio, so the two brand chips
+                  read as consistent scale rather than the mark looking
+                  shrunken in the bigger 44px header badge. */}
+              <AkyosMark className="h-[22px] w-[22px] text-neutral-950" />
             </button>
             <div className="min-w-0">
               <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none truncate">Akyos</h1>
