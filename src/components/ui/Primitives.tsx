@@ -5,6 +5,7 @@
 // these have no dependency on any single tab — everything else imports
 // from here.
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Target, Flame, AlertTriangle, ChevronRight, X, FlameKindling, Swords,
   Loader2, Calendar, Clock3,
@@ -33,39 +34,225 @@ export const CardHoverContext = createContext<{ hovering: boolean; sweepMounted:
 // ---------------------------------------------------------------------------
 // DateField / TimeField
 // ---------------------------------------------------------------------------
-// Native <input type="date"/"time"> picker icons render in whatever color
-// the browser feels like (usually a near-black glyph), and that color
-// can't be reliably controlled cross-browser — filter/invert tricks on
-// ::-webkit-calendar-picker-indicator are Chromium-only, inconsistent
-// across versions, and easy for something elsewhere in the cascade to
-// override, which is exactly why it kept looking wrong here. Instead: hide
-// the native icon (opacity: 0, stretched over the whole input so the real
-// click target — and therefore the real native picker — still opens no
-// matter where on the field you click) and draw our own Lucide icon on top,
-// fully controlled by normal Tailwind text-color classes, no filter voodoo.
+// The browser's native <input type="date"/"time"> *closed-field* look could
+// be reskinned (see the old icon-hiding trick, still true and still why the
+// calendar/clock glyph below is hand-drawn), but the moment you click it,
+// the actual calendar grid / spinner that pops up is rendered by the OS —
+// there is no CSS in existence that reaches into that layer, on any browser.
+// That's the plain white box that didn't match anything. Fix is to stop
+// using the native popup at all: these render their own small dark rounded
+// popover (via a portal, so Card's `overflow-hidden` can't clip it) that's
+// built from the exact same tokens as everywhere else in the app.
+//
+// Both keep the same (value, onChange) contract as the native inputs did —
+// value is a plain 'YYYY-MM-DD' / 'HH:MM' string, onChange receives
+// `{ target: { value } }` — so no call site needed to change.
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+function parseISODate(value: string): Date | null {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const date = new Date(y, m - 1, d);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const toISODate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+const formatDisplayDate = (value: string) => {
+  const d = parseISODate(value);
+  return d ? `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}` : '';
+};
+
+const WEEKDAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const MONTH_LABELS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function buildCalendarGrid(year: number, month: number): Date[] {
+  const firstOfMonth = new Date(year, month, 1);
+  const gridStart = new Date(year, month, 1 - firstOfMonth.getDay());
+  return Array.from({ length: 42 }, (_, i) => new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i));
+}
+
+/** Shared positioning + outside-click-to-close for both popovers below. */
+function usePopoverAnchor(open: boolean) {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (rect) setCoords({ top: rect.bottom + 8, left: rect.left });
+    };
+    reposition();
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [open]);
+
+  return { anchorRef, popoverRef, coords };
+}
+
+function useOutsideClose(open: boolean, close: () => void, refs: React.RefObject<HTMLElement>[]) {
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (refs.some((r) => r.current?.contains(target))) return;
+      close();
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+}
+
 export function DateField({
   value,
   onChange,
   className = '',
   iconClassName = 'text-neutral-300',
+  placeholder = 'Select date',
   ...rest
 }: {
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (e: { target: { value: string } }) => void;
   className?: string;
   iconClassName?: string;
+  placeholder?: string;
   [key: string]: any;
 }) {
+  const [open, setOpen] = useState(false);
+  const { anchorRef, popoverRef, coords } = usePopoverAnchor(open);
+  useOutsideClose(open, () => setOpen(false), [anchorRef, popoverRef]);
+
+  const [view, setView] = useState(() => {
+    const base = parseISODate(value) || new Date();
+    return { year: base.getFullYear(), month: base.getMonth() };
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const base = parseISODate(value) || new Date();
+    setView({ year: base.getFullYear(), month: base.getMonth() });
+  }, [open]);
+
+  const shiftMonth = (delta: number) =>
+    setView((v) => {
+      const d = new Date(v.year, v.month + delta, 1);
+      return { year: d.getFullYear(), month: d.getMonth() };
+    });
+
+  const commit = (d: Date) => {
+    onChange({ target: { value: toISODate(d) } });
+    setOpen(false);
+  };
+
+  const days = useMemo(() => buildCalendarGrid(view.year, view.month), [view.year, view.month]);
+  const todayISO = toISODate(new Date());
+
   return (
-    <div className="relative">
-      <input
-        type="date"
-        value={value}
-        onChange={onChange}
-        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+    <div ref={anchorRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${className} flex items-center justify-between gap-2 text-left cursor-target`}
         {...rest}
-      />
-      <Calendar className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
+      >
+        <span className={value ? '' : 'text-neutral-600'}>{value ? formatDisplayDate(value) : placeholder}</span>
+        <Calendar className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} strokeWidth={1.75} />
+      </button>
+
+      {open &&
+        coords &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed z-[999] w-[272px] rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60 p-3 animate-fadeIn"
+            style={{ top: coords.top, left: coords.left }}
+          >
+            <div className="flex items-center justify-between mb-2 px-0.5">
+              <button
+                type="button"
+                onClick={() => shiftMonth(-1)}
+                className="cursor-target h-7 w-7 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+                aria-label="Previous month"
+              >
+                <ChevronRight className="h-3.5 w-3.5 rotate-180" strokeWidth={2} />
+              </button>
+              <span className="text-[12.5px] font-bold text-neutral-200">
+                {MONTH_LABELS[view.month]} {view.year}
+              </span>
+              <button
+                type="button"
+                onClick={() => shiftMonth(1)}
+                className="cursor-target h-7 w-7 flex items-center justify-center rounded-lg text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 transition-colors"
+                aria-label="Next month"
+              >
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7">
+              {WEEKDAY_LABELS.map((w) => (
+                <div key={w} className="h-6 flex items-center justify-center text-[10px] font-semibold text-neutral-600">
+                  {w}
+                </div>
+              ))}
+              {days.map((d) => {
+                const iso = toISODate(d);
+                const inMonth = d.getMonth() === view.month;
+                const isSelected = iso === value;
+                const isToday = iso === todayISO;
+                return (
+                  <div key={iso} className="h-8 flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => commit(d)}
+                      className={`cursor-target h-7 w-7 flex items-center justify-center rounded-full text-[11.5px] transition-colors ${
+                        isSelected
+                          ? 'font-bold text-neutral-50'
+                          : isToday
+                          ? 'border border-purple-500/50 text-purple-300 font-semibold'
+                          : inMonth
+                          ? 'text-neutral-300 hover:bg-neutral-800'
+                          : 'text-neutral-700 hover:bg-neutral-900'
+                      }`}
+                      style={isSelected ? liquidFillStyle() : undefined}
+                    >
+                      {d.getDate()}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-neutral-800 px-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({ target: { value: '' } });
+                  setOpen(false);
+                }}
+                className="cursor-target text-[11px] font-semibold text-neutral-500 hover:text-neutral-300 transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => commit(new Date())}
+                className="cursor-target text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                Today
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -75,24 +262,118 @@ export function TimeField({
   onChange,
   className = '',
   iconClassName = 'text-neutral-300',
+  placeholder = 'Select time',
   ...rest
 }: {
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onChange: (e: { target: { value: string } }) => void;
   className?: string;
   iconClassName?: string;
+  placeholder?: string;
   [key: string]: any;
 }) {
+  const [open, setOpen] = useState(false);
+  const { anchorRef, popoverRef, coords } = usePopoverAnchor(open);
+  useOutsideClose(open, () => setOpen(false), [anchorRef, popoverRef]);
+
+  const [h, m] = value ? value.split(':').map(Number) : [null, null];
+  const hourListRef = useRef<HTMLDivElement>(null);
+  const minuteListRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    // Scroll each column so the current selection (or a sensible default)
+    // is already in view the moment the popover opens, instead of always
+    // starting pinned at 00.
+    requestAnimationFrame(() => {
+      hourListRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'center' });
+      minuteListRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'center' });
+    });
+  }, [open]);
+
+  const setPart = (nextH: number, nextM: number) => {
+    onChange({ target: { value: `${pad2(nextH)}:${pad2(nextM)}` } });
+  };
+
+  const formatDisplayTime = (val: string) => {
+    if (!val) return '';
+    const [hh, mm] = val.split(':').map(Number);
+    const period = hh >= 12 ? 'PM' : 'AM';
+    const hour12 = hh % 12 === 0 ? 12 : hh % 12;
+    return `${hour12}:${pad2(mm)} ${period}`;
+  };
+
   return (
-    <div className="relative">
-      <input
-        type="time"
-        value={value}
-        onChange={onChange}
-        className={`${className} [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0`}
+    <div ref={anchorRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${className} flex items-center justify-between gap-2 text-left cursor-target`}
         {...rest}
-      />
-      <Clock3 className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${iconClassName}`} strokeWidth={1.75} />
+      >
+        <span className={value ? '' : 'text-neutral-600'}>{value ? formatDisplayTime(value) : placeholder}</span>
+        <Clock3 className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} strokeWidth={1.75} />
+      </button>
+
+      {open &&
+        coords &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="fixed z-[999] w-[168px] rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60 p-2 animate-fadeIn"
+            style={{ top: coords.top, left: coords.left }}
+          >
+            <div className="flex gap-1.5">
+              <div ref={hourListRef} className="flex-1 h-40 overflow-y-auto rounded-lg bg-neutral-900/60 py-1 [scrollbar-width:thin]">
+                {Array.from({ length: 24 }, (_, i) => i).map((hour) => (
+                  <button
+                    key={hour}
+                    type="button"
+                    data-active={h === hour}
+                    onClick={() => setPart(hour, m ?? 0)}
+                    className={`cursor-target w-full py-1.5 text-center text-[12px] rounded-md transition-colors ${
+                      h === hour ? 'font-bold text-neutral-50' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'
+                    }`}
+                    style={h === hour ? liquidFillStyle() : undefined}
+                  >
+                    {pad2(hour)}
+                  </button>
+                ))}
+              </div>
+              <div ref={minuteListRef} className="flex-1 h-40 overflow-y-auto rounded-lg bg-neutral-900/60 py-1 [scrollbar-width:thin]">
+                {Array.from({ length: 12 }, (_, i) => i * 5).map((minute) => (
+                  <button
+                    key={minute}
+                    type="button"
+                    data-active={m === minute}
+                    onClick={() => setPart(h ?? 0, minute)}
+                    className={`cursor-target w-full py-1.5 text-center text-[12px] rounded-md transition-colors ${
+                      m === minute ? 'font-bold text-neutral-50' : 'text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200'
+                    }`}
+                    style={m === minute ? liquidFillStyle() : undefined}
+                  >
+                    {pad2(minute)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-neutral-800 px-0.5">
+              <span className="text-[11px] text-neutral-500">{value ? formatDisplayTime(value) : '—'}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  setPart(now.getHours(), Math.round(now.getMinutes() / 5) * 5 % 60);
+                  setOpen(false);
+                }}
+                className="cursor-target text-[11px] font-semibold text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                Now
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
