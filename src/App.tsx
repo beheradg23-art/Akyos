@@ -1,1193 +1,982 @@
-import React, { useEffect, useState } from 'react';
-import { NO_SELECT_CSS } from '../styles/noSelect';
-import { DateField, TimeField } from './ui/Primitives';
-import { AkyosMark } from './shared/AkyosMark';
+// ---------------------------------------------------------------------------
+// Root dashboard component. This file used to be the entire app (~6,700
+// lines) — types, config, every tab, every settings editor, and all shared
+// UI primitives lived here in one file. It's been split into:
+//   src/lib/          — appConfig (types/defaults/ConfigContext/pure calc
+//                        functions, unit-tested), staticContent, liquidFill
+//   src/components/ui/       — shared primitives (Card, RippleButton, etc.)
+//   src/components/shared/   — small shared widgets (CountdownMatrix,
+//                               DailyTracker, WeightTracker, IntroLoader...)
+//   src/components/tabs/     — one file per main tab
+//   src/components/settings/ — the Settings tab's config editors
+//   src/components/account/  — the Account tab
+// This file is now just the shell: auth/onboarding gating, top-level state,
+// the sidebar/nav, and wiring the tabs together.
+// ---------------------------------------------------------------------------
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Sparkles, Loader2, RefreshCcw, ArrowRight, ArrowLeft, ClipboardList,
-  Clock3, Dumbbell, Target, CheckCircle2, BookOpen, GraduationCap,
-  Utensils, LayoutGrid,
+  ChevronRight, X, ChevronLeft, Swords, Settings, UserCircle2,
 } from 'lucide-react';
+import { AkyosMark } from './components/shared/AkyosMark';
+import AuthGate from './components/AuthGate';
+import OnboardingWizard from './components/OnboardingWizard';
+import { useCloudAutoSync } from './lib/cloudSync';
+import { supabase } from './lib/supabaseClient';
+import { subscribeToPush } from './lib/pushNotifications';
+import { Toaster } from './lib/toast';
+import ErrorBoundary from './components/ErrorBoundary';
+import { NO_SELECT_CSS } from './styles/noSelect';
 import {
-  generateChecklist,
-  generateDailyTimeline,
-  generateProfileTargets,
-  // Phase 9 Part 1: the wizard now calls the structured, domain-aware
-  // generators Phases 5-7 built (generateDietPlan / generateTrainingPlan /
-  // generateExamSyllabus) instead of the original generic
-  // generateWeeklyTraining / generateSyllabus. Those two original functions
-  // are UNCHANGED and still exist in contentGen.ts (kept for anything else
-  // that might call them) — this file just no longer imports them. See
-  // PHASE_9_PART1_HANDOFF.md for the full reasoning.
-  generateDietPlan,
-  generateTrainingPlan,
-  generateExamSyllabus,
-  // Last-resort, fully-local fallback builders — used only if the structured
-  // generate*() calls above somehow throw past their own internal try/catch
-  // (defensive; shouldn't happen in practice, see PHASE_9_PART1_HANDOFF.md).
-  // Reusing these (rather than this file's own generic fallbackTraining/
-  // fallbackSyllabus) means even a total-failure path still produces
-  // daysPerWeek/currentLevel-aware content instead of a one-size-fits-all
-  // placeholder.
-  calculateDietTargets,
-  buildFallbackDietPlan,
-  buildFallbackWeeklyTrainingPlan,
-  buildFallbackSyllabus,
-  type DietPlanMeal,
-} from '../lib/contentGen';
+  TabLabelKey, DEFAULT_PROFILE, DEFAULT_COUNTDOWNS, DEFAULT_TRAINING,
+  DEFAULT_SUBJECTS, DEFAULT_SYLLABUS, DEFAULT_TRACKER_ITEMS, DEFAULT_TAB_LABELS,
+  DEFAULT_TAB_ICONS, DEFAULT_SECTION_LABELS, DEFAULT_DIET_OVERRIDES,
+  DEFAULT_OVERVIEW_OVERRIDES, DEFAULT_TIMELINE_STORABLE, DEFAULT_DIET_STORABLE,
+  DEFAULT_DOMAINS,
+  ConfigContext, hydrateTimeline, hydrateDiet, serializeConfig, deserializeConfig,
+  getHunterRank, computeCurrentStreak, getLocalDateString, DailyCheckLog,
+  CONFIG_STORAGE_KEY, TABS, HUNTER_RANKS, ICON_OPTIONS,
+} from './lib/appConfig';
+import { resolveTabKeysForDomains, type GoalDomain } from './lib/questionnaire';
+import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES, SWEEP_REVEAL_STYLE, useSweepReveal } from './lib/liquidFill';
 import {
-  GOAL_DOMAINS,
-  DEFAULT_QUESTIONNAIRE_ANSWERS,
-  hasDomain,
-  buildGoalDescription,
-  buildGoalContext,
-  deriveProfileFields,
-  type GoalDomain,
-  type QuestionnaireAnswers,
-  type ExamCurrentLevel,
-  type FitnessGoalType,
-  type ExperienceLevel,
-  type EquipmentAccess,
-  type DietType,
-  type DietGoal,
-  type ActivityLevel,
-  type RoutineStyle,
-} from '../lib/questionnaire';
-// Phase 9 Part 1: hydrate generated timeline/diet data into the real,
-// icon-bearing shape appConfig.ts's own state already uses (see "Bug fixed"
-// in PHASE_9_PART1_HANDOFF.md — config.timeline/config.diet items need a
-// resolved `.icon` component, not just an `iconName` string, or the
-// Timeline/Training & Fuel tabs crash trying to render `<slot.icon />`).
-import { hydrateTimeline, hydrateDiet, DEFAULT_DIET_OVERRIDES, DEFAULT_PROFILE, type DietOverrideKey } from '../lib/appConfig';
-// Same moving, glossy gradient treatment used for the icon badge and
-// primary buttons on the sign-in screen (AuthGate) and the main app
-// header/nav (App.tsx) — shared here so the wizard's icon badges and CTA
-// buttons animate identically instead of sitting flat next to them.
-import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES } from '../lib/liquidFill';
+  useRipple, MagneticCursor, GlobalDetailModal, QuestClearNotification,
+  StreakFlame, MobileStatusStrip,
+} from './components/ui/Primitives';
+import { DailyTracker } from './components/shared/DailyTracker';
+import { IntroLoader } from './components/shared/IntroLoader';
+import { AccountPage, PerformanceCalendar } from './components/account/AccountPage';
+import { OverviewTab } from './components/tabs/OverviewTab';
+import { TimelineTab } from './components/tabs/TimelineTab';
+import { TrainingFuelTab } from './components/tabs/TrainingFuelTab';
+import { SyllabusTab } from './components/tabs/SyllabusTab';
+import { MockTestTab } from './components/tabs/MockTestTab';
+import { AshClockTab } from './components/tabs/AshClockTab';
+import { ConfigEditorTab } from './components/settings/ConfigEditors';
 
-// ---------- First-run setup ----------
-// Shown once, right after a new account picks its passcode (see App.tsx —
-// gated on `akyos_onboarding_completed_v1`). Phase 4: this is a rebuild of
-// the wizard's UI on top of Phase 3's `questionnaire.ts` data model — the
-// old single "describe your goal" textbox + two checkboxes is replaced by
-// a domain multi-select (a person can pick more than one — e.g. exam prep
-// + fitness + diet all at once) followed by one branching question screen
-// per selected domain. Generation itself (the five generate*() calls
-// below) is UNCHANGED from before — buildGoalDescription()/
-// buildGoalContext() compose the structured answers into the same
-// goalDescription/context strings those functions already accepted, so
-// this phase only touches what's asked and how it's assembled, not how
-// it's generated. If generation fails for a section (offline, API
-// hiccup), we fall back to a plain generic default for that section only
-// — never to someone else's real data.
+// Every account gets asked this exactly once, right after their first
+// passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
+// SYNC_KEYS so finishing it on one device doesn't re-trigger it on another.
+const ONBOARDING_STORAGE_KEY = 'akyos_onboarding_completed_v1';
 
-type Stage = 'intro' | 'domain' | 'generating' | 'review';
-
-type ChecklistItem = { id: string; label: string };
-type TimelineBlock = {
-  start: string; end: string; label: string; detail: string;
-  type: 'study' | 'gym' | 'meal' | 'prep' | 'sleep';
-  subject?: string; longDesc: string; iconName: string;
-};
-type TrainingDay = { day: string; focus: string; mode: 'gym' | 'calisthenics' | 'rest'; exercises: { name: string; sets: string }[] };
-type ProfileTarget = { rank: number; name: string; course: string; tag: string; color: string; desc: string };
-type Subject = { key: string; label: string; color: string };
-type SyllabusPhase = { phase: number; month: string; label: string; subjects: Record<string, string[]> };
-
-const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-// Icon per domain, for the intro screen's multi-select chips. Kept as a
-// local lookup (rather than adding an icon field to GOAL_DOMAINS in
-// questionnaire.ts) since questionnaire.ts is deliberately UI-agnostic —
-// see its Phase 3 header comment.
-const DOMAIN_ICONS: Record<GoalDomain, any> = {
-  exam: GraduationCap,
-  fitness: Dumbbell,
-  diet: Utensils,
-  productivity: LayoutGrid,
-  custom: Sparkles,
-};
-
-function fallbackChecklist(): ChecklistItem[] {
-  return [
-    { id: 'ob_1', label: 'Morning routine done' },
-    { id: 'ob_2', label: 'Main focus block completed' },
-    { id: 'ob_3', label: 'Movement / exercise' },
-    { id: 'ob_4', label: 'Wind down on time' },
-  ];
-}
-
-function fallbackTimeline(wake: string, sleep: string): TimelineBlock[] {
-  return [
-    { start: wake, end: addMinutes(wake, 30), label: 'Wake & Prep', detail: 'Ease into the day', type: 'prep', longDesc: 'A simple start — hydrate and get ready for the day ahead.', iconName: 'Sunrise' },
-    { start: addMinutes(wake, 30), end: addMinutes(wake, 210), label: 'Main Focus Block', detail: 'Your top priority for the day', type: 'study', longDesc: 'Edit this in Settings to describe exactly what you\'re working on.', iconName: 'BookOpen' },
-    { start: addMinutes(wake, 210), end: addMinutes(wake, 240), label: 'Meal Break', detail: '', type: 'meal', longDesc: '', iconName: 'Utensils' },
-    { start: addMinutes(wake, 240), end: subMinutes(sleep, 60), label: 'Second Focus Block', detail: 'Continue working toward your goal', type: 'study', longDesc: '', iconName: 'BookOpen' },
-    { start: subMinutes(sleep, 60), end: sleep, label: 'Wind Down', detail: 'Screens off, plan tomorrow', type: 'prep', longDesc: '', iconName: 'Moon' },
-    { start: sleep, end: sleep, label: 'Sleep', detail: 'Hard stop.', type: 'sleep', longDesc: '', iconName: 'Moon' },
-  ];
-}
-
-function fallbackTraining(wantsTraining: boolean): TrainingDay[] {
-  if (!wantsTraining) {
-    return DAY_NAMES.map((day) => ({ day, focus: 'Rest / Recovery', mode: 'rest', exercises: [{ name: 'Not part of your current plan', sets: '—' }] }));
-  }
-  return DAY_NAMES.map((day, i) => (
-    i % 2 === 0
-      ? { day, focus: 'Full-Body Strength', mode: 'gym', exercises: [{ name: 'Squats', sets: '3×10' }, { name: 'Push-ups', sets: '3×12' }, { name: 'Rows', sets: '3×12' }] }
-      : { day, focus: 'Active Recovery', mode: 'rest', exercises: [{ name: 'Light walk or stretch', sets: '20 min' }] }
-  ));
-}
-
-function fallbackTargets(goalDescription: string): { targets: ProfileTarget[]; baselineLabel: string } {
-  return {
-    baselineLabel: 'Baseline Score',
-    targets: [
-      { rank: 1, name: goalDescription.slice(0, 60) || 'Your main goal', course: '', tag: 'Top Priority', color: 'blue', desc: 'Edit this in Settings > Profile & Goals to add specifics.' },
-    ],
-  };
-}
-
-// When the person's goal has no "subjects to study" component at all (or
-// generation fails), fall back to a single generic subject/phase built
-// from their own goal text — never to someone else's syllabus (e.g. JEE's
-// math/physics/chem, which is just this app's own DEFAULT_SUBJECTS/
-// DEFAULT_SYLLABUS fallback in App.tsx, used only if this step is skipped
-// entirely).
-function fallbackSyllabus(goalDescription: string, wantsSyllabus: boolean): { subjects: Subject[]; syllabus: SyllabusPhase[] } {
-  if (!wantsSyllabus) {
-    return {
-      subjects: [{ key: 'general', label: 'General', color: 'sky' }],
-      syllabus: [{ phase: 1, month: 'This month', label: 'Getting started', subjects: { general: [] } }],
-    };
-  }
-  return {
-    subjects: [{ key: 'subject_1', label: goalDescription.slice(0, 30) || 'Main Subject', color: 'sky' }],
-    syllabus: [{ phase: 1, month: 'Month 1', label: 'Getting started', subjects: { subject_1: ['Add your first topic'] } }],
-  };
-}
-
-// ---- Phase 9 Part 1: last-resort local fallbacks for the three structured
-// generators. generateDietPlan/generateTrainingPlan/generateExamSyllabus
-// already resolve internally to their own buildFallback*() on an AI
-// failure, so these wrappers only ever run if the call itself throws past
-// that (network layer blowing up before generate()'s own try/catch, etc.) —
-// belt-and-suspenders, matching this project's established defensive style.
-// Kept separate from the generic fallbackTraining()/fallbackSyllabus()
-// above so even this total-failure path stays domain-aware (real
-// daysPerWeek-sized split, real currentLevel-shaped roadmap) instead of a
-// one-size-fits-all placeholder.
-function localDietFallback(a: QuestionnaireAnswers['diet']) {
-  const targets = calculateDietTargets(a);
-  return {
-    meals: buildFallbackDietPlan(a, targets),
-    targetCalories: targets.calories,
-    targetProteinG: targets.proteinG,
-    targetHydrationL: targets.hydrationL,
-    usedFallback: true,
-  };
-}
-function localTrainingFallback(a: QuestionnaireAnswers['fitness']) {
-  return { days: buildFallbackWeeklyTrainingPlan(a), usedFallback: true };
-}
-function localSyllabusFallback(a: QuestionnaireAnswers['exam']) {
-  return { ...buildFallbackSyllabus(a), usedFallback: true };
-}
-
-function addMinutes(time: string, mins: number): string {
-  const [h, m] = time.split(':').map(Number);
-  const total = (h * 60 + m + mins + 1440) % 1440;
-  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-}
-function subMinutes(time: string, mins: number): string {
-  return addMinutes(time, -mins);
-}
-
-// A neutral default birthdate (~18 years ago), same convention as
-// DEFAULT_PROFILE.birthdate in appConfig.ts — used only if the person
-// leaves the birthdate field untouched.
-function defaultBirthdate(): string {
-  const d = new Date();
-  d.setFullYear(d.getFullYear() - 18);
-  return d.toISOString().split('T')[0];
-}
-
-const inputCls = 'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50';
-const labelCls = 'text-[11px] uppercase tracking-wide text-neutral-500 font-semibold block mb-1.5';
-const hintCls = 'mt-1 text-[11px] text-neutral-600';
-
-// Shared three-region shell for every onboarding screen (intro, per-domain
-// questions, review). Previously each screen was one big block centered
-// with `items-center justify-center`, which meant the header, the form,
-// and the action buttons all floated together as a single unit — on tall
-// viewports that left large, uneven blank margins above and below (see the
-// screenshot this was built from), and on short viewports the footer
-// button could get pushed off-screen entirely.
-//
-// This is a fixed four-part layout that never centers as one blob: a
-// `sidebar` region (per-step branding/context) pinned as its own
-// left-aligned column that never scrolls with the form, a `header` region
-// above the form carrying the app's own branding (matching the header
-// pattern used in App.tsx), a scrollable `children` region for the actual
-// form content, and a `footer` region pinned to the bottom of the
-// viewport. Each region keeps its own fixed place regardless of how much
-// content is in the others or how tall the screen is.
-//
-// On tablet/mobile, stacking the full sidebar block on top of the header
-// ate too much vertical space and left barely any room for the scrollable
-// form beneath it. When `mobileHeader` is passed, the sidebar is hidden
-// below the `lg` breakpoint entirely and its context folds into the
-// header instead (swapped icon + single-line title, no subtext) — so on
-// small screens there's just one compact header row, then content. Only
-// affects <lg; the desktop layout (full sidebar column + full brand
-// header) is unchanged either way.
-function OnboardingShell({
-  sidebar,
-  children,
-  footer,
-  mobileHeader,
-}: {
-  sidebar: React.ReactNode;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-  mobileHeader?: { icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; title: string };
-}) {
-  const MobileIcon = mobileHeader?.icon;
-  return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950 lg:flex-row">
-      <style>{NO_SELECT_CSS}{LIQUID_GRADIENT_KEYFRAMES}</style>
-
-      {/* Sidebar segment — its own fixed, left-aligned column on desktop.
-          Independent of the content area's scroll (gets its own scroll
-          only if its content ever runs long). Below lg, it's either a
-          stacked block above the header (default) or hidden entirely in
-          favor of the compact mobileHeader row (when provided). */}
-      <div
-        className={`shrink-0 border-b border-neutral-900 px-6 pt-8 pb-6 text-left sm:px-10 lg:block lg:w-[340px] lg:border-b-0 lg:border-r lg:overflow-y-auto lg:px-10 lg:py-12 xl:w-[380px] ${
-          mobileHeader ? 'hidden' : ''
-        }`}
-      >
-        {sidebar}
-      </div>
-
-      {/* Right column: branded header (fixed) + scrollable content + fixed footer. */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* Header segment — the app's own branding, fixed at the top and
-            never scrolls, same mark used for the main app header. Below
-            lg, this whole row is skipped unless a mobileHeader override is
-            given (it swaps in a compact icon+title instead) — otherwise
-            it's just dead vertical space eating into the scrollable area
-            on phones/tablets, since the sidebar/step-context above it
-            already carries the branding there. */}
-        <div className={`shrink-0 items-center gap-3 border-b border-neutral-900 px-6 py-4 sm:px-10 lg:px-12 ${mobileHeader ? 'flex' : 'hidden lg:flex'}`}>
-          {mobileHeader && (
-            <>
-              {/* Mobile/tablet compact header — swapped-in icon + single
-                  title, no subtext, vertically centered next to the icon. */}
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20 lg:hidden" style={liquidFillStyle()}>
-                {MobileIcon && <MobileIcon className="h-4 w-4 text-neutral-950" strokeWidth={2} />}
-              </div>
-              <h2 className="min-w-0 truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50 lg:hidden">
-                {mobileHeader.title}
-              </h2>
-            </>
-          )}
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20 ${mobileHeader ? 'hidden lg:flex' : ''}`} style={liquidFillStyle()}>
-            <AkyosMark className="h-4.5 w-4.5 text-neutral-950" />
-          </div>
-          <div className={`min-w-0 ${mobileHeader ? 'hidden lg:block' : ''}`}>
-            <h2 className="truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50">Akyos</h2>
-            <p className="mt-0.5 truncate text-[11px] text-neutral-500">Your Answer to Chaos</p>
-          </div>
-        </div>
-
-        {/* Content segment — the only part of the right column that scrolls. */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-6 sm:px-10 lg:px-12">
-          <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-4xl">{children}</div>
-        </div>
-
-        {/* Footer segment — fixed at the bottom, always visible. */}
-        <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 px-6 py-4 backdrop-blur-sm sm:px-10 lg:px-12">
-          {footer}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Reusable "pick one" chip row — used throughout the per-domain question
-// screens below (currentLevel, fitnessGoal, dietType, etc.). Deliberately
-// tiny/local rather than a shared Primitives export: these option sets are
-// specific to this wizard's copy and unlikely to be reused elsewhere.
-function ChipSelect<T extends string>({
-  options, value, onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={`rounded-lg border px-3 py-2 text-[12px] font-medium transition-colors ${
-              active
-                ? 'border-violet-500/60 bg-violet-500/15 text-violet-300'
-                : 'border-neutral-800 bg-neutral-900/60 text-neutral-400 hover:text-neutral-200'
-            }`}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const EXAM_LEVEL_OPTIONS: { value: ExamCurrentLevel; label: string }[] = [
-  { value: 'just-starting', label: 'Just starting' },
-  { value: 'mid-prep', label: 'Mid-way through' },
-  { value: 'final-stretch', label: 'Final stretch' },
-  { value: 'revision-only', label: 'Revision only' },
-];
-
-const FITNESS_GOAL_OPTIONS: { value: FitnessGoalType; label: string }[] = [
-  { value: 'strength', label: 'Strength' },
-  { value: 'hypertrophy', label: 'Build muscle' },
-  { value: 'endurance', label: 'Endurance' },
-  { value: 'general-health', label: 'General health' },
-  { value: 'sport-specific', label: 'A specific sport' },
-];
-
-const EXPERIENCE_OPTIONS: { value: ExperienceLevel; label: string }[] = [
-  { value: 'beginner', label: 'Beginner' },
-  { value: 'intermediate', label: 'Intermediate' },
-  { value: 'advanced', label: 'Advanced' },
-];
-
-const EQUIPMENT_OPTIONS: { value: EquipmentAccess; label: string }[] = [
-  { value: 'full-gym', label: 'Full gym' },
-  { value: 'home-basic', label: 'Home / basic kit' },
-  { value: 'bodyweight-only', label: 'Bodyweight only' },
-];
-
-const DIET_TYPE_OPTIONS: { value: DietType; label: string }[] = [
-  { value: 'no-preference', label: 'No preference' },
-  { value: 'vegetarian', label: 'Vegetarian' },
-  { value: 'non-vegetarian', label: 'Non-vegetarian' },
-  { value: 'vegan', label: 'Vegan' },
-  { value: 'eggetarian', label: 'Eggetarian' },
-  { value: 'pescatarian', label: 'Pescatarian' },
-];
-
-const DIET_GOAL_OPTIONS: { value: DietGoal; label: string }[] = [
-  { value: 'maintain', label: 'Maintain' },
-  { value: 'bulk', label: 'Bulk' },
-  { value: 'cut', label: 'Cut' },
-  { value: 'recomp', label: 'Recomposition' },
-];
-
-const ACTIVITY_LEVEL_OPTIONS: { value: ActivityLevel; label: string }[] = [
-  { value: 'sedentary', label: 'Sedentary' },
-  { value: 'light', label: 'Lightly active' },
-  { value: 'moderate', label: 'Moderately active' },
-  { value: 'very-active', label: 'Very active' },
-  { value: 'extra-active', label: 'Extra active' },
-];
-
-const ROUTINE_STYLE_OPTIONS: { value: RoutineStyle; label: string }[] = [
-  { value: 'flexible-flow', label: 'Flexible / go with the flow' },
-  { value: 'strict-blocks', label: 'Strict time blocks' },
-];
-
-export default function OnboardingWizard({
-  onComplete,
-}: {
-  onComplete: (partial: {
-    trackerItems: ChecklistItem[]; timeline: TimelineBlock[]; training: TrainingDay[]; profile: any;
-    subjects: Subject[]; syllabus: SyllabusPhase[];
-    // Phase 9 Part 1 additions — all optional so this stays a strict
-    // superset of what onComplete accepted before. `domains` is the
-    // TOP-LEVEL config.domains field Phase 8 built the dynamic tab system
-    // around (deliberately distinct from `profile.domains`, which
-    // deriveProfileFields() already puts on the profile object itself — see
-    // that function's own doc comment on why they're separate fields).
-    // `diet`/`dietOverrides` are only ever included when the 'diet' domain
-    // was selected (see finish() below) — a non-diet account's
-    // config.diet/config.dietOverrides are left completely untouched.
-    domains?: GoalDomain[];
-    diet?: any[];
-    dietOverrides?: Partial<Record<DietOverrideKey, string>>;
-  }) => void;
-}) {
-  const [stage, setStage] = useState<Stage>('intro');
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>(() => ({
-    ...DEFAULT_QUESTIONNAIRE_ANSWERS,
-    birthdate: defaultBirthdate(),
-  }));
-  // Index into the person's *selected* domains (in GOAL_DOMAINS' canonical
-  // order) while stepping through the branching question screens — one
-  // domain's questions per screen, advanced by the Next/Back buttons.
-  const [domainStep, setDomainStep] = useState(0);
-  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-  const [error, setError] = useState('');
-
-  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
-  const [timeline, setTimeline] = useState<TimelineBlock[]>([]);
-  const [training, setTraining] = useState<TrainingDay[]>([]);
-  const [targets, setTargets] = useState<{ targets: ProfileTarget[]; baselineLabel: string }>({ targets: [], baselineLabel: 'Baseline Score' });
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [syllabus, setSyllabus] = useState<SyllabusPhase[]>([]);
-  // Phase 9 Part 1: only meaningful when the 'diet' domain is selected —
-  // stays empty otherwise, and finish()/skip() only ever write config.diet/
-  // config.dietOverrides when it's populated, so a non-diet account's Fuel
-  // Matrix is left completely untouched (still whatever DEFAULT_DIET_*
-  // appConfig.ts already starts every account with), exactly like before
-  // this phase.
-  const [diet, setDiet] = useState<DietPlanMeal[]>([]);
-  const [dietTargets, setDietTargets] = useState<{ calories: number; proteinG: number; hydrationL: number } | null>(null);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
-  // Tracks which sections are showing generic fallback content rather than
-  // the actual AI-generated plan (generation failed, timed out, or was
-  // skipped). Surfaced in the review screen so the person knows what they're
-  // looking at isn't personalized yet, instead of silently passing off a
-  // placeholder as the real thing.
-  const [usedFallback, setUsedFallback] = useState<Record<'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet', boolean>>({
-    checklist: false, timeline: false, training: false, targets: false, syllabus: false, diet: false,
-  });
-
-  const loadingMessages = [
-    'Reading what you told us…',
-    'Building your daily checklist…',
-    'Laying out your timeline…',
-    'Putting together your plan…',
-  ];
-
-  useEffect(() => {
-    if (stage !== 'generating') return;
-    const t = setInterval(() => setLoadingMsgIdx((i) => (i + 1) % loadingMessages.length), 1400);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage]);
-
-  // Selected domains, kept in GOAL_DOMAINS' fixed display order regardless
-  // of the order they were clicked in — so the question-screen sequence
-  // (and the composed goalDescription's clause order) is always stable and
-  // predictable rather than depending on click order.
-  const selectedDomains: GoalDomain[] = GOAL_DOMAINS
-    .map((d) => d.key)
-    .filter((k) => hasDomain(answers, k));
-
-  const wantsTraining = hasDomain(answers, 'fitness');
-  const wantsSyllabus = hasDomain(answers, 'exam');
-  const wantsDiet = hasDomain(answers, 'diet');
-
-  const goalDescription = buildGoalDescription(answers);
-  const context = buildGoalContext(answers);
-
-  const runGeneration = async () => {
-    setStage('generating');
-    setError('');
-
-    // Phase 9 Part 1: training/syllabus/diet now go through the structured,
-    // domain-aware generators (Phases 5-7) instead of the generic
-    // goalDescription-string ones — see the import block's comment for why.
-    // checklist/timeline/targets are untouched: they have no structured
-    // per-domain answer shape to upgrade to, so they still take the composed
-    // goalDescription/context strings exactly as before.
-    const [checklistRes, timelineRes, trainingRes, targetsRes, syllabusRes, dietRes] = await Promise.all([
-      generateChecklist(goalDescription, context).catch(() => null),
-      generateDailyTimeline(goalDescription, context).catch(() => null),
-      wantsTraining ? generateTrainingPlan(answers.fitness, context).catch(() => null) : Promise.resolve(null),
-      generateProfileTargets(goalDescription).catch(() => null),
-      wantsSyllabus ? generateExamSyllabus(answers.exam, context).catch(() => null) : Promise.resolve(null),
-      wantsDiet ? generateDietPlan(answers.diet, undefined, context).catch(() => null) : Promise.resolve(null),
-    ]);
-
-    const checklistOk = !!checklistRes?.items?.length;
-    const timelineOk = !!timelineRes?.blocks?.length;
-    const targetsOk = !!targetsRes?.targets?.length;
-
-    // trainingRes/syllabusRes/dietRes already resolve to real, usable
-    // content themselves (they never return null on an AI failure — only a
-    // total exception makes them null here). If one IS null, fall through to
-    // this file's own local*Fallback() wrappers (still domain-aware, see
-    // above) rather than treating a null result as "nothing to show."
-    const trainingResolved = wantsTraining ? (trainingRes ?? localTrainingFallback(answers.fitness)) : null;
-    const syllabusResolved = wantsSyllabus ? (syllabusRes ?? localSyllabusFallback(answers.exam)) : null;
-    const dietResolved = wantsDiet ? (dietRes ?? localDietFallback(answers.diet)) : null;
-
-    setChecklist(checklistOk ? checklistRes!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
-    setTimeline(timelineOk ? timelineRes!.blocks : fallbackTimeline(answers.wake, answers.sleep));
-    setTraining(trainingResolved ? trainingResolved.days : fallbackTraining(false));
-    setTargets(
-      targetsOk
-        ? { targets: targetsRes!.targets, baselineLabel: targetsRes!.baselineLabel || 'Baseline Score' }
-        : fallbackTargets(goalDescription)
-    );
-    if (syllabusResolved) {
-      setSubjects(syllabusResolved.subjects);
-      setSyllabus(syllabusResolved.phases);
-    } else {
-      const fb = fallbackSyllabus(goalDescription, false);
-      setSubjects(fb.subjects);
-      setSyllabus(fb.syllabus);
-    }
-    if (dietResolved) {
-      setDiet(dietResolved.meals);
-      setDietTargets({ calories: dietResolved.targetCalories, proteinG: dietResolved.targetProteinG, hydrationL: dietResolved.targetHydrationL });
-    } else {
-      setDiet([]);
-      setDietTargets(null);
-    }
-
-    setUsedFallback({
-      checklist: !checklistOk,
-      timeline: !timelineOk,
-      training: trainingResolved ? trainingResolved.usedFallback : false,
-      targets: !targetsOk,
-      syllabus: syllabusResolved ? syllabusResolved.usedFallback : false,
-      diet: dietResolved ? dietResolved.usedFallback : false,
-    });
-
-    setStage('review');
-  };
-
-  const regenerate = async (section: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet') => {
-    setRegenerating(section);
+export default function JEEDashboard() {
+  const [unlocked, setUnlocked] = useState(false);
+  useCloudAutoSync(unlocked);
+  const [introDone, setIntroDone] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(() => {
     try {
-      if (section === 'checklist') {
-        const res = await generateChecklist(goalDescription, context).catch(() => null);
-        const ok = !!res?.items?.length;
-        setChecklist(ok ? res!.items.map((it, i) => ({ id: `ob_${i}`, label: it.label })) : fallbackChecklist());
-        setUsedFallback((f) => ({ ...f, checklist: !ok }));
-      } else if (section === 'timeline') {
-        const res = await generateDailyTimeline(goalDescription, context).catch(() => null);
-        const ok = !!res?.blocks?.length;
-        setTimeline(ok ? res!.blocks : fallbackTimeline(answers.wake, answers.sleep));
-        setUsedFallback((f) => ({ ...f, timeline: !ok }));
-      } else if (section === 'training') {
-        const res = wantsTraining ? await generateTrainingPlan(answers.fitness, context).catch(() => null) : null;
-        const resolved = wantsTraining ? (res ?? localTrainingFallback(answers.fitness)) : null;
-        setTraining(resolved ? resolved.days : fallbackTraining(false));
-        setUsedFallback((f) => ({ ...f, training: resolved ? resolved.usedFallback : false }));
-      } else if (section === 'syllabus') {
-        const res = wantsSyllabus ? await generateExamSyllabus(answers.exam, context).catch(() => null) : null;
-        const resolved = wantsSyllabus ? (res ?? localSyllabusFallback(answers.exam)) : null;
-        if (resolved) {
-          setSubjects(resolved.subjects);
-          setSyllabus(resolved.phases);
-        } else {
-          const fb = fallbackSyllabus(goalDescription, false);
-          setSubjects(fb.subjects);
-          setSyllabus(fb.syllabus);
-        }
-        setUsedFallback((f) => ({ ...f, syllabus: resolved ? resolved.usedFallback : false }));
-      } else if (section === 'diet') {
-        const res = wantsDiet ? await generateDietPlan(answers.diet, undefined, context).catch(() => null) : null;
-        const resolved = wantsDiet ? (res ?? localDietFallback(answers.diet)) : null;
-        if (resolved) {
-          setDiet(resolved.meals);
-          setDietTargets({ calories: resolved.targetCalories, proteinG: resolved.targetProteinG, hydrationL: resolved.targetHydrationL });
-        } else {
-          setDiet([]);
-          setDietTargets(null);
-        }
-        setUsedFallback((f) => ({ ...f, diet: resolved ? resolved.usedFallback : false }));
-      } else {
-        const res = await generateProfileTargets(goalDescription).catch(() => null);
-        const ok = !!res?.targets?.length;
-        setTargets(ok ? { targets: res!.targets, baselineLabel: res!.baselineLabel || 'Baseline Score' } : fallbackTargets(goalDescription));
-        setUsedFallback((f) => ({ ...f, targets: !ok }));
+      if (localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true') return true;
+      // Backward compatibility: anyone who already has a saved config from
+      // before this wizard existed has clearly already set things up their
+      // own way — don't interrupt them with onboarding retroactively.
+      if (localStorage.getItem(CONFIG_STORAGE_KEY)) {
+        localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        return true;
       }
-    } finally {
-      setRegenerating(null);
+      return false;
+    } catch {
+      return false;
     }
+  });
+  const [activeTab, setActiveTab] = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  // Which header badge (rank or EQ) currently has the pointer over it —
+  // drives the animated gradient sweep border, same hover-gated overlay
+  // <Card> uses in Primitives.tsx, tracked here since these two pills are
+  // plain divs, not <Card>s.
+  const [hoveredBadge, setHoveredBadge] = useState<null | 'rank' | 'eq'>(null);
+  // Two fixed badges (not a list), so calling the hook twice here is
+  // always exactly two calls per render — safe under the rules of hooks,
+  // unlike the per-row cases (PhasePill/DayPill/TimelineBlock) that had to
+  // be split into their own components first.
+  const rankSweep = useSweepReveal(hoveredBadge === 'rank');
+  const eqSweep = useSweepReveal(hoveredBadge === 'eq');
+  const [modal, setModal] = useState(null);
+
+  // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
+  // Purely additive: the click-based tab bar above still works exactly as
+  // before. This just lets a left/right swipe anywhere on the workspace
+  // move to the next/previous tab in `visibleTabs` (Phase 8 — this used to
+  // walk the static TABS array; `visibleTabs` is declared further down,
+  // right after `config`, but referencing it here is safe: this function
+  // is just stored in a closure and never runs until a swipe actually
+  // happens post-mount, by which point `visibleTabs` is already assigned).
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [swipePeek, setSwipePeek] = useState<'left' | 'right' | null>(null);
+
+  const SWIPE_MIN_DISTANCE = 60; // px — how far a swipe must travel to count
+  const SWIPE_MAX_OFF_AXIS = 70; // px — how vertical it can drift before we treat it as a scroll instead
+
+  const goToAdjacentTab = (direction: 1 | -1) => {
+    const currentIndex = visibleTabs.findIndex((t) => t.id === activeTab);
+    if (currentIndex === -1) return;
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= visibleTabs.length) return;
+    setActiveTab(visibleTabs[nextIndex].id);
   };
 
-  // Short human label for the profile card / target-1 fallback name.
-  // Prefers whatever's most specific to what was actually asked: an exam
-  // name, then the custom free-text box, then the full composed
-  // description as a last resort.
-  const goalLabel = (answers.exam.examName || answers.custom.description || goalDescription).slice(0, 60);
-
-  const finish = () => {
-    // Phase 9 Part 1 bug fix: hydrate through appConfig.ts's own
-    // hydrateTimeline/hydrateDiet before handing off to config — both
-    // generated (AI or fallback) timeline blocks and diet meals only carry
-    // an `iconName` string, but TimelineTab/TrainingFuelTab read `.icon` as
-    // an actual component (`<slot.icon />` / `<m.icon />`). Without this,
-    // finishing onboarding with a real timeline (every account) or a
-    // generated diet plan (any 'diet'-domain account) would crash the very
-    // next render — see PHASE_9_PART1_HANDOFF.md, "Bug fixed", for the full
-    // trace. updateConfig() in App.tsx just spreads whatever's handed to it
-    // with no hydration step of its own, so this has to happen here.
-    const hydratedTimeline = hydrateTimeline(timeline);
-    const hydratedDiet = wantsDiet ? hydrateDiet(diet) : undefined;
-    const dietOverridesOut: Partial<Record<DietOverrideKey, string>> | undefined = wantsDiet && dietTargets
-      ? {
-          // Explicit numeric targets, not left to re-derive from the
-          // (possibly scaled/approximated) meal text via
-          // computeDietAutoValues — this is what makes an explicit
-          // "2700kcal vegetarian" answer stay exactly 2700kcal once it
-          // lands in the live Fuel Matrix, not just during onboarding.
-          calories: `~${dietTargets.calories} kcal`,
-          protein: `~${dietTargets.proteinG}g protein`,
-          hydration: `~${dietTargets.hydrationL.toFixed(1)}L water/day`,
-        }
-      : undefined;
-
-    onComplete({
-      trackerItems: checklist,
-      timeline: hydratedTimeline as TimelineBlock[],
-      training,
-      profile: {
-        name: answers.name || 'Your Name',
-        goalLabel: goalLabel || 'Add your goal',
-        birthdate: answers.birthdate || defaultBirthdate(),
-        height: 170,
-        weight: 65,
-        category: '',
-        baseline: 0,
-        baselineLabel: targets.baselineLabel,
-        boards: 0,
-        targetDate: answers.targetDate || answers.exam.examDate || '',
-        targets: targets.targets,
-        // Extra fields from the questionnaire (domains, dietType, dietGoal,
-        // targetCalories, activityLevel, fitnessGoal, experienceLevel,
-        // examName). This is a DIFFERENT field than the top-level `domains`
-        // below — see deriveProfileFields()'s own doc comment in
-        // questionnaire.ts for why they're kept separate.
-        ...deriveProfileFields(answers),
-      },
-      subjects,
-      syllabus,
-      // Phase 9 Part 1: this is what actually makes Phase 8's dynamic tab
-      // system live for the first time — App.tsx's `visibleTabs` reads
-      // config.domains directly (not profile.domains).
-      domains: answers.domains,
-      ...(hydratedDiet ? { diet: hydratedDiet } : {}),
-      ...(dietOverridesOut ? { dietOverrides: dietOverridesOut } : {}),
-    });
-  };
-
-  const skip = () => {
-    const fb = fallbackSyllabus('', true);
-    onComplete({
-      trackerItems: fallbackChecklist(),
-      timeline: hydrateTimeline(fallbackTimeline(answers.wake, answers.sleep)) as TimelineBlock[],
-      training: fallbackTraining(true),
-      // Bug fix: this used to only set {name, goalLabel, birthdate}. App.tsx's
-      // updateConfig() does a shallow `{...prev, ...partial}` merge, so a
-      // partial `profile` here REPLACES the entire default profile rather
-      // than merging into it — that left `profile.targets` (and height/
-      // weight/category/baseline/boards/targetDate) undefined, and
-      // OverviewTab's `profile.targets.map(...)` crashed on the very next
-      // render. Spread DEFAULT_PROFILE first so every field the dashboard
-      // reads is always defined, same as the `finish()` path above.
-      profile: {
-        ...DEFAULT_PROFILE,
-        ...fallbackTargets(''),
-        name: answers.name || 'Your Name',
-        goalLabel: 'Add your goal',
-        birthdate: answers.birthdate || defaultBirthdate(),
-      },
-      subjects: fb.subjects,
-      syllabus: fb.syllabus,
-      // "Skip" never asked about domains, so this intentionally leaves
-      // `domains` unset -> config.domains stays at its DEFAULT_DOMAINS
-      // (null / "unrestricted") value, same as every legacy/pre-Phase-8
-      // account. A skip-onboarding account seeing the full, unfiltered tab
-      // set is the correct, conservative behavior here, not a gap.
-    });
-  };
-
-  const toggleDomain = (key: GoalDomain) => {
-    setAnswers((a) => ({
-      ...a,
-      domains: a.domains.includes(key) ? a.domains.filter((d) => d !== key) : [...a.domains, key],
-    }));
-    setError('');
-  };
-
-  const startQuestions = () => {
-    if (!selectedDomains.length) {
-      setError('Pick at least one — "Something else" is fine if nothing above fits.');
+  const handleWorkspaceTouchStart = (e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't hijack gestures meant for form controls, sliders, or the
+    // (already horizontally-scrollable) tab bar itself.
+    if (target.closest('input, textarea, select, nav, [data-no-swipe]')) {
+      swipeStartRef.current = null;
       return;
     }
-    setDomainStep(0);
-    setStage('domain');
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
   };
 
-  const goNextDomain = () => {
-    if (domainStep < selectedDomains.length - 1) {
-      setDomainStep((i) => i + 1);
+  const handleWorkspaceTouchMove = (e: React.TouchEvent) => {
+    if (!swipeStartRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
+    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) {
+      setSwipePeek(dx < 0 ? 'left' : 'right');
     } else {
-      runGeneration();
+      setSwipePeek(null);
     }
   };
 
-  const goBackDomain = () => {
-    if (domainStep > 0) {
-      setDomainStep((i) => i - 1);
-    } else {
-      setStage('intro');
+  const handleWorkspaceTouchEnd = (e: React.TouchEvent) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    setSwipePeek(null);
+    if (!start) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    if (Math.abs(dx) < SWIPE_MIN_DISTANCE || Math.abs(dy) > SWIPE_MAX_OFF_AXIS) return;
+    goToAdjacentTab(dx < 0 ? 1 : -1); // swipe left goes to next tab, swipe right goes to previous tab
+  };
+
+  // Editable Config — Daily Checklist / Timeline / Training routine.
+  // Everything else in the app reads this through ConfigContext instead of
+  // the DEFAULT_* module constants, so edits made in the Settings tab
+  // propagate everywhere immediately without a page reload.
+  const [config, setConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+      return deserializeConfig(saved ? JSON.parse(saved) : null);
+    } catch (e) {
+      console.error('Error hydrating config from localStorage', e);
+      return deserializeConfig(null);
+    }
+  });
+
+  useEffect(() => {
+    // Guard: without this, this effect fires on EVERY mount of JEEDashboard
+    // — including while still sitting on the AuthGate or OnboardingWizard
+    // screens, since hooks all run regardless of the early `return`s below
+    // that gate on `unlocked`/`onboardingDone`. That means a fresh account's
+    // still-default `config` got written to `app_config_v1` before
+    // onboarding ever ran, and the very next reload (there are several
+    // during sign-up) then saw that key already present and concluded
+    // "this account already has a saved config" — the backward-compat check
+    // just above — silently skipping onboarding for every new account.
+    // Only persisting once the person is actually unlocked and past
+    // onboarding means `app_config_v1` can never exist before onboarding
+    // has genuinely completed.
+    if (!unlocked || !onboardingDone) return;
+    try {
+      localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(serializeConfig(config)));
+    } catch (e) {
+      console.error('Error persisting config to localStorage', e);
+    }
+  }, [config, unlocked, onboardingDone]);
+
+  // ---------- Dynamic tab system (Phase 8) ----------
+  // `config.domains === null` means "unrestricted" — every account today,
+  // plus any legacy/pre-onboarding account and anyone who used "Skip" on
+  // the wizard, permanently falls into this branch and sees the exact same
+  // full TABS list they always have. `dynamic` tabs are only ever a
+  // *narrowing* a real onboarding completion opts an account into (see
+  // PHASE_8_HANDOFF.md) — this branch is what guarantees that.
+  //
+  // Recomputed live off `config.domains` (not frozen once at onboarding
+  // time) so that if domains are ever edited post-onboarding in a future
+  // phase, the visible tab set updates immediately rather than needing a
+  // reload — same "everything reads through ConfigContext so edits
+  // propagate immediately" principle this file's own header comment
+  // already states for every other config field.
+  const visibleTabs = useMemo(() => {
+    if (config.domains === null) return TABS;
+    const domains = config.domains as GoalDomain[];
+    const visibleKeys = new Set(resolveTabKeysForDomains(domains, TABS.map((t) => t.id as TabLabelKey)));
+    return TABS.filter((t) => visibleKeys.has(t.id as TabLabelKey));
+  }, [config.domains]);
+
+  // If a domain change ever narrows the tab set out from under whatever tab
+  // is currently open, fall back to Dashboard Overview rather than showing
+  // a blank/hidden tab. 'settings' and 'account' are pinned outside TABS
+  // (rendered separately at the bottom of the rail) and are never affected
+  // by domain gating, so they're explicitly excluded from this check.
+  useEffect(() => {
+    if (activeTab === 'settings' || activeTab === 'account') return;
+    if (!visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab('overview');
+    }
+  }, [visibleTabs, activeTab]);
+
+  const updateConfig = (partial: Record<string, any>) => {
+    setConfig((prev) => ({ ...prev, ...partial }));
+  };
+
+  const resetConfigSection = (key: 'trackerItems' | 'timeline' | 'training' | 'profile' | 'subjects' | 'syllabus' | 'countdowns' | 'overviewOverrides' | 'diet' | 'dietOverrides' | 'tabLabels' | 'tabIcons' | 'sectionLabels' | 'domains') => {
+    setConfig((prev) => ({
+      ...prev,
+      [key]: key === 'timeline'
+        ? hydrateTimeline(DEFAULT_TIMELINE_STORABLE)
+        : key === 'training'
+        ? DEFAULT_TRAINING
+        : key === 'profile'
+        ? DEFAULT_PROFILE
+        : key === 'subjects'
+        ? DEFAULT_SUBJECTS
+        : key === 'syllabus'
+        ? DEFAULT_SYLLABUS
+        : key === 'countdowns'
+        ? DEFAULT_COUNTDOWNS
+        : key === 'overviewOverrides'
+        ? DEFAULT_OVERVIEW_OVERRIDES
+        : key === 'diet'
+        ? hydrateDiet(DEFAULT_DIET_STORABLE)
+        : key === 'dietOverrides'
+        ? DEFAULT_DIET_OVERRIDES
+        : key === 'tabLabels'
+        ? DEFAULT_TAB_LABELS
+        : key === 'tabIcons'
+        ? DEFAULT_TAB_ICONS
+        : key === 'sectionLabels'
+        ? DEFAULT_SECTION_LABELS
+        : key === 'domains'
+        ? DEFAULT_DOMAINS
+        : DEFAULT_TRACKER_ITEMS,
+    }));
+  };
+
+  // Core Data Persistence Engine (Localised ISO keys)
+  const [currentDateStr, setCurrentDateStr] = useState(() => getLocalDateString());
+  
+  const [globalHistory, setGlobalHistory] = useState<DailyCheckLog>(() => {
+    try {
+      const saved = localStorage.getItem('jee_command_history_v2');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      console.error('Error hydrating localStorage state map', e);
+      return {};
+    }
+  });
+
+  // Automated System Clock Alignment Effect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const todayStr = getLocalDateString();
+      if (todayStr !== currentDateStr) {
+        setCurrentDateStr(todayStr);
+      }
+    }, 30000); // Pulse check every 30 seconds
+    return () => clearInterval(interval);
+  }, [currentDateStr]);
+
+  // Synchronize dynamic updates directly into hardware memory
+  useEffect(() => {
+    localStorage.setItem('jee_command_history_v2', JSON.stringify(globalHistory));
+  }, [globalHistory]);
+
+  // Per-meal diet check-ins (Fuel Matrix). Lifted up here — rather than kept
+  // local to TrainingFuelTab — specifically so the Daily Matrix's "All 6
+  // Meals Hit" box can auto-derive from it instead of being tracked twice.
+  const [dietLog, setDietLog] = useState<DailyCheckLog>(() => {
+    try {
+      const saved = localStorage.getItem('diet_log_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('diet_log_v1', JSON.stringify(dietLog));
+    } catch {
+      /* storage unavailable — fail silently */
+    }
+  }, [dietLog]);
+
+  const allMealsHitToday = useMemo(() => {
+    const todayMeals = dietLog[currentDateStr] || {};
+    return config.diet.length > 0 && config.diet.every((m) => todayMeals[m.name]);
+  }, [dietLog, currentDateStr, config.diet]);
+
+  // Keep the Daily Matrix's t6 box in lockstep with the Fuel Matrix meal log,
+  // rather than letting it drift as an independent manual checkbox.
+  useEffect(() => {
+    setGlobalHistory((prev) => {
+      const day = prev[currentDateStr] || {};
+      if (!!day.t6 === allMealsHitToday) return prev;
+      return {
+        ...prev,
+        [currentDateStr]: { ...day, t6: allMealsHitToday },
+      };
+    });
+  }, [allMealsHitToday, currentDateStr]);
+
+  // ---- Time-block notifications ----
+  // The Master Timeline is a strict schedule but nothing previously enforced
+  // it. This effect still does a foreground-only reminder via the local
+  // Notification API (fires immediately, no round trip). The *reliable*
+  // version — 5 min before each block, even with the app closed — is handled
+  // server-side by the push-scheduler Edge Function, which reads
+  // `timeline_notifications_enabled` + `app_config_v1.timeline` from each
+  // user's cloud-synced data once a minute. See supabase/functions/push-scheduler.
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('timeline_notifications_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [notificationPermission, setNotificationPermission] = useState(() =>
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('timeline_notifications_enabled', String(notificationsEnabled));
+    } catch {
+      /* storage unavailable — fail silently */
+    }
+  }, [notificationsEnabled]);
+
+  const handleToggleNotifications = async () => {
+    if (notificationsEnabled) {
+      setNotificationsEnabled(false);
+      // Leaves the push subscription itself alone (that's a per-device toggle
+      // in Account > Push Notifications) — this only stops Timeline reminders
+      // specifically, both the foreground ones below and the server-side ones
+      // the push-scheduler sends by reading `timeline_notifications_enabled`.
+      return;
+    }
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission === 'granted') {
+      setNotificationsEnabled(true);
+      const { data } = await supabase.auth.getUser();
+      const userId = data.user?.id;
+      if (userId) await subscribeToPush(userId);
     }
   };
 
-  // ---------------- Intro ----------------
-  if (stage === 'intro') {
-    return (
-      <OnboardingShell
-        mobileHeader={{ icon: Sparkles, title: "Let's Set-Up Akyos for You" }}
-        sidebar={
-          <>
-            <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
-              <Sparkles className="h-5 w-5 text-neutral-950" strokeWidth={2} />
-            </div>
-            <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50 lg:text-[22px]">Let's set up Akyos for you</h1>
-            <p className="text-[12.5px] leading-relaxed text-neutral-500 lg:text-[13.5px]">
-              Nothing here is a template built for someone else. Pick whatever you're working toward — you can pick more than one — and we'll build your checklist, schedule, and plan around exactly that. Everything stays editable afterward.
-            </p>
-          </>
+  // Schedules one timer per remaining timeline block for today, 5 minutes
+  // ahead of its start time. Re-runs at midnight rollover (currentDateStr
+  // changes) and whenever the feature is toggled, always clearing prior
+  // timers first so nothing double-fires.
+  useEffect(() => {
+    if (!notificationsEnabled) return;
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const now = new Date();
+
+    config.timeline.forEach((slot) => {
+      if (slot.start === slot.end) return; // zero-length marker (Sleep Lock) — nothing to alert before
+      const [h, m] = slot.start.split(':').map(Number);
+      const slotTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
+      const alertTime = new Date(slotTime.getTime() - 5 * 60 * 1000);
+      const msUntil = alertTime.getTime() - now.getTime();
+      if (msUntil <= 0) return;
+
+      const timer = setTimeout(() => {
+        try {
+          new Notification(`Starting soon: ${slot.label}`, {
+            body: `${slot.detail} — begins at ${slot.start}`,
+            tag: `timeline-${slot.start}`,
+          });
+        } catch {
+          /* Notification constructor can throw in some restricted contexts */
         }
-        footer={
-          <div className="flex flex-col gap-3 sm:flex-row-reverse sm:items-center">
-            <button
-              onClick={startQuestions}
-              className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:w-auto sm:px-8"
-              style={liquidFillStyle()}
-            >
-              Continue <ArrowRight className="h-4 w-4" />
-            </button>
-            <button onClick={skip} className="text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400 sm:mr-auto">
-              Skip — I'll set everything up myself
-            </button>
-            {error && <p className="text-[12px] text-rose-400 sm:basis-full">{error}</p>}
-          </div>
-        }
-      >
-        <div className="space-y-5">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="lg:col-span-1">
-              <label className={labelCls}>Name</label>
-              <input value={answers.name} onChange={(e) => setAnswers((a) => ({ ...a, name: e.target.value }))} placeholder="Optional" className={inputCls} />
-            </div>
-            <div className="lg:col-span-1">
-              <label className={labelCls}>Birthdate</label>
-              <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
-            </div>
-            <div className="lg:col-span-1">
-              <label className={labelCls}>Wake time</label>
-              <TimeField value={answers.wake} onChange={(e) => setAnswers((a) => ({ ...a, wake: e.target.value }))} className={inputCls} />
-            </div>
-            <div className="lg:col-span-1">
-              <label className={labelCls}>Sleep time</label>
-              <TimeField value={answers.sleep} onChange={(e) => setAnswers((a) => ({ ...a, sleep: e.target.value }))} className={inputCls} />
-            </div>
-          </div>
+      }, msUntil);
+      timers.push(timer);
+    });
 
-          <div>
-            <label className={labelCls}>Target date (optional)</label>
-            <DateField value={answers.targetDate} onChange={(e) => setAnswers((a) => ({ ...a, targetDate: e.target.value }))} className={inputCls} />
-            <p className={hintCls}>Powers the countdown widget on your Overview tab. Skip if your goal isn't date-bound.</p>
-          </div>
+    return () => timers.forEach(clearTimeout);
+  }, [notificationsEnabled, currentDateStr, config.timeline]);
 
-          <div>
-            <label className={labelCls}>What are you working toward? Pick all that apply.</label>
-            <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-              {GOAL_DOMAINS.map((d) => {
-                const Icon = DOMAIN_ICONS[d.key];
-                const active = answers.domains.includes(d.key);
-                return (
-                  <button
-                    key={d.key}
-                    type="button"
-                    onClick={() => toggleDomain(d.key)}
-                    className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
-                      active
-                        ? 'border-violet-500/60 bg-violet-500/10'
-                        : 'border-neutral-800 bg-neutral-900/50 hover:border-neutral-700'
-                    }`}
-                  >
-                    <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${active ? 'text-violet-400' : 'text-neutral-500'}`} strokeWidth={2} />
-                    <div>
-                      <div className={`text-[12.5px] font-semibold ${active ? 'text-violet-300' : 'text-neutral-300'}`}>{d.label}</div>
-                      <div className="text-[11.5px] text-neutral-500">{d.blurb}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </OnboardingShell>
-    );
-  }
+  // Read current active item checklist matrix
+  const checked = useMemo(() => {
+    return globalHistory[currentDateStr] || {};
+  }, [globalHistory, currentDateStr]);
 
-  // ---------------- Domain question screens ----------------
-  if (stage === 'domain') {
-    const domain = selectedDomains[domainStep];
-    const isLast = domainStep === selectedDomains.length - 1;
-    const domainMeta = GOAL_DOMAINS.find((d) => d.key === domain)!;
-    const Icon = DOMAIN_ICONS[domain];
+  const toggleCheck = (itemId) => {
+    setGlobalHistory((prev) => {
+      const currentDayMetrics = { ...prev[currentDateStr] };
+      currentDayMetrics[itemId] = !currentDayMetrics[itemId];
+      return {
+        ...prev,
+        [currentDateStr]: currentDayMetrics,
+      };
+    });
+  };
 
-    let fields: React.ReactNode = null;
+  const doneCount = useMemo(() => Object.values(checked).filter(Boolean).length, [checked]);
+  const totalCount = config.trackerItems.length;
+  const overallPct = Math.round((doneCount / totalCount) * 100);
 
-    if (domain === 'exam') {
-      const a = answers.exam;
-      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, exam: { ...prev.exam, ...patch } }));
-      fields = (
-        <div className="space-y-4">
-          <div>
-            <label className={labelCls}>What exam / certification / subject?</label>
-            <input value={a.examName} onChange={(e) => set({ examName: e.target.value })} placeholder="e.g. NEET, UPSC Prelims, AWS SAA-C03, Class 10 Boards" className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Exam date (optional)</label>
-            <DateField value={a.examDate} onChange={(e) => set({ examDate: e.target.value })} className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Subjects (optional)</label>
-            <input value={a.subjectsHint} onChange={(e) => set({ subjectsHint: e.target.value })} placeholder="e.g. Physics, Chemistry, Biology" className={inputCls} />
-            <p className={hintCls}>Leave blank and we'll infer them from the exam name.</p>
-          </div>
-          <div>
-            <label className={labelCls}>Where are you right now?</label>
-            <ChipSelect options={EXAM_LEVEL_OPTIONS} value={a.currentLevel} onChange={(v) => set({ currentLevel: v })} />
-          </div>
-        </div>
-      );
-    } else if (domain === 'fitness') {
-      const a = answers.fitness;
-      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, fitness: { ...prev.fitness, ...patch } }));
-      fields = (
-        <div className="space-y-4">
-          <div>
-            <label className={labelCls}>Main training goal</label>
-            <ChipSelect options={FITNESS_GOAL_OPTIONS} value={a.fitnessGoal} onChange={(v) => set({ fitnessGoal: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Experience level</label>
-            <ChipSelect options={EXPERIENCE_OPTIONS} value={a.experienceLevel} onChange={(v) => set({ experienceLevel: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Equipment access</label>
-            <ChipSelect options={EQUIPMENT_OPTIONS} value={a.equipmentAccess} onChange={(v) => set({ equipmentAccess: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Training days per week: {a.daysPerWeek}</label>
-            <input
-              type="range" min={1} max={7} step={1}
-              value={a.daysPerWeek}
-              onChange={(e) => set({ daysPerWeek: Number(e.target.value) })}
-              className="w-full accent-violet-500"
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Injuries or limitations (optional)</label>
-            <input value={a.injuriesOrLimits} onChange={(e) => set({ injuriesOrLimits: e.target.value })} placeholder="e.g. bad left knee, avoid deep squats" className={inputCls} />
-          </div>
-        </div>
-      );
-    } else if (domain === 'diet') {
-      const a = answers.diet;
-      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, diet: { ...prev.diet, ...patch } }));
-      fields = (
-        <div className="space-y-4">
-          <div>
-            <label className={labelCls}>Diet type</label>
-            <ChipSelect options={DIET_TYPE_OPTIONS} value={a.dietType} onChange={(v) => set({ dietType: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Goal</label>
-            <ChipSelect options={DIET_GOAL_OPTIONS} value={a.dietGoal} onChange={(v) => set({ dietGoal: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Activity level</label>
-            <ChipSelect options={ACTIVITY_LEVEL_OPTIONS} value={a.activityLevel} onChange={(v) => set({ activityLevel: v })} />
-          </div>
-          <div>
-            <label className={labelCls}>Target daily calories (optional)</label>
-            <input
-              value={a.targetCalories ?? ''}
-              onChange={(e) => {
-                const digits = e.target.value.replace(/\D/g, '');
-                set({ targetCalories: digits ? Number(digits) : null });
-              }}
-              placeholder="Leave blank to auto-calculate"
-              inputMode="numeric"
-              className={inputCls}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Allergies or dislikes (optional)</label>
-            <input value={a.allergiesOrDislikes} onChange={(e) => set({ allergiesOrDislikes: e.target.value })} placeholder="e.g. peanuts, dairy" className={inputCls} />
-          </div>
-        </div>
-      );
-    } else if (domain === 'productivity') {
-      const a = answers.productivity;
-      const set = (patch: Partial<typeof a>) => setAnswers((prev) => ({ ...prev, productivity: { ...prev.productivity, ...patch } }));
-      fields = (
-        <div className="space-y-4">
-          <div>
-            <label className={labelCls}>What are you focusing on?</label>
-            <textarea
-              value={a.focusAreas}
-              onChange={(e) => set({ focusAreas: e.target.value })}
-              placeholder="e.g. deep work on my startup, a reading habit, cutting down screen time"
-              rows={3}
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-          <div>
-            <label className={labelCls}>Routine style</label>
-            <ChipSelect options={ROUTINE_STYLE_OPTIONS} value={a.routineStyle} onChange={(v) => set({ routineStyle: v })} />
-          </div>
-        </div>
-      );
-    } else {
-      const a = answers.custom;
-      fields = (
-        <div className="space-y-4">
-          <div>
-            <label className={labelCls}>Describe it in your own words</label>
-            <textarea
-              value={a.description}
-              onChange={(e) => setAnswers((prev) => ({ ...prev, custom: { description: e.target.value } }))}
-              placeholder="Tell us what you're working toward — even a rough sentence is enough."
-              rows={4}
-              className={`${inputCls} resize-none`}
-            />
-          </div>
-        </div>
-      );
+  // Lifetime count of fully-cleared days across all recorded history — the
+  // number that actually drives Hunter Rank, independent of today's progress.
+  const clearedDaysCount = useMemo(() => {
+    return Object.values(globalHistory).filter((dayObj) =>
+      config.trackerItems.every((item) => (dayObj as any)?.[item.id])
+    ).length;
+  }, [globalHistory, config.trackerItems]);
+
+  const hunterRank = useMemo(() => getHunterRank(clearedDaysCount), [clearedDaysCount]);
+  const currentStreak = useMemo(
+    () => computeCurrentStreak(globalHistory, currentDateStr, config.trackerItems),
+    [globalHistory, currentDateStr, config.trackerItems]
+  );
+
+  // Fires the "System" quest-clear notification exactly once, the moment
+  // today's Daily Matrix transitions from incomplete to 100%.
+  const [questClear, setQuestClear] = useState<{ rank: typeof HUNTER_RANKS[number]; isNewRank: boolean } | null>(null);
+  const wasCompleteRef = useRef(overallPct === 100);
+  const shownForDateRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const justCompleted = !wasCompleteRef.current && overallPct === 100;
+    if (justCompleted && shownForDateRef.current !== currentDateStr) {
+      shownForDateRef.current = currentDateStr;
+      const priorRank = getHunterRank(Math.max(clearedDaysCount - 1, 0));
+      const newRank = getHunterRank(clearedDaysCount);
+      setQuestClear({ rank: newRank, isNewRank: newRank.rank !== priorRank.rank });
     }
+    wasCompleteRef.current = overallPct === 100;
+  }, [overallPct, currentDateStr, clearedDaysCount]);
 
+  if (!unlocked) {
     return (
-      <OnboardingShell
-        sidebar={
-          <>
-            <div className="mb-1.5 flex items-center gap-2">
-              {selectedDomains.map((_, i) => (
-                <span
-                  key={i}
-                  className={`h-1 flex-1 rounded-full ${i <= domainStep ? '' : 'bg-neutral-800'}`}
-                  style={i <= domainStep ? liquidFillStyle() : undefined}
-                />
-              ))}
-            </div>
-            <p className="mb-4 text-[11px] text-neutral-600">Step {domainStep + 1} of {selectedDomains.length}</p>
-
-            <div className="flex items-center gap-2.5 lg:flex-col lg:items-start lg:gap-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20 shrink-0 lg:h-11 lg:w-11" style={liquidFillStyle()}>
-                <Icon className="h-4 w-4 text-neutral-950 lg:h-5 lg:w-5" strokeWidth={2} />
-              </div>
-              <h1 className="text-[16px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">{domainMeta.label}</h1>
-            </div>
-          </>
-        }
-        footer={
-          <div className="flex gap-3">
-            <button
-              onClick={goBackDomain}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-[13px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back
-            </button>
-            <button
-              onClick={goNextDomain}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 lg:flex-none lg:px-10"
-              style={liquidFillStyle()}
-            >
-              {isLast ? 'Generate my setup' : 'Next'} <ArrowRight className="h-4 w-4" />
-            </button>
-          </div>
-        }
-      >
-        {fields}
-      </OnboardingShell>
+      <ErrorBoundary label="Sign in">
+        <AuthGate onUnlock={() => setUnlocked(true)} />
+      </ErrorBoundary>
     );
   }
 
-  // ---------------- Generating ----------------
-  if (stage === 'generating') {
+  if (!onboardingDone) {
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 gap-4">
-        <style>{NO_SELECT_CSS}</style>
-        <Loader2 className="h-7 w-7 text-violet-400 animate-spin" strokeWidth={2} />
-        <p className="text-[13px] text-neutral-400">{loadingMessages[loadingMsgIdx]}</p>
-      </div>
+      <ErrorBoundary label="Onboarding">
+        <OnboardingWizard
+          onComplete={(generated) => {
+            updateConfig(generated);
+            try {
+              localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+            } catch (e) {
+              console.error('[Onboarding] failed to persist completion flag', e);
+            }
+            setOnboardingDone(true);
+          }}
+        />
+      </ErrorBoundary>
     );
   }
 
-  // ---------------- Review ----------------
-  const sectionCard = (
-    icon: any,
-    title: string,
-    subtitle: string,
-    key: 'checklist' | 'timeline' | 'training' | 'targets' | 'syllabus' | 'diet',
-    children: React.ReactNode
-  ) => {
-    const Icon = icon;
-    const isFallback = usedFallback[key];
-    return (
-      <div className={`rounded-2xl border p-4 sm:p-5 ${isFallback ? 'border-amber-700/40 bg-amber-950/10' : 'border-neutral-800 bg-neutral-950/60'}`}>
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2.5">
-            <Icon className="h-4 w-4 text-violet-400" strokeWidth={2} />
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-[13px] font-bold text-neutral-100">{title}</h3>
-                {isFallback && (
-                  <span
-                    className="rounded-full border border-amber-700/50 bg-amber-900/30 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-amber-400"
-                    title="AI generation didn't come through for this section, so this is generic placeholder content, not something built for your goal. Edit it directly or hit Regenerate to try again."
-                  >
-                    Generic — not generated
-                  </span>
-                )}
-              </div>
-              <p className="text-[11.5px] text-neutral-500">{subtitle}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => regenerate(key)}
-            disabled={regenerating === key}
-            aria-label={`Regenerate ${title}`}
-            className="shrink-0 flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-[11px] font-semibold text-neutral-400 hover:text-neutral-200 transition-colors disabled:opacity-50"
-          >
-            <RefreshCcw className={`h-3 w-3 ${regenerating === key ? 'animate-spin' : ''}`} /> Regenerate
-          </button>
-        </div>
-        {isFallback && (
-          <p className="mb-2.5 text-[11.5px] leading-relaxed text-amber-500/80">
-            This section couldn't be generated from your goal, so it's showing generic placeholder content instead. Edit it in Settings after finishing, or try Regenerate now.
-          </p>
-        )}
-        {children}
-      </div>
-    );
+  const renderTab = () => {
+    switch (activeTab) {
+      case 'overview': return <OverviewTab setModal={setModal} />;
+      case 'timeline': return (
+        <TimelineTab
+          setModal={setModal}
+          notificationsEnabled={notificationsEnabled}
+          notificationPermission={notificationPermission}
+          onToggleNotifications={handleToggleNotifications}
+        />
+      );
+      case 'training': return <TrainingFuelTab setModal={setModal} dietLog={dietLog} setDietLog={setDietLog} currentDateStr={currentDateStr} />;
+      case 'syllabus': return <SyllabusTab setModal={setModal} />;
+      case 'mocktests': return <MockTestTab />;
+      case 'ashclock': return <AshClockTab />;
+      case 'history': return <PerformanceCalendar globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} setModal={setModal} />;
+      case 'settings': return <ConfigEditorTab />;
+      case 'account': return <AccountPage globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />;
+      default: return null;
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[999] flex flex-col bg-zinc-950">
-      <style>{NO_SELECT_CSS}{LIQUID_GRADIENT_KEYFRAMES}</style>
-
-      {/* Header segment — fixed at the top, never scrolls, never moves
-          together with the card grid below it. */}
-      <div className="shrink-0 border-b border-neutral-900 px-6 pt-8 pb-4 sm:px-10 lg:px-16 lg:pt-10">
-        <div className="mx-auto w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
-          <h1 className="mb-1.5 text-[17px] font-semibold tracking-tight text-neutral-50 lg:text-[20px]">Here's what we built</h1>
-          <p className="max-w-2xl text-[12.5px] leading-relaxed text-neutral-500">
-            Not quite right? Regenerate any section, or just continue — everything below stays fully editable in Settings afterward.
-          </p>
-          {Object.values(usedFallback).some(Boolean) && (
-            <div className="mt-3 rounded-xl border border-amber-700/40 bg-amber-950/10 px-4 py-2.5 text-[12px] leading-relaxed text-amber-400/90">
-              One or more sections below (marked "Generic — not generated") couldn't be built from your goal and are showing generic placeholder content instead of a real plan. Regenerate them, or edit directly in Settings once you're in.
-            </div>
-          )}
-        </div>
+    <ConfigContext.Provider
+      value={{
+        trackerItems: config.trackerItems,
+        timeline: config.timeline,
+        training: config.training,
+        profile: config.profile,
+        subjects: config.subjects,
+        syllabus: config.syllabus,
+        countdowns: config.countdowns,
+        overviewOverrides: config.overviewOverrides,
+        diet: config.diet,
+        dietOverrides: config.dietOverrides,
+        tabLabels: config.tabLabels,
+        tabIcons: config.tabIcons,
+        sectionLabels: config.sectionLabels,
+        domains: config.domains,
+        updateConfig,
+        resetConfigSection,
+      }}
+    >
+    <div className="min-h-screen w-full bg-zinc-950 text-neutral-200 font-sans antialiased relative lg:flex">
+      <style>{NO_SELECT_CSS}</style>
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div className="absolute -top-40 -left-40 h-[32rem] w-[32rem] rounded-full bg-fuchsia-500/10 blur-[120px]" />
+        <div className="absolute top-1/3 -right-40 h-[28rem] w-[28rem] rounded-full bg-violet-600/10 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/4 h-[24rem] w-[24rem] rounded-full bg-indigo-600/10 blur-[110px]" />
       </div>
+      {!introDone && <IntroLoader onFinish={() => setIntroDone(true)} />}
 
-      {/* Content segment — the only part that scrolls. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5 sm:px-10 lg:px-16">
-        <div className="mx-auto w-full max-w-lg sm:max-w-xl md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
-        {/* Bento-style grid on wider screens — each section card is a
-            self-contained block, so laying them out 2-3 across uses the
-            freed-up width instead of one long single-file column. */}
-        <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
-          {sectionCard(ClipboardList, 'Daily Checklist', `${checklist.length} objectives`, 'checklist', (
-            <ul className="space-y-1.5">
-              {checklist.slice(0, 6).map((it) => (
-                <li key={it.id} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-violet-400/60 shrink-0" /> {it.label}
-                </li>
-              ))}
-            </ul>
-          ))}
+      {/* Sidebar backdrop — mobile/tablet drawer scrim */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm animate-fadeIn lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-          {sectionCard(Clock3, 'Daily Timeline', `${timeline.length} blocks, ${answers.wake}–${answers.sleep}`, 'timeline', (
-            <ul className="space-y-1.5">
-              {timeline.slice(0, 6).map((b, i) => (
-                <li key={i} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
-                  <span className="text-neutral-600 tabular-nums text-[11px] w-[92px] shrink-0">{b.start}–{b.end}</span> {b.label}
-                </li>
-              ))}
-            </ul>
-          ))}
-
-          {sectionCard(Dumbbell, 'Training Split', wantsTraining ? `${training.length} days planned` : 'Not included', 'training', (
-            <ul className="space-y-1.5">
-              {training.slice(0, 7).map((d, i) => (
-                <li key={i} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
-                  <span className="text-neutral-600 text-[11px] w-[70px] shrink-0">{d.day.slice(0, 3)}</span> {d.focus}
-                </li>
-              ))}
-            </ul>
-          ))}
-
-          {sectionCard(Target, 'Goal Targets', `${targets.targets.length} target${targets.targets.length === 1 ? '' : 's'}`, 'targets', (
-            <ul className="space-y-1.5">
-              {targets.targets.map((t, i) => (
-                <li key={i} className="text-[12.5px] text-neutral-300">
-                  <span className="font-semibold text-neutral-200">{t.name}</span>{t.course ? ` — ${t.course}` : ''}
-                </li>
-              ))}
-            </ul>
-          ))}
-
-          {sectionCard(BookOpen, 'Syllabus Roadmap', wantsSyllabus ? `${subjects.length} subject${subjects.length === 1 ? '' : 's'}, ${syllabus.length} phase${syllabus.length === 1 ? '' : 's'}` : 'Not included', 'syllabus', (
-            <ul className="space-y-1.5">
-              {subjects.map((s) => (
-                <li key={s.key} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-violet-400/60 shrink-0" /> {s.label}
-                </li>
-              ))}
-            </ul>
-          ))}
-
-          {wantsDiet && dietTargets && sectionCard(Utensils, 'Diet Plan', `${diet.length} meal${diet.length === 1 ? '' : 's'}, ~${dietTargets.calories}kcal/day`, 'diet', (
-            <>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.calories} kcal</span>
-                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.proteinG}g protein</span>
-                <span className="rounded-full border border-neutral-800 bg-neutral-900/60 px-2 py-1 text-[11px] text-neutral-400">~{dietTargets.hydrationL.toFixed(1)}L water</span>
-              </div>
-              <ul className="space-y-1.5">
-                {diet.slice(0, 6).map((m, i) => (
-                  <li key={i} className="text-[12.5px] text-neutral-300 flex items-center gap-2">
-                    <span className="text-neutral-600 tabular-nums text-[11px] w-[80px] shrink-0">{m.time}</span> {m.name}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ))}
+      {/* Sidebar Navigation — persistent rail on desktop (minimized until hovered), sliding drawer on mobile */}
+      <aside
+        onMouseEnter={() => setSidebarExpanded(true)}
+        onMouseLeave={() => setSidebarExpanded(false)}
+        className={`fixed inset-y-0 left-0 z-50 flex w-[240px] shrink-0 flex-col border-r border-neutral-800/70 bg-neutral-950/98 transition-[transform,width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:sticky lg:top-0 lg:z-20 lg:h-screen lg:translate-x-0 lg:bg-neutral-950/50 lg:backdrop-blur-xl ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } ${sidebarExpanded ? 'lg:w-[240px]' : 'lg:w-[68px]'}`}
+      >
+        <div className={`flex items-center gap-2.5 px-4 pt-5 pb-4 ${!sidebarExpanded ? 'lg:justify-center lg:gap-0 lg:px-0' : ''}`}>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20" style={liquidFillStyle()}>
+            <AkyosMark className="h-4 w-4 text-neutral-950" />
+          </div>
+          <span className={`text-[13px] font-semibold tracking-tight text-neutral-200 truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[140px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>Akyos</span>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close navigation"
+            className="ml-auto flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-900 hover:text-neutral-200 transition-colors lg:hidden"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        </div>
-      </div>
 
-      {/* Footer segment — fixed at the bottom, always visible regardless
-          of how tall the card grid above ends up being. */}
-      <div className="shrink-0 border-t border-neutral-900 bg-zinc-950/95 px-6 py-4 backdrop-blur-sm sm:px-10 lg:px-16">
-        <div className="mx-auto flex w-full max-w-lg flex-col gap-3 sm:max-w-xl sm:flex-row sm:items-center sm:justify-between md:max-w-2xl lg:max-w-5xl xl:max-w-6xl">
-          <button onClick={() => { setStage('intro'); setDomainStep(0); }} className="order-2 text-center text-[12px] font-medium text-neutral-600 hover:text-neutral-400 sm:order-1">
-            Start over
+        <nav className="flex-1 overflow-y-auto px-3 pb-4 no-scrollbar" role="tablist" aria-label="Main sections">
+          <div className="space-y-1">
+            {visibleTabs.map((tab) => {
+              const Icon = ICON_OPTIONS[config.tabIcons[tab.id as TabLabelKey]] || tab.icon;
+              const isActive = activeTab === tab.id;
+              const label = config.tabLabels[tab.id as TabLabelKey] || tab.label;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); setSidebarOpen(false); }}
+                  title={label}
+                  aria-label={label}
+                  role="tab"
+                  aria-selected={isActive}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`cursor-target group relative flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+                    !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
+                  } ${
+                    isActive
+                      ? 'bg-neutral-100 text-neutral-900 shadow-sm'
+                      : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                  <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Settings & Account — pinned to the bottom of the rail */}
+        <div className="mt-auto border-t border-neutral-800/70 px-3 py-3 space-y-1">
+          <button
+            onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
+            title={config.tabLabels.settings}
+            aria-label={config.tabLabels.settings}
+            role="tab"
+            aria-selected={activeTab === 'settings'}
+            aria-current={activeTab === 'settings' ? 'page' : undefined}
+            className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+              !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
+            } ${
+              activeTab === 'settings'
+                ? 'bg-neutral-100 text-neutral-900 shadow-sm'
+                : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
+            }`}
+          >
+            {(() => { const SettingsIcon = ICON_OPTIONS[config.tabIcons.settings] || Settings; return <SettingsIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} />; })()}
+            <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{config.tabLabels.settings}</span>
           </button>
           <button
-            onClick={finish}
-            className="order-1 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity hover:opacity-90 sm:order-2 sm:w-auto sm:px-8"
-            style={liquidFillStyle()}
+            onClick={() => { setActiveTab('account'); setSidebarOpen(false); }}
+            title={config.tabLabels.account}
+            aria-label={config.tabLabels.account}
+            role="tab"
+            aria-selected={activeTab === 'account'}
+            aria-current={activeTab === 'account' ? 'page' : undefined}
+            className={`cursor-target flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-200 active:scale-[0.98] ${
+              !sidebarExpanded ? 'lg:w-11 lg:h-11 lg:justify-center lg:gap-0 lg:px-0 lg:py-0 lg:mx-auto' : ''
+            } ${
+              activeTab === 'account'
+                ? 'bg-neutral-100 text-neutral-900 shadow-sm'
+                : 'text-neutral-400 hover:bg-neutral-800/60 hover:text-neutral-200'
+            }`}
           >
-            Looks good — Enter Akyos <ArrowRight className="h-4 w-4" />
+            {(() => { const AccountIcon = ICON_OPTIONS[config.tabIcons.account] || UserCircle2; return <AccountIcon className="h-4 w-4 shrink-0" strokeWidth={1.75} />; })()}
+            <span className={`truncate overflow-hidden transition-all duration-200 ${sidebarExpanded ? 'lg:max-w-[160px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>{config.tabLabels.account}</span>
           </button>
         </div>
+      </aside>
+
+      {/* Main column */}
+      <div className="relative z-10 flex-1 min-w-0">
+
+        {/* Sticky header — brand, streak, rank, and EQ stay pinned while the page scrolls beneath */}
+        <header
+          onMouseEnter={() => setSidebarExpanded(false)}
+          className="sticky top-0 z-30 flex flex-row items-center justify-between gap-3 border-b border-neutral-800/70 bg-zinc-950/85 backdrop-blur-xl px-4 sm:px-6 lg:px-8 py-3.5"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20 transition-transform active:scale-95 lg:pointer-events-none lg:cursor-default"
+              style={liquidFillStyle()}
+            >
+              <AkyosMark className="h-5.5 w-5.5 text-neutral-950" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none truncate">Akyos</h1>
+              <p className="text-[12.5px] text-neutral-500 mt-1 truncate">Your Answer to Chaos</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            <MobileStatusStrip streak={currentStreak} hunterRank={hunterRank} overallPct={overallPct} />
+            <StreakFlame streak={currentStreak} />
+            <div
+              onMouseEnter={() => setHoveredBadge('rank')}
+              onMouseLeave={() => setHoveredBadge((cur) => (cur === 'rank' ? null : cur))}
+              className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border px-3.5 py-1.5 transition-colors duration-500"
+              style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
+            >
+              {rankSweep.mounted && (
+                // Same animated gradient sweep border as the dashboard's
+                // <Card> bento boxes / Master Timeline blocks / Syllabus
+                // Month pills / day-selector pills: a ring-only cutout
+                // filled with the shared moving liquidFillStyle() brand
+                // gradient, revealed via the --akyos-sweep mask on hover-in,
+                // faded back out (no re-sweep) via useSweepReveal on
+                // hover-out.
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ animation: rankSweep.animation, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
+              <Swords className="h-3 w-3" style={{ color: hunterRank.color }} />
+              <span className="text-[11.5px] font-medium" style={{ color: hunterRank.color }}>
+                {hunterRank.label}
+              </span>
+            </div>
+            <div
+              onMouseEnter={() => setHoveredBadge('eq')}
+              onMouseLeave={() => setHoveredBadge((cur) => (cur === 'eq' ? null : cur))}
+              className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5"
+            >
+              {eqSweep.mounted && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-full"
+                  style={{ animation: eqSweep.animation, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
+              <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="text-[11.5px] font-medium text-neutral-400">Execution Quotient: <span className="text-violet-400 tabular-nums">{overallPct}%</span></span>
+            </div>
+          </div>
+        </header>
+
+        <div className="relative z-10 mx-auto max-w-[1200px] px-4 sm:px-6 lg:px-8 py-6">
+
+        {/* Dashboard Grid Workspace Layout — swipe left/right anywhere here to move between tabs */}
+        <div
+          className={`relative grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 transition-transform duration-150 ease-out touch-pan-y ${
+            swipePeek === 'left' ? '-translate-x-2' : swipePeek === 'right' ? 'translate-x-2' : 'translate-x-0'
+          }`}
+          onTouchStart={handleWorkspaceTouchStart}
+          onTouchMove={handleWorkspaceTouchMove}
+          onTouchEnd={handleWorkspaceTouchEnd}
+          onTouchCancel={handleWorkspaceTouchEnd}
+        >
+          {/* Faint edge hints that appear mid-swipe, Instagram-style */}
+          <div
+            className={`pointer-events-none fixed left-2 top-1/2 z-30 -translate-y-1/2 rounded-full bg-neutral-900/80 border border-neutral-700 p-2 transition-opacity duration-150 ${
+              swipePeek === 'right' ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <ChevronLeft className="h-4 w-4 text-neutral-300" />
+          </div>
+          <div
+            className={`pointer-events-none fixed right-2 top-1/2 z-30 -translate-y-1/2 rounded-full bg-neutral-900/80 border border-neutral-700 p-2 transition-opacity duration-150 ${
+              swipePeek === 'left' ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <ChevronRight className="h-4 w-4 text-neutral-300" />
+          </div>
+
+          <main>
+            <ErrorBoundary key={activeTab} label={TABS.find((t) => t.id === activeTab)?.label}>
+              {renderTab()}
+            </ErrorBoundary>
+          </main>
+          <aside>
+            <DailyTracker currentDayStr={currentDateStr} checked={checked} onToggle={toggleCheck} setActiveTab={setActiveTab} />
+          </aside>
+        </div>
+
+        <footer className="mt-8 pb-2 text-center">
+          <p className="text-[11px] text-neutral-600">Built By Ash - With Love and Peace</p>
+        </footer>
+        </div>
       </div>
+
+      {/* Global Context-Aware Modal Overlay */}
+      <GlobalDetailModal modalData={modal} onClose={() => setModal(null)} />
+
+      {/* "System" Quest-Clear Notification — fires on hitting 100% for the day */}
+      <QuestClearNotification data={questClear} onDismiss={() => setQuestClear(null)} />
+
+      {/* Global Fluid Cursor (desktop / fine-pointer only) */}
+      <MagneticCursor />
+
+      {/* Embedded Support Custom Styles */}
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Branded keyboard-focus ring, app-wide. Several inputs already
+           swap outline-none for a border-color change on focus (a fine
+           substitute), but every button, link, and nav item was falling
+           back to the browser's unstyled default outline — inconsistent
+           and off-brand. One rule here covers all of them at once. Scoped
+           to :focus-visible so mouse/touch clicks stay exactly as before;
+           only actual keyboard navigation gets the ring. */
+        :focus-visible {
+          outline: 2px solid rgba(167, 139, 250, 0.75);
+          outline-offset: 2px;
+          border-radius: 4px;
+        }
+
+        /* Respect the OS-level "reduce motion" preference. Nothing here
+           is deleted, just collapsed to near-instant, so people sensitive
+           to motion (or vestibular conditions) still get every state
+           change, just without the drifting gradients, ripples, tilts,
+           and cursor-follow loop. */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
+        ${LIQUID_GRADIENT_KEYFRAMES}
+        ${SWEEP_REVEAL_KEYFRAMES}
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.18s ease-out forwards; }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeInUp { animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes slideInRight {
+          from { opacity: 0; transform: translateX(24px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-slideInRight { animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes rippleExpand {
+          from { transform: translate(-50%, -50%) scale(0); opacity: 0.35; }
+          to { transform: translate(-50%, -50%) scale(26); opacity: 0; }
+        }
+        .animate-ripple { animation: rippleExpand 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes modalPop {
+          0% { opacity: 0; transform: scale(0.92) translateY(8px); }
+          60% { opacity: 1; transform: scale(1.015) translateY(0); }
+          100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-modalPop { animation: modalPop 380ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-6px); }
+          80% { transform: translateX(6px); }
+        }
+        .animate-shake { animation: shake 400ms ease-in-out; }
+        @keyframes discSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-discSpin { animation: discSpin 6s linear infinite; }
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 0.35; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.06); }
+        }
+        .animate-pulseGlow { animation: pulseGlow 2.6s ease-in-out infinite; }
+        @keyframes eqBar {
+          0%, 100% { transform: scaleY(0.25); }
+          50% { transform: scaleY(1); }
+        }
+        .animate-eqBar1 { animation: eqBar 0.85s ease-in-out infinite; animation-delay: -0.6s; transform-origin: bottom; }
+        .animate-eqBar2 { animation: eqBar 0.7s ease-in-out infinite; animation-delay: -0.2s; transform-origin: bottom; }
+        .animate-eqBar3 { animation: eqBar 0.95s ease-in-out infinite; animation-delay: -0.9s; transform-origin: bottom; }
+        .animate-eqBar4 { animation: eqBar 0.65s ease-in-out infinite; animation-delay: -0.35s; transform-origin: bottom; }
+        @keyframes slideInFade {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slideInFade { animation: slideInFade 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+        /* ---- Ash's Clock: vertical fade/slide digit mechanics ---- */
+        .fade-unit {
+          position: relative;
+          width: calc(var(--fade-h) * 0.72);
+          height: var(--fade-h);
+          border-radius: 10px;
+          overflow: hidden;
+          background: linear-gradient(180deg, #2d1a4d 0%, #1a0f2e 100%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(147,51,234,0.16);
+        }
+        .fade-num {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: calc(var(--fade-h) * 0.52);
+          font-weight: 800;
+          font-family: 'Courier New', monospace;
+          color: #f3e8ff;
+          font-variant-numeric: tabular-nums;
+        }
+        @keyframes fadeNumInUp {
+          from { opacity: 0; transform: translateY(38%); filter: blur(2px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        @keyframes fadeNumOutUp {
+          from { opacity: 1; transform: translateY(0); filter: blur(0); }
+          to { opacity: 0; transform: translateY(-38%); filter: blur(2px); }
+        }
+        @keyframes fadeNumInDown {
+          from { opacity: 0; transform: translateY(-38%); filter: blur(2px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        @keyframes fadeNumOutDown {
+          from { opacity: 1; transform: translateY(0); filter: blur(0); }
+          to { opacity: 0; transform: translateY(38%); filter: blur(2px); }
+        }
+        .fade-num-in-up { animation: fadeNumInUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-out-up { animation: fadeNumOutUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-in-down { animation: fadeNumInDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .fade-num-out-down { animation: fadeNumOutDown 0.42s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes questIn {
+          from { opacity: 0; transform: translateY(-14px) scale(0.96); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-questIn { animation: questIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        @keyframes questOut {
+          from { opacity: 1; transform: translateY(0) scale(1); }
+          to { opacity: 0; transform: translateY(-10px) scale(0.97); }
+        }
+        .animate-questOut { animation: questOut 0.5s ease-in forwards; }
+        @keyframes questSparkle {
+          0% { transform: translateY(0) scale(0); opacity: 0; }
+          15% { opacity: 1; }
+          100% { transform: translateY(-150px) scale(1); opacity: 0; }
+        }
+        .animate-questSparkle { animation: questSparkle linear infinite; }
+        @keyframes questSweep {
+          0% { transform: translateX(-120%); }
+          100% { transform: translateX(120%); }
+        }
+        .animate-questSweep { animation: questSweep 2.6s ease-in-out infinite; }
+        @keyframes questCursorBlink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0; }
+        }
+        .animate-questCursorBlink { animation: questCursorBlink 0.8s step-end infinite; }
+        @keyframes flameFlicker {
+          0%, 100% { transform: scale(1) rotate(-2deg); opacity: 0.95; }
+          25% { transform: scale(1.08) rotate(2deg); opacity: 1; }
+          50% { transform: scale(0.95) rotate(-3deg); opacity: 0.88; }
+          75% { transform: scale(1.05) rotate(1deg); opacity: 1; }
+        }
+        .animate-flameFlicker { animation: flameFlicker 1.4s ease-in-out infinite; transform-origin: bottom center; }
+        @keyframes flameGlow {
+          0%, 100% { opacity: 0.45; transform: scale(0.85); }
+          50% { opacity: 0.9; transform: scale(1.2); }
+        }
+        .animate-flameGlow { animation: flameGlow 1.8s ease-in-out infinite; }
+        @keyframes emberRise {
+          0% { transform: translateY(0) scale(0.4); opacity: 0; }
+          20% { opacity: 1; }
+          100% { transform: translateY(-16px) scale(1); opacity: 0; }
+        }
+        .animate-emberRise { animation: emberRise linear infinite; }
+        @keyframes dotBreathe {
+          0%, 100% { opacity: 0.5; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+        .animate-dotBreathe { animation: dotBreathe 1.6s ease-in-out infinite; }
+        /* Only hide the native cursor once MagneticCursor has actually
+           mounted and is running (it adds this class itself, and removes
+           it again on unmount or on any runtime error — see Primitives.tsx).
+           Previously this was a blanket "@media (pointer: fine) { * { cursor: none } }"
+           rule, which hid the real cursor unconditionally, including for
+           prefers-reduced-motion users (who never get the custom cursor
+           since MagneticCursor bails out early for them) and in the event
+           the cursor's JS ever failed to run. */
+        html.magnetic-cursor-active * { cursor: none !important; }
+      `}</style>
+      <Toaster />
     </div>
+    </ConfigContext.Provider>
   );
 }
