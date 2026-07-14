@@ -10,7 +10,7 @@ import {
   Loader2, Calendar, Clock3,
 } from 'lucide-react';
 import { ConfigContext, HunterRank } from '../../lib/appConfig';
-import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_STYLE_INVERSE } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_STYLE_INVERSE, SWEEP_FADE_OUT_ANIMATION, useSweepReveal } from '../../lib/liquidFill';
 
 // Lets a Card tell whatever it's wrapping (SectionHeading, in practice)
 // that the pointer is currently over it, without every one of the 30+
@@ -18,7 +18,17 @@ import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVE
 // producer (below); SectionHeading is the only consumer today. Defaults to
 // false so a SectionHeading rendered outside a Card (shouldn't happen, but
 // not enforced) just never lights up instead of crashing.
-export const CardHoverContext = createContext(false);
+//
+// Carries the shared useSweepReveal() result alongside the raw `hovering`
+// flag (rather than just the flag) so SectionHeading's badge/heading
+// gradient overlays fade out in lockstep with the Card's own border-ring
+// overlay on hover-out, instead of each computing — and each starting —
+// its own independent fade timer.
+export const CardHoverContext = createContext<{ hovering: boolean; sweepMounted: boolean; sweepAnimation: string }>({
+  hovering: false,
+  sweepMounted: false,
+  sweepAnimation: SWEEP_FADE_OUT_ANIMATION,
+});
 
 // ---------------------------------------------------------------------------
 // DateField / TimeField
@@ -607,7 +617,7 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
   // fades in on top of it — a single continuous crossfade rather than a
   // translucent gradient glyph sitting over a still-opaque white one,
   // which is what produced the pale "leaking" edge around the letters.
-  const hovering = useContext(CardHoverContext);
+  const { sweepMounted, sweepAnimation } = useContext(CardHoverContext);
   return (
     <div className="flex items-center gap-3 mb-5">
       <div
@@ -615,11 +625,11 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
         style={{ backgroundColor: 'rgba(38, 38, 38, 0.8)', borderColor: 'rgba(64, 64, 64, 0.6)' }}
       >
         <Icon className="h-4.5 w-4.5 text-neutral-300" strokeWidth={1.75} />
-        {hovering && (
+        {sweepMounted && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg"
-            style={{ ...liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }), borderColor: 'transparent' }}
+            style={{ ...liquidFillStyle({ animation: sweepAnimation, ...SWEEP_REVEAL_STYLE }), borderColor: 'transparent' }}
           >
             <Icon className="h-4.5 w-4.5 text-neutral-950" strokeWidth={1.75} />
           </div>
@@ -629,16 +639,16 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
         <span
           style={{
             ...SWEEP_REVEAL_STYLE_INVERSE,
-            ...(hovering ? { animation: SWEEP_REVEAL_ANIMATION } : null),
+            ...(sweepMounted ? { animation: sweepAnimation } : null),
           }}
         >
           {title}
         </span>
-        {hovering && (
+        {sweepMounted && (
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 bg-clip-text text-transparent"
-            style={liquidFillStyle({ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE })}
+            style={liquidFillStyle({ animation: sweepAnimation, ...SWEEP_REVEAL_STYLE })}
           >
             {title}
           </span>
@@ -654,6 +664,7 @@ export function Card({ children, className = '', onClick }: { children: React.Re
   const [tilt, setTilt] = useState({ rx: 0, ry: 0 });
   const [spot, setSpot] = useState({ x: 50, y: 50 });
   const [hovering, setHovering] = useState(false);
+  const sweep = useSweepReveal(hovering);
   const [pressed, setPressed] = useState(false);
   const [spawnRipple, rippleNodes] = useRipple();
 
@@ -704,7 +715,7 @@ export function Card({ children, className = '', onClick }: { children: React.Re
           style={{ background: `radial-gradient(420px circle at ${spot.x}% ${spot.y}%, rgba(255,255,255,0.06), transparent 65%)` }}
         />
       )}
-      {hovering && (
+      {sweep.mounted && (
         // The animated gradient outline. This is a separate overlay, not a
         // real `border`, on purpose: several call sites pass their own
         // `border ...`/background classes via `className` (the amber
@@ -724,11 +735,15 @@ export function Card({ children, className = '', onClick }: { children: React.Re
         // cutout mask just above. It goes on a wrapper instead: masking a
         // parent restricts which pixels of the already-ring-shaped child
         // are visible, so the two masks stack without either overwriting
-        // the other.
+        // the other. Mount + animation come from useSweepReveal, so
+        // hover-in still plays the corner-to-corner reveal but hover-out
+        // fades the whole ring out in place instead of unmounting it
+        // (and the underlying flicker-free `hovering` snap) the instant
+        // the pointer leaves.
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 rounded-2xl"
-          style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+          style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
         >
           <div
             className="absolute inset-0 rounded-2xl"
@@ -743,7 +758,7 @@ export function Card({ children, className = '', onClick }: { children: React.Re
         </div>
       )}
       {onClick && rippleNodes}
-      <CardHoverContext.Provider value={hovering}>
+      <CardHoverContext.Provider value={{ hovering, sweepMounted: sweep.mounted, sweepAnimation: sweep.animation }}>
         <div className="relative">{children}</div>
       </CardHoverContext.Provider>
     </div>

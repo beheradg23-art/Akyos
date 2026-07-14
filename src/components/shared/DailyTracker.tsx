@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CheckCircle2, Circle, Timer, Calendar } from 'lucide-react';
 import { ConfigContext, getDayName, TrackerItem, TabLabelKey } from '../../lib/appConfig';
-import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, useSweepReveal } from '../../lib/liquidFill';
 import { useRipple } from '../ui/Primitives';
 import { haptic } from '../../lib/haptics';
 
@@ -12,6 +12,7 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
   const ref = useRef(null);
   const [pressed, setPressed] = useState(false);
   const [hovering, setHovering] = useState(false);
+  const sweep = useSweepReveal(hovering);
   const [spawnRipple, rippleNodes] = useRipple();
 
   const handleDown = (e) => {
@@ -47,16 +48,17 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
-      {hovering && (
+      {sweep.mounted && (
         // Same animated gradient sweep border as the dashboard's <Card>
         // bento boxes, Master Timeline blocks, Syllabus Month pills, and
         // day-selector pills — ring-only cutout filled with the shared
         // moving liquidFillStyle() brand gradient, revealed via the
-        // corner-to-corner --akyos-sweep mask on hover-in.
+        // corner-to-corner --akyos-sweep mask on hover-in, and faded back
+        // out (no re-sweep) via useSweepReveal on hover-out.
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 rounded-xl"
-          style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+          style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
         >
           <div
             className="absolute inset-0 rounded-xl"

@@ -5,20 +5,80 @@ import { Clock3, Weight, ArrowUpRight, Bell, BellOff } from 'lucide-react';
 import { ConfigContext, getSubjectStyle } from '../../lib/appConfig';
 import { RippleButton, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
-import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, useSweepReveal } from '../../lib/liquidFill';
+
+// Split out of the timeline row's inline JSX so useSweepReveal (which
+// tracks its own hover-out fade timer) has one stable component instance
+// per row to attach to, instead of being called a variable number of
+// times inside the .map() below — see the identical extraction/rationale
+// for PhasePill in SyllabusTab.tsx.
+function TimelineBlock({ slot, sub, borderClass, iconBg, onClick }: { slot: any; sub: { bg: string; text: string } | null; borderClass: string; iconBg: string; onClick: () => void }) {
+  const [hovering, setHovering] = useState(false);
+  const sweep = useSweepReveal(hovering);
+  const Icon = slot.icon;
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      className={`relative overflow-hidden flex items-center gap-4 rounded-xl border border-neutral-800 bg-neutral-900/50 border-l-2 ${borderClass} px-4 py-3.5 cursor-pointer transition-all hover:bg-neutral-900/90 hover:translate-x-1`}
+    >
+      {sweep.mounted && (
+        // Same animated gradient sweep border as the dashboard's
+        // <Card> bento boxes (see Primitives.tsx SectionHeading /
+        // Card comments for the full breakdown): a corner-to-corner
+        // `--akyos-sweep` mask plays once on hover-in, wrapping a
+        // ring-only cutout (padding + content-box mask-composite
+        // exclude/xor) filled with the shared moving liquidFillStyle()
+        // brand gradient — so this block picks up the exact same
+        // "live material" treatment as every other bento card. Faded
+        // back out (no re-sweep) via useSweepReveal on hover-out.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-xl"
+          style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
+        >
+          <div
+            className="absolute inset-0 rounded-xl"
+            style={{
+              padding: '1.5px',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              ...liquidFillStyle(),
+            } as React.CSSProperties}
+          />
+        </div>
+      )}
+      <div className="w-[92px] shrink-0 tabular-nums text-[12.5px] font-medium text-neutral-400">
+        {slot.start === slot.end ? slot.start : `${slot.start}–${slot.end}`}
+      </div>
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${iconBg}`}>
+        <Icon className="h-4 w-4" strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[13.5px] font-medium text-neutral-100">{slot.label}</span>
+          {sub && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${sub.bg} ${sub.text}`}>
+              {slot.subject}
+            </span>
+          )}
+        </div>
+        <div className="text-[12px] text-neutral-500 mt-0.5">{slot.detail}</div>
+      </div>
+      <ArrowUpRight className="h-3 w-3 text-neutral-600 shrink-0" />
+    </div>
+  );
+}
 
 export function TimelineTab({ setModal, notificationsEnabled, notificationPermission, onToggleNotifications }: { setModal: (data: ModalData | null) => void; notificationsEnabled: boolean; notificationPermission: NotificationPermission | 'unsupported'; onToggleNotifications: () => void }) {
   const { timeline, subjects } = React.useContext(ConfigContext);
-  // Which timeline block (by index) currently has the pointer over it —
-  // drives the animated gradient sweep border below, the same
-  // hover-gated overlay technique <Card> in Primitives.tsx uses for the
-  // dashboard's bento cards, just tracked per-row here instead of via
-  // CardHoverContext since these blocks are a flat list, not <Card>s.
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   // Hover flag for the "Enable Block Reminders" pill — same sweep overlay
   // technique as the timeline blocks below, just a single boolean since
   // there's only one button.
   const [reminderHovered, setReminderHovered] = useState(false);
+  const reminderSweep = useSweepReveal(reminderHovered);
   const typeStyle = {
     study: 'border-l-indigo-500',
     gym: 'border-l-violet-500',
@@ -54,18 +114,19 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
             {notificationsEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
             {notificationsEnabled ? 'Block Reminders On' : 'Enable Block Reminders'}
           </RippleButton>
-          {reminderHovered && (
+          {reminderSweep.mounted && (
             // Same animated gradient sweep border as the timeline blocks,
             // Syllabus Month pills, and day-selector pills — ring-only
             // cutout filled with the shared liquidFillStyle() brand
-            // gradient, revealed via the --akyos-sweep mask on hover-in.
-            // Sits in a wrapper div (not inside RippleButton) since
-            // RippleButton doesn't forward onMouseEnter/Leave to its
-            // underlying <button>.
+            // gradient, revealed via the --akyos-sweep mask on hover-in,
+            // faded back out (no re-sweep) via useSweepReveal on
+            // hover-out. Sits in a wrapper div (not inside RippleButton)
+            // since RippleButton doesn't forward onMouseEnter/Leave to
+            // its underlying <button>.
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0 rounded-full"
-              style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+              style={{ animation: reminderSweep.animation, ...SWEEP_REVEAL_STYLE }}
             >
               <div
                 className="absolute inset-0 rounded-full"
@@ -93,11 +154,14 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
       )}
       <div className="space-y-2.5">
         {timeline.map((slot, i) => {
-          const Icon = slot.icon;
           const sub = slot.subject ? getSubjectStyle(slot.subject, subjects) : null;
           return (
-            <div
+            <TimelineBlock
               key={i}
+              slot={slot}
+              sub={sub}
+              borderClass={typeStyle[slot.type]}
+              iconBg={typeBg[slot.type]}
               onClick={() => setModal({
                 title: slot.label,
                 subtitle: `Time Block: ${slot.start} - ${slot.end}`,
@@ -106,55 +170,7 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
                 arrayTitle: 'Tactical Blueprint',
                 arrayItems: slot.subject ? ['Execute active recall models', 'Avoid passive consumption modes', 'Track mistake logs inside errors catalog'] : ['Execute standard systemic recovery actions']
               })}
-              onMouseEnter={() => setHoveredIdx(i)}
-              onMouseLeave={() => setHoveredIdx((cur) => (cur === i ? null : cur))}
-              className={`relative overflow-hidden flex items-center gap-4 rounded-xl border border-neutral-800 bg-neutral-900/50 border-l-2 ${typeStyle[slot.type]} px-4 py-3.5 cursor-pointer transition-all hover:bg-neutral-900/90 hover:translate-x-1`}
-            >
-              {hoveredIdx === i && (
-                // Same animated gradient sweep border as the dashboard's
-                // <Card> bento boxes (see Primitives.tsx SectionHeading /
-                // Card comments for the full breakdown): a corner-to-corner
-                // `--akyos-sweep` mask plays once on hover-in, wrapping a
-                // ring-only cutout (padding + content-box mask-composite
-                // exclude/xor) filled with the shared moving liquidFillStyle()
-                // brand gradient — so this block picks up the exact same
-                // "live material" treatment as every other bento card.
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 rounded-xl"
-                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
-                >
-                  <div
-                    className="absolute inset-0 rounded-xl"
-                    style={{
-                      padding: '1.5px',
-                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                      WebkitMaskComposite: 'xor',
-                      maskComposite: 'exclude',
-                      ...liquidFillStyle(),
-                    } as React.CSSProperties}
-                  />
-                </div>
-              )}
-              <div className="w-[92px] shrink-0 tabular-nums text-[12.5px] font-medium text-neutral-400">
-                {slot.start === slot.end ? slot.start : `${slot.start}–${slot.end}`}
-              </div>
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeBg[slot.type]}`}>
-                <Icon className="h-4 w-4" strokeWidth={1.75} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[13.5px] font-medium text-neutral-100">{slot.label}</span>
-                  {sub && (
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${sub.bg} ${sub.text}`}>
-                      {slot.subject}
-                    </span>
-                  )}
-                </div>
-                <div className="text-[12px] text-neutral-500 mt-0.5">{slot.detail}</div>
-              </div>
-              <ArrowUpRight className="h-3 w-3 text-neutral-600 shrink-0" />
-            </div>
+            />
           );
         })}
       </div>

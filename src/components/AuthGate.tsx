@@ -14,7 +14,7 @@ import {
 } from '../lib/cloudSync';
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
-import { SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES } from '../lib/liquidFill';
+import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../lib/liquidFill';
 
 const PASSCODE_LENGTH = 6;
 
@@ -62,6 +62,55 @@ function liquidFillStyle(extra: React.CSSProperties = {}): React.CSSProperties {
     animation: extraAnimation ? `${extraAnimation}, ${LIQUID_ANIMATION}` : LIQUID_ANIMATION,
     ...rest,
   };
+}
+
+// One digit box in the 6-box passcode entry, shared by the "choose a
+// passcode" (signup) and "enter your passcode" (returning) screens — both
+// used near-identical inline JSX for this before. Pulled into its own
+// component so useSweepReveal (which tracks its own hover/focus-out fade
+// timer) has one stable component instance per box to attach to, instead
+// of being called a variable number of times inside a .map() — same
+// rationale as PhasePill/DayPill/TimelineBlock elsewhere in the app.
+function PasscodeDigitBox({ filled, isCurrent, hasError, active }: { filled: boolean; isCurrent: boolean; hasError: boolean; active: boolean }) {
+  const sweep = useSweepReveal(active);
+  return (
+    <div
+      className={`relative flex h-12 w-10 items-center justify-center rounded-xl border text-lg font-semibold tabular-nums transition-colors duration-150 ${
+        hasError
+          ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300'
+          : isCurrent
+          ? 'border-violet-500/50 bg-neutral-900/80 text-neutral-100'
+          : filled
+          ? 'border-neutral-700 bg-neutral-900/80 text-neutral-100'
+          : 'border-neutral-800 bg-neutral-900/40 text-neutral-700'
+      }`}
+    >
+      {filled ? '•' : ''}
+      {sweep.mounted && (
+        // Same focus-gated sweep as the email/password fields — ring-only
+        // cutout filled with the animated brand gradient, but here it
+        // tracks whichever box the typing cursor is actually sitting in
+        // rather than a single fixed input. Faded back out (no re-sweep)
+        // via useSweepReveal once the cursor moves to the next box.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-xl"
+          style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
+        >
+          <div
+            className="absolute inset-0 rounded-xl"
+            style={{
+              padding: '1.5px',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              ...liquidFillStyle(),
+            } as React.CSSProperties}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Standard Google "G" mark, used by the "Continue with Google" button.
@@ -760,6 +809,12 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   // drives the animated gradient sweep border, same treatment
   // PasswordField uses for its own focus state.
   const [emailFocused, setEmailFocused] = useState(false);
+  // Computed up here (rather than inside renderStage below, where the
+  // JSX that actually uses it lives) because renderStage's branches are
+  // gated on `stage`, and a hook can't be called conditionally — this way
+  // it's unconditionally called on every render, same as every other hook
+  // in this component.
+  const emailSweep = useSweepReveal(emailFocused);
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
@@ -772,6 +827,9 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   // below, same as the other hover-gated pills elsewhere in the app.
   const [googleHovered, setGoogleHovered] = useState(false);
   const [googleError, setGoogleError] = useState('');
+  // Same reasoning as emailSweep above — computed here, unconditionally,
+  // since the JSX that reads it lives inside stage-gated renderStage.
+  const googleSweep = useSweepReveal(googleHovered && !googleBusy);
 
   // --- "choose your passcode" (signup) state ---
   const [pcSetupPhase, setPcSetupPhase] = useState<'enter' | 'confirm'>('enter');
@@ -792,6 +850,8 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   // Same focus-gated sweep as the sign-in email field, for the "Reset
   // Your Password" email box.
   const [resetEmailFocused, setResetEmailFocused] = useState(false);
+  // Same reasoning as emailSweep/googleSweep above.
+  const resetEmailSweep = useSweepReveal(resetEmailFocused);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -1186,16 +1246,17 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             className="relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             style={authCascadeStyle(2)}
           >
-            {googleHovered && !googleBusy && (
+            {googleSweep.mounted && (
               // Same hover-gated sweep border as the rest of the app —
               // ring-only cutout filled with the local liquidFillStyle()
               // brand gradient, revealed via the --akyos-sweep mask
               // (keyframes injected page-wide by the <style> tag at the
-              // bottom of this component).
+              // bottom of this component), faded back out (no re-sweep)
+              // via useSweepReveal on hover-out.
               <div
                 aria-hidden
                 className="pointer-events-none absolute inset-0 rounded-xl"
-                style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                style={{ animation: googleSweep.animation, ...SWEEP_REVEAL_STYLE }}
               >
                 <div
                   className="absolute inset-0 rounded-xl"
@@ -1235,18 +1296,19 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
                 style={authCascadeStyle(4)}
               />
-              {emailFocused && (
+              {emailSweep.mounted && (
                 // Same animated gradient sweep border as the dashboard's
                 // <Card> bento boxes and header badges — ring-only cutout
                 // filled with the local liquidFillStyle() brand gradient,
                 // revealed via the --akyos-sweep mask, gated on focus
                 // (cursor in the field) instead of hover since this is a
                 // text input. PasswordField below gets the matching
-                // treatment internally.
+                // treatment internally. Faded back out (no re-sweep) via
+                // useSweepReveal on blur.
                 <div
                   aria-hidden
                   className="pointer-events-none absolute inset-0 rounded-xl"
-                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                  style={{ animation: emailSweep.animation, ...SWEEP_REVEAL_STYLE }}
                 >
                   <div
                     className="absolute inset-0 rounded-xl"
@@ -1343,52 +1405,21 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             const filled = i < value.length;
             const isCurrent = i === value.length;
             return (
-              <div
+              <PasscodeDigitBox
                 key={i}
-                className={`relative flex h-12 w-10 items-center justify-center rounded-xl border text-lg font-semibold tabular-nums transition-colors duration-150 ${
-                  pcSetupError
-                    ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300'
-                    : isCurrent
-                    ? 'border-violet-500/50 bg-neutral-900/80 text-neutral-100'
-                    : filled
-                    ? 'border-neutral-700 bg-neutral-900/80 text-neutral-100'
-                    : 'border-neutral-800 bg-neutral-900/40 text-neutral-700'
-                }`}
-              >
-                {filled ? '•' : ''}
-                {isCurrent && !pcSetupError && !showIntro && (
-                  // Same focus-gated sweep as the email/password fields —
-                  // ring-only cutout filled with the animated brand
-                  // gradient, but here it tracks whichever box the typing
-                  // cursor is actually sitting in rather than a single
-                  // fixed input.
-                  //
-                  // Gated on `!showIntro` too: this stage can mount while
-                  // IntroReveal is still up top (opaque, then fading), and
-                  // without this the very first box's sweep would start
-                  // its 3s clock right then and finish underneath it — so
-                  // by the time the overlay actually clears, box one would
-                  // already look like a plain static border that's "been
-                  // there since ages" instead of sweeping in like every
-                  // other box does when it becomes current later.
-                  <div
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 rounded-xl"
-                    style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
-                  >
-                    <div
-                      className="absolute inset-0 rounded-xl"
-                      style={{
-                        padding: '1.5px',
-                        WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                        WebkitMaskComposite: 'xor',
-                        maskComposite: 'exclude',
-                        ...liquidFillStyle(),
-                      } as React.CSSProperties}
-                    />
-                  </div>
-                )}
-              </div>
+                filled={filled}
+                isCurrent={isCurrent}
+                hasError={pcSetupError}
+                // Gated on `!showIntro` too: this stage can mount while
+                // IntroReveal is still up top (opaque, then fading), and
+                // without this the very first box's sweep would start its
+                // 3s clock right then and finish underneath it — so by the
+                // time the overlay actually clears, box one would already
+                // look like a plain static border that's "been there
+                // since ages" instead of sweeping in like every other box
+                // does when it becomes current later.
+                active={isCurrent && !pcSetupError && !showIntro}
+              />
             );
           })}
           <input
@@ -1446,16 +1477,18 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                   placeholder="Email"
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
                 />
-                {resetEmailFocused && (
+                {resetEmailSweep.mounted && (
                   // Same focus-gated sweep as the sign-in email field —
                   // ring-only cutout filled with the local
                   // liquidFillStyle() brand gradient, revealed via the
                   // --akyos-sweep mask (keyframes injected page-wide by
-                  // the <style> tag at the bottom of this component).
+                  // the <style> tag at the bottom of this component),
+                  // faded back out (no re-sweep) via useSweepReveal on
+                  // blur.
                   <div
                     aria-hidden
                     className="pointer-events-none absolute inset-0 rounded-xl"
-                    style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                    style={{ animation: resetEmailSweep.animation, ...SWEEP_REVEAL_STYLE }}
                   >
                     <div
                       className="absolute inset-0 rounded-xl"
@@ -1567,49 +1600,18 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           const filled = i < pcValue.length;
           const isCurrent = i === pcValue.length;
           return (
-            <div
+            <PasscodeDigitBox
               key={i}
-              className={`relative flex h-12 w-10 items-center justify-center rounded-xl border text-lg font-semibold tabular-nums transition-colors duration-150 ${
-                pcError
-                  ? 'border-rose-500/50 bg-rose-500/[0.06] text-rose-300'
-                  : isCurrent
-                  ? 'border-violet-500/50 bg-neutral-900/80 text-neutral-100'
-                  : filled
-                  ? 'border-neutral-700 bg-neutral-900/80 text-neutral-100'
-                  : 'border-neutral-800 bg-neutral-900/40 text-neutral-700'
-              }`}
-            >
-              {filled ? '•' : ''}
-              {isCurrent && !pcError && !showIntro && (
-                // Same focus-gated sweep as the email/password fields —
-                // ring-only cutout filled with the animated brand
-                // gradient, but here it tracks whichever box the typing
-                // cursor is actually sitting in rather than a single
-                // fixed input.
-                //
-                // Gated on `!showIntro` too — see the matching comment on
-                // the setPasscode box above: without it, this box's sweep
-                // can start (and finish) underneath IntroReveal's still-
-                // fading overlay, so it's already sitting fully "revealed"
-                // and static the instant the overlay clears.
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 rounded-xl"
-                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
-                >
-                  <div
-                    className="absolute inset-0 rounded-xl"
-                    style={{
-                      padding: '1.5px',
-                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                      WebkitMaskComposite: 'xor',
-                      maskComposite: 'exclude',
-                      ...liquidFillStyle(),
-                    } as React.CSSProperties}
-                  />
-                </div>
-              )}
-            </div>
+              filled={filled}
+              isCurrent={isCurrent}
+              hasError={pcError}
+              // Gated on `!showIntro` too — see the matching comment on
+              // the setPasscode box above: without it, this box's sweep
+              // can start (and finish) underneath IntroReveal's still-
+              // fading overlay, so it's already sitting fully "revealed"
+              // and static the instant the overlay clears.
+              active={isCurrent && !pcError && !showIntro}
+            />
           );
         })}
         <input

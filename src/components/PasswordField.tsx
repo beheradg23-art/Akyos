@@ -1,7 +1,7 @@
 import React, { useId, useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { motion } from '../styles/motion';
-import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, useSweepReveal } from '../lib/liquidFill';
 
 // ---------------------------------------------------------------------------
 // Drop-in replacement for a bare <input type="password" />.
@@ -73,6 +73,7 @@ export default function PasswordField({
   // the animated gradient sweep border, same hover-gated overlay <Card>
   // uses in Primitives.tsx, but focus-gated here since it's an input.
   const [focused, setFocused] = useState(false);
+  const sweep = useSweepReveal(focused);
   const id = useId();
   const { score, label } = useMemo(() => scorePassword(value), [value]);
 
@@ -96,18 +97,19 @@ export default function PasswordField({
             'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50'
           }
         />
-        {focused && (
+        {sweep.mounted && (
           // Same animated gradient sweep border as the dashboard's <Card>
           // bento boxes, Master Timeline blocks, and header badges —
           // ring-only cutout filled with the shared moving
           // liquidFillStyle() brand gradient, revealed via the
           // corner-to-corner --akyos-sweep mask, but gated on focus
           // (cursor in the field) instead of hover since this is a
-          // text input.
+          // text input. Faded back out (no re-sweep) via useSweepReveal
+          // on blur.
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 rounded-xl"
-            style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+            style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
           >
             <div
               className="absolute inset-0 rounded-xl"

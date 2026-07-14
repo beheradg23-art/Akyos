@@ -36,7 +36,7 @@ import {
   CONFIG_STORAGE_KEY, TABS, HUNTER_RANKS, ICON_OPTIONS,
 } from './lib/appConfig';
 import { resolveTabKeysForDomains, type GoalDomain } from './lib/questionnaire';
-import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from './lib/liquidFill';
+import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES, SWEEP_REVEAL_KEYFRAMES, SWEEP_REVEAL_STYLE, useSweepReveal } from './lib/liquidFill';
 import {
   useRipple, MagneticCursor, GlobalDetailModal, QuestClearNotification,
   StreakFlame, MobileStatusStrip,
@@ -84,6 +84,12 @@ export default function JEEDashboard() {
   // <Card> uses in Primitives.tsx, tracked here since these two pills are
   // plain divs, not <Card>s.
   const [hoveredBadge, setHoveredBadge] = useState<null | 'rank' | 'eq'>(null);
+  // Two fixed badges (not a list), so calling the hook twice here is
+  // always exactly two calls per render — safe under the rules of hooks,
+  // unlike the per-row cases (PhasePill/DayPill/TimelineBlock) that had to
+  // be split into their own components first.
+  const rankSweep = useSweepReveal(hoveredBadge === 'rank');
+  const eqSweep = useSweepReveal(hoveredBadge === 'eq');
   const [modal, setModal] = useState(null);
 
   // ---------- Swipe-to-switch-tabs (Instagram-style) ----------
@@ -664,16 +670,18 @@ export default function JEEDashboard() {
               className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border px-3.5 py-1.5 transition-colors duration-500"
               style={{ borderColor: `${hunterRank.color}40`, backgroundColor: `${hunterRank.color}0d` }}
             >
-              {hoveredBadge === 'rank' && (
+              {rankSweep.mounted && (
                 // Same animated gradient sweep border as the dashboard's
                 // <Card> bento boxes / Master Timeline blocks / Syllabus
                 // Month pills / day-selector pills: a ring-only cutout
                 // filled with the shared moving liquidFillStyle() brand
-                // gradient, revealed via the --akyos-sweep mask on hover-in.
+                // gradient, revealed via the --akyos-sweep mask on hover-in,
+                // faded back out (no re-sweep) via useSweepReveal on
+                // hover-out.
                 <div
                   aria-hidden
                   className="pointer-events-none absolute inset-0 rounded-full"
-                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                  style={{ animation: rankSweep.animation, ...SWEEP_REVEAL_STYLE }}
                 >
                   <div
                     className="absolute inset-0 rounded-full"
@@ -697,11 +705,11 @@ export default function JEEDashboard() {
               onMouseLeave={() => setHoveredBadge((cur) => (cur === 'eq' ? null : cur))}
               className="relative hidden lg:flex items-center gap-2 overflow-hidden rounded-full border border-neutral-800 bg-neutral-900/60 px-3.5 py-1.5"
             >
-              {hoveredBadge === 'eq' && (
+              {eqSweep.mounted && (
                 <div
                   aria-hidden
                   className="pointer-events-none absolute inset-0 rounded-full"
-                  style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
+                  style={{ animation: eqSweep.animation, ...SWEEP_REVEAL_STYLE }}
                 >
                   <div
                     className="absolute inset-0 rounded-full"

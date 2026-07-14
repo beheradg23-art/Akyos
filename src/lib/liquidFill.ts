@@ -3,7 +3,7 @@
 // as AuthGate). Split out of the old App.tsx monolith so any component
 // that wants the liquid-fill look can import it directly instead of
 // relying on a function defined 1000+ lines away in the same file.
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // --- shared "liquid" animated gradient fill (same treatment as AuthGate) --
 //
@@ -86,11 +86,25 @@ export const SWEEP_REVEAL_KEYFRAMES = `
     25%  { opacity: 1; }
     100% { opacity: 1; --akyos-sweep: -30%; }
   }
+  @keyframes akyos-sweep-fade-out {
+    from { opacity: 1; --akyos-sweep: -30%; }
+    to   { opacity: 0; --akyos-sweep: -30%; }
+  }
 `;
 // Total 3s so the sweep is clearly visible rather than a flicker; `both`
 // fill-mode holds the fully-hidden state for the instant before playback
 // starts, then the fully-revealed state once it's done.
 export const SWEEP_REVEAL_ANIMATION = 'akyos-sweep-reveal 3s cubic-bezier(0.16, 1, 0.3, 1) both';
+
+// The "leaving" counterpart to SWEEP_REVEAL_ANIMATION. Deliberately just a
+// plain opacity fade with `--akyos-sweep` pinned at its fully-revealed
+// value throughout (rather than travelling back across the box) — the
+// hover-out was asked to be a slow fade with "no sweep required", so the
+// mask stays wide open and only opacity moves. Much shorter than the 3s
+// entrance since a fade doesn't need to visibly travel anywhere, it just
+// needs to read as a deliberate fade rather than a snap.
+const SWEEP_FADE_OUT_MS = 450;
+export const SWEEP_FADE_OUT_ANIMATION = `akyos-sweep-fade-out ${SWEEP_FADE_OUT_MS}ms ease-out both`;
 
 // The mask itself — static across the whole animation (only the
 // `--akyos-sweep` custom property above changes), spread into an
@@ -137,6 +151,37 @@ export const SWEEP_REVEAL_STYLE_INVERSE: React.CSSProperties = {
   WebkitMaskRepeat: 'no-repeat',
   maskRepeat: 'no-repeat',
 } as React.CSSProperties;
+
+// Drives every sweep overlay's mount + animation off of the same
+// hovering/focused boolean the rest of the component already tracks,
+// instead of that boolean gating the overlay's presence directly (which is
+// what made hover-out snap the whole gradient away instantly — React just
+// unmounts the node the instant `hovering` flips to false, animation or
+// not). While `active` is true the overlay mounts right away and plays the
+// corner-to-corner reveal, same as before. The moment `active` goes false,
+// this switches the overlay to SWEEP_FADE_OUT_ANIMATION (a plain opacity
+// fade, mask left fully open) and keeps it mounted for exactly as long as
+// that fade takes, then unmounts it — so the box is back to its normal,
+// un-hovered look only once the fade has actually finished, not before.
+export function useSweepReveal(active: boolean): { mounted: boolean; animation: string } {
+  const [mounted, setMounted] = useState(active);
+  const [animation, setAnimation] = useState(active ? SWEEP_REVEAL_ANIMATION : SWEEP_FADE_OUT_ANIMATION);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => {
+    window.clearTimeout(timeoutRef.current);
+    if (active) {
+      setMounted(true);
+      setAnimation(SWEEP_REVEAL_ANIMATION);
+    } else {
+      setAnimation(SWEEP_FADE_OUT_ANIMATION);
+      timeoutRef.current = window.setTimeout(() => setMounted(false), SWEEP_FADE_OUT_MS);
+    }
+    return () => window.clearTimeout(timeoutRef.current);
+  }, [active]);
+
+  return { mounted, animation };
+}
 
 // Merges the liquid gradient fill into an element's style, safely combining
 // its infinite animation with any one-shot animation the element already

@@ -11,19 +11,70 @@ import { TOPIC_DETAILS } from '../../lib/staticContent';
 import { Card, RippleButton, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 import { generateTopicDetails } from '../../lib/contentGen';
-import { liquidFillStyle, SWEEP_REVEAL_ANIMATION, SWEEP_REVEAL_STYLE } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, useSweepReveal } from '../../lib/liquidFill';
+
+// Split out of the phase-pill's inline JSX below so useSweepReveal (which
+// needs to track its own hover-out fade timer) has one stable component
+// instance per pill to attach to, rather than being called a variable
+// number of times inside the .map() below — calling a hook a different
+// number of times across renders (e.g. if `syllabus`'s length ever
+// changed) would violate the rules of hooks, whereas one hook call per
+// mounted <PhasePill> is always exactly one call per render of that
+// component.
+function PhasePill({ phaseNum, month, label, active, onSelect }: { phaseNum: number; month: string; label: string; active: boolean; onSelect: () => void }) {
+  const [hovering, setHovering] = useState(false);
+  const sweep = useSweepReveal(hovering);
+  return (
+    <button
+      onClick={onSelect}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      className={`relative overflow-hidden flex items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
+        active
+          ? 'border-indigo-500/40 bg-indigo-500/[0.08]'
+          : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700'
+      }`}
+    >
+      {sweep.mounted && (
+        // Same animated gradient sweep border as the dashboard's <Card>
+        // bento boxes / Master Timeline blocks: a ring-only cutout filled
+        // with the shared moving liquidFillStyle() brand gradient,
+        // revealed via the corner-to-corner --akyos-sweep mask on
+        // hover-in, faded back out (no re-sweep) via useSweepReveal on
+        // hover-out.
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-xl"
+          style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
+        >
+          <div
+            className="absolute inset-0 rounded-xl"
+            style={{
+              padding: '1.5px',
+              WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+              WebkitMaskComposite: 'xor',
+              maskComposite: 'exclude',
+              ...liquidFillStyle(),
+            } as React.CSSProperties}
+          />
+        </div>
+      )}
+      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${active ? 'bg-indigo-500/20 text-indigo-300' : 'bg-neutral-800 text-neutral-400'}`}>
+        {phaseNum}
+      </span>
+      <div>
+        <div className={`text-[12.5px] font-medium ${active ? 'text-indigo-300' : 'text-neutral-300'}`}>{month}</div>
+        <div className="text-[10.5px] text-neutral-500">{label}</div>
+      </div>
+    </button>
+  );
+}
 
 export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) => void }) {
   const { subjects, syllabus } = React.useContext(ConfigContext);
   const allSyllabusTopics = useMemo(() => getAllSyllabusTopics(syllabus), [syllabus]);
   const [activePhase, setActivePhase] = useState(1);
   const phase = syllabus.find((p) => p.phase === activePhase) || syllabus[0];
-  // Which Month pill (by phase number) currently has the pointer over it —
-  // drives the animated gradient sweep border, the same hover-gated
-  // overlay <Card> uses in Primitives.tsx, tracked per-pill here since
-  // these are plain buttons, not <Card>s.
-  const [hoveredPhase, setHoveredPhase] = useState<number | null>(null);
-
   const [revisionLog, setRevisionLog] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem('topic_revision_log');
@@ -138,48 +189,14 @@ export function SyllabusTab({ setModal }: { setModal: (data: ModalData | null) =
 
       <div className="flex flex-wrap gap-2 mb-5">
         {syllabus.map((p) => (
-          <button
+          <PhasePill
             key={p.phase}
-            onClick={() => setActivePhase(p.phase)}
-            onMouseEnter={() => setHoveredPhase(p.phase)}
-            onMouseLeave={() => setHoveredPhase((cur) => (cur === p.phase ? null : cur))}
-            className={`relative overflow-hidden flex items-center gap-2 rounded-xl border px-4 py-2.5 text-left transition-all duration-150 ${
-              activePhase === p.phase
-                ? 'border-indigo-500/40 bg-indigo-500/[0.08]'
-                : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700'
-            }`}
-          >
-            {hoveredPhase === p.phase && (
-              // Same animated gradient sweep border as the dashboard's
-              // <Card> bento boxes / Master Timeline blocks: a ring-only
-              // cutout filled with the shared moving liquidFillStyle()
-              // brand gradient, revealed via the corner-to-corner
-              // --akyos-sweep mask on hover-in.
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-0 rounded-xl"
-                style={{ animation: SWEEP_REVEAL_ANIMATION, ...SWEEP_REVEAL_STYLE }}
-              >
-                <div
-                  className="absolute inset-0 rounded-xl"
-                  style={{
-                    padding: '1.5px',
-                    WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                    WebkitMaskComposite: 'xor',
-                    maskComposite: 'exclude',
-                    ...liquidFillStyle(),
-                  } as React.CSSProperties}
-                />
-              </div>
-            )}
-            <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[11px] font-semibold ${activePhase === p.phase ? 'bg-indigo-500/20 text-indigo-300' : 'bg-neutral-800 text-neutral-400'}`}>
-              {p.phase}
-            </span>
-            <div>
-              <div className={`text-[12.5px] font-medium ${activePhase === p.phase ? 'text-indigo-300' : 'text-neutral-300'}`}>{p.month}</div>
-              <div className="text-[10.5px] text-neutral-500">{p.label}</div>
-            </div>
-          </button>
+            phaseNum={p.phase}
+            month={p.month}
+            label={p.label}
+            active={activePhase === p.phase}
+            onSelect={() => setActivePhase(p.phase)}
+          />
         ))}
       </div>
 
