@@ -8,7 +8,15 @@ import React from 'react';
 export function AkyosMark({ className, strokeWidth: _strokeWidth, ...props }: React.SVGProps<SVGSVGElement> & { strokeWidth?: number }) {
   return (
     <svg
-      viewBox="0 0 509.968 580.695"
+      // The original export's viewBox (0 0 509.968 580.695) was the full
+      // artboard, but the glyph itself only occupies the bottom-right
+      // portion of it (x: 85→510, y: 262→580) — huge dead space top-left.
+      // Centering this via flex just centers the empty box, so the mark
+      // visibly sits low-and-right inside every badge blob. This viewBox
+      // is tightly cropped to the glyph's true bounds with even padding
+      // on all sides, so the default xMidYMid-meet centering actually
+      // centers the visible ink.
+      viewBox="55.31 231.7 484.66 378.5"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       fill="currentColor"
