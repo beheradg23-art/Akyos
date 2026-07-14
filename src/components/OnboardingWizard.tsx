@@ -292,7 +292,7 @@ function OnboardingShell({
             </>
           )}
           <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20 ${mobileHeader ? 'hidden lg:flex' : ''}`} style={liquidFillStyle()}>
-            <AkyosMark className="h-4.5 w-4.5 text-neutral-950" />
+            <AkyosMark className="h-[18px] w-[18px] text-neutral-950" />
           </div>
           <div className={`min-w-0 ${mobileHeader ? 'hidden lg:block' : ''}`}>
             <h2 className="truncate text-[14px] font-semibold leading-none tracking-tight text-neutral-50">Akyos</h2>
