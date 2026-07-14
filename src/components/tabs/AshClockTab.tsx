@@ -449,29 +449,32 @@ export function PomodoroView({ onSessionComplete }) {
 export function PomodoroSubjectStats({ log, subjects }) {
   const todayStr = getLocalDateString();
 
+  // Only today's minutes — this is what makes the whole card reset itself
+  // at midnight with no extra code: `todayStr` is recomputed on every
+  // render/mount, so yesterday's entries in `log` simply stop matching and
+  // drop out of `today` on their own. `log` itself still keeps full history
+  // (nothing is deleted), it's just not summed into what's shown here.
   const totals = useMemo(() => {
-    const all: Record<string, number> = {};
     const today: Record<string, number> = {};
     log.forEach((entry: any) => {
-      all[entry.subject] = (all[entry.subject] || 0) + entry.minutes;
       if (entry.date === todayStr) today[entry.subject] = (today[entry.subject] || 0) + entry.minutes;
     });
-    return { all, today };
+    return { today };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [log]);
+  }, [log, todayStr]);
 
-  const grandTotal: number = Object.values(totals.all).reduce((a: number, b: number) => a + b, 0);
-  const maxSubjectMinutes = Math.max(1, ...Object.values(totals.all).length ? Object.values(totals.all) : [0]);
+  const todayTotal: number = Object.values(totals.today).reduce((a: number, b: number) => a + b, 0);
+  const maxSubjectMinutes = Math.max(1, ...Object.values(totals.today).length ? Object.values(totals.today) : [0]);
 
-  // Show every subject the user has ever logged time against, even if it's
-  // since been removed from config.subjects (their history shouldn't vanish),
-  // union'd with the current subject list (so a brand new subject with 0
-  // minutes still shows a bar at 0).
+  // Show every configured subject (even ones with 0 minutes today, so the
+  // list doesn't jump around/disappear entries as the day starts fresh),
+  // union'd with any subject logged today that's since been removed from
+  // config.subjects.
   const displaySubjects = useMemo(() => {
     const known = new Map(subjects.map((s: any) => [s.key, s]));
-    const keys = new Set([...subjects.map((s: any) => s.key), ...Object.keys(totals.all)]);
+    const keys = new Set([...subjects.map((s: any) => s.key), ...Object.keys(totals.today)]);
     return Array.from(keys).map((key) => known.get(key) || { key, label: key });
-  }, [subjects, totals.all]);
+  }, [subjects, totals.today]);
 
   const formatHrs = (mins: number) => {
     if (mins === 0) return '0m';
@@ -486,26 +489,23 @@ export function PomodoroSubjectStats({ log, subjects }) {
         id="clk_subjecthours"
         defaultTitle="Subject Hours"
         defaultIcon={BarChart3}
-        subtitle={grandTotal > 0 ? `${formatHrs(grandTotal)} logged across all Focus Gates — checking nothing is quietly falling behind` : 'Complete a tagged Focus Gate to start building this up'}
+        subtitle={todayTotal > 0 ? `${formatHrs(todayTotal)} logged today across your Focus Gates — resets at midnight` : 'Complete a tagged Focus Gate to start building today\'s hours'}
       />
-      {grandTotal === 0 ? (
+      {todayTotal === 0 ? (
         <p className="text-[13px] text-neutral-500 mt-4">
-          No Pomodoro sessions logged yet. Tag a subject above and clear a Focus Gate — hours per subject will build up here automatically.
+          No Pomodoro sessions logged today yet. Tag a subject above and clear a Focus Gate — today's hours per subject will build up here automatically.
         </p>
       ) : (
         <div className="space-y-3 mt-4">
           {displaySubjects.map((s: any) => {
             const style = getSubjectStyle(s.key, subjects);
-            const allMin = totals.all[s.key] || 0;
             const todayMin = totals.today[s.key] || 0;
-            const pct = (allMin / maxSubjectMinutes) * 100;
+            const pct = (todayMin / maxSubjectMinutes) * 100;
             return (
               <div key={s.key}>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-[12px] font-semibold ${style.text}`}>{s.label}</span>
-                  <span className="text-[11.5px] text-neutral-400 tabular-nums">
-                    {formatHrs(allMin)} total{todayMin > 0 ? ` · ${formatHrs(todayMin)} today` : ''}
-                  </span>
+                  <span className="text-[11.5px] text-neutral-400 tabular-nums">{formatHrs(todayMin)} today</span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-neutral-900 overflow-hidden">
                   <div className={`h-full rounded-full ${style.dot}`} style={{ width: `${pct}%` }} />
