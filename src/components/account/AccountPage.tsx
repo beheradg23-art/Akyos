@@ -190,7 +190,7 @@ export function ChangePasswordCard() {
           autoComplete="new-password"
           minLength={8}
           showStrength
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
+          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none"
         />
         <PasswordField
           value={confirmPassword}
@@ -198,7 +198,7 @@ export function ChangePasswordCard() {
           placeholder="Confirm new password"
           autoComplete="new-password"
           minLength={8}
-          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none focus:border-violet-500/50"
+          className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 pr-11 text-[13px] text-neutral-100 placeholder:text-neutral-600 outline-none"
         />
         {fieldError && <p className="text-[12px] text-rose-400">{fieldError}</p>}
         <button
