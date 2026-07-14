@@ -20,7 +20,6 @@ export const SYNC_KEYS = [
   'app_config_v1',
   'timeline_notifications_enabled',
   'dcc_content_cache_v1',
-  'dcc_alarms_v1',
   'akyos_onboarding_completed_v1',
 ] as const;
 

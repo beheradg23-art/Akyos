@@ -1,12 +1,11 @@
-// Ash's Clock tab: fade-digit live clock + Pomodoro timer, subject-hour
-// stats, and alarms panel.
+// Ash's Clock tab: fade-digit live clock + Pomodoro timer and subject-hour
+// stats.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Timer, Play, Pause, SkipForward, RotateCcw, Crown, Swords, BarChart3 } from 'lucide-react';
 import { ConfigContext, getSubjectStyle, getLocalDateString } from '../../lib/appConfig';
 import { liquidFillStyle, liquidFillStyleFor } from '../../lib/liquidFill';
 import { Card, RippleButton } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
-import AlarmsPanel from '../AlarmsPanel';
 import { supabase } from '../../lib/supabaseClient';
 import { messageServiceWorker } from '../../lib/pushNotifications';
 import { startActiveTimer, clearActiveTimer } from '../../lib/activeTimers';
@@ -521,7 +520,7 @@ export function PomodoroSubjectStats({ log, subjects }) {
 
 export function AshClockTab() {
   const { subjects } = React.useContext(ConfigContext);
-  const [mode, setMode] = useState<'clock' | 'pomodoro' | 'alarm'>('clock');
+  const [mode, setMode] = useState<'clock' | 'pomodoro'>('clock');
 
   const [pomodoroLog, setPomodoroLog] = useState<any[]>(() => {
     try {
@@ -578,24 +577,14 @@ export function AshClockTab() {
             >
               POMODORO
             </RippleButton>
-            <RippleButton
-              onClick={() => setMode('alarm')}
-              className={`cursor-target shrink-0 rounded-full px-3 sm:px-4 py-1.5 text-[10.5px] sm:text-[11.5px] font-bold tracking-wide transition-all ${
-                mode === 'alarm' ? 'bg-purple-500 text-neutral-950 shadow' : 'text-purple-300/70 hover:text-purple-100'
-              }`}
-            >
-              ALARM
-            </RippleButton>
           </div>
         </div>
 
         <div className="relative">
           {mode === 'clock' ? (
             <LiveClockView />
-          ) : mode === 'pomodoro' ? (
-            <PomodoroView onSessionComplete={handleSessionComplete} />
           ) : (
-            <AlarmsPanel />
+            <PomodoroView onSessionComplete={handleSessionComplete} />
           )}
         </div>
       </div>

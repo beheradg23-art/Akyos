@@ -83,7 +83,7 @@ export default function PushNotificationsCard() {
       </div>
 
       <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
-        Covers Master Timeline reminders (5 min before each block), Pomodoro completion, and Alarms — delivered
+        Covers Master Timeline reminders (5 min before each block) and Pomodoro completion — delivered
         even if the app is closed or your phone is asleep, with a vibration and Akyos's chime. On iPhone, this only
         works after you've added Akyos to your Home Screen (Share → Add to Home Screen) — Safari won't deliver push
         to a regular browser tab. The chime plays when the app has a tab open somewhere (even in the background); if
