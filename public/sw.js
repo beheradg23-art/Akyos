@@ -30,13 +30,43 @@ self.addEventListener('push', (event) => {
     tag: payload.tag || 'dcc-notification',
     icon: payload.icon || '/icons/icon-192.png',
     badge: payload.badge || '/icons/icon-192.png',
-    requireInteraction: !!payload.requireInteraction,
-    data: { url: payload.url || '/' },
+    // Alarms/reminders default to sticking on screen until the person deals
+    // with them, instead of the OS auto-dismissing after a few seconds —
+    // that auto-dismiss is a big part of why these were easy to miss.
+    // A payload can still opt out with `requireInteraction: false`.
+    requireInteraction: payload.requireInteraction !== false,
+    // Explicit (not just relying on the default) — `silent: true` is what
+    // suppresses the OS notification sound/vibration entirely, and we only
+    // ever want that for the live ticking Pomodoro update below.
+    silent: false,
+    // Standard Web Notifications have no "custom sound file" option — no
+    // browser implements one — so this vibration pattern is the one thing
+    // we control that makes the alert physically noticeable on a phone,
+    // on top of whatever the OS's own default notification sound is.
+    vibrate: payload.vibrate || [200, 100, 200, 100, 300],
+    data: { url: payload.url || '/', soundKey: payload.soundKey || 'default' },
     renotify: true,
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      // Best-effort: if a tab/window is open (foreground OR background —
+      // this does NOT fire if the app is fully closed), tell it to play
+      // our actual custom chime file. The system notification above is
+      // what appears when the app is fully closed; the browser doesn't
+      // give a website any way to attach a custom sound file to that one,
+      // only to a sound played from live page/JS context.
+      notifyClientsToPlaySound(payload.soundKey || 'default'),
+    ])
+  );
 });
+
+function notifyClientsToPlaySound(soundKey) {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    clientList.forEach((client) => client.postMessage({ type: 'PLAY_NOTIFICATION_SOUND', soundKey }));
+  });
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
@@ -82,8 +112,12 @@ self.addEventListener('message', (event) => {
       body: msg.body || '',
       tag: 'pomodoro-complete',
       renotify: true,
+      requireInteraction: true,
+      silent: false,
+      vibrate: [200, 100, 200, 100, 300],
       icon: '/icons/icon-192.png',
       data: { url: '/' },
     });
+    notifyClientsToPlaySound('pomodoro-complete');
   }
 });

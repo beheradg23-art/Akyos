@@ -22,7 +22,8 @@ import AuthGate from './components/AuthGate';
 import OnboardingWizard from './components/OnboardingWizard';
 import { useCloudAutoSync } from './lib/cloudSync';
 import { supabase } from './lib/supabaseClient';
-import { subscribeToPush } from './lib/pushNotifications';
+import { subscribeToPush, registerServiceWorker } from './lib/pushNotifications';
+import { initNotificationSoundListener, primeNotificationSound } from './lib/notificationSound';
 import { Toaster } from './lib/toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NO_SELECT_CSS } from './styles/noSelect';
@@ -59,6 +60,16 @@ import { ConfigEditorTab } from './components/settings/ConfigEditors';
 const ONBOARDING_STORAGE_KEY = 'akyos_onboarding_completed_v1';
 
 export default function JEEDashboard() {
+  // Fires once on mount, independent of auth/onboarding state, so the
+  // service worker is registered and listening for its "play the custom
+  // chime" signal (see src/lib/notificationSound.ts) as early as possible —
+  // notifications can arrive the moment a push subscription exists, well
+  // before or after any particular screen is showing.
+  useEffect(() => {
+    registerServiceWorker();
+    initNotificationSoundListener();
+  }, []);
+
   const [unlocked, setUnlocked] = useState(false);
   useCloudAutoSync(unlocked);
   const [introDone, setIntroDone] = useState(false);
@@ -363,6 +374,7 @@ export default function JEEDashboard() {
       setNotificationPermission('unsupported');
       return;
     }
+    primeNotificationSound();
     const permission = await Notification.requestPermission();
     setNotificationPermission(permission);
     if (permission === 'granted') {

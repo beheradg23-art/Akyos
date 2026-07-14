@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, BellOff, BellRing } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getPushStatus, subscribeToPush, unsubscribeFromPush, pushSupported, type PushStatus } from '../lib/pushNotifications';
+import { primeNotificationSound } from '../lib/notificationSound';
 import { toast } from '../lib/toast';
 import { haptic } from '../lib/haptics';
 
@@ -22,6 +23,7 @@ export default function PushNotificationsCard() {
         haptic.light();
         toast.info('Notifications turned off for this device.');
       } else {
+        primeNotificationSound();
         const { data } = await supabase.auth.getUser();
         const userId = data.user?.id;
         if (!userId) return;
@@ -82,7 +84,11 @@ export default function PushNotificationsCard() {
 
       <p className="mt-3 text-[11px] text-neutral-600 leading-relaxed">
         Covers Master Timeline reminders (5 min before each block), Pomodoro completion, and Alarms — delivered
-        even if the app is closed or your phone is asleep.
+        even if the app is closed or your phone is asleep, with a vibration and Akyos's chime. On iPhone, this only
+        works after you've added Akyos to your Home Screen (Share → Add to Home Screen) — Safari won't deliver push
+        to a regular browser tab. The chime plays when the app has a tab open somewhere (even in the background); if
+        Akyos is fully closed, your phone's own default notification sound plays instead — no website can override
+        that part.
       </p>
     </div>
   );

@@ -3,6 +3,7 @@ import { Plus, Trash2, AlarmClock, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { fetchAlarms, createAlarm, updateAlarm, deleteAlarm, readCachedAlarms, type Alarm } from '../lib/alarms';
 import { getPushStatus, subscribeToPush, type PushStatus } from '../lib/pushNotifications';
+import { primeNotificationSound } from '../lib/notificationSound';
 import { TimeField } from './ui/Primitives';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -44,6 +45,7 @@ export default function AlarmsPanel() {
 
   const handleEnablePush = async () => {
     if (!userId) return;
+    primeNotificationSound();
     const next = await subscribeToPush(userId);
     setPushStatus(next);
   };
