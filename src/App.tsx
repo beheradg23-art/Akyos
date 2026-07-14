@@ -655,7 +655,7 @@ export default function JEEDashboard() {
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20 transition-transform active:scale-95 lg:pointer-events-none lg:cursor-default"
               style={liquidFillStyle()}
             >
-              <AkyosMark className="h-4.5 w-4.5 text-neutral-950" />
+              <AkyosMark className="h-4 w-4 text-neutral-950" />
             </button>
             <div className="min-w-0">
               <h1 className="text-[17px] font-semibold tracking-tight text-neutral-50 leading-none truncate">Akyos</h1>
