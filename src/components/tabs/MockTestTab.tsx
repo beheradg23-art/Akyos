@@ -1,6 +1,6 @@
 // Mock Test tab: test log, score-trend chart, and weak-topic priority list.
-import React, { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, ClipboardList, BarChart3, Trash2, Plus, Settings } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { AlertTriangle, ClipboardList, BarChart3, Trash2, Plus, Settings, Check, X } from 'lucide-react';
 import { ConfigContext, getSubjectStyle, getSubjectHex, getLocalDateString, getDayName } from '../../lib/appConfig';
 import { Card, RippleButton, DateField } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
@@ -195,6 +195,32 @@ export function MockTestTab() {
     setTests((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Delete is a two-tap confirm: first tap arms the row (button turns into
+  // "Confirm" + a Cancel button) instead of deleting right away, so a
+  // misclick on the trash icon can't silently wipe a logged test. The arm
+  // auto-clears after a few seconds if nothing is tapped again.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const pendingDeleteTimeoutRef = useRef<any>(null);
+
+  useEffect(() => () => clearTimeout(pendingDeleteTimeoutRef.current), []);
+
+  const requestDeleteTest = (id: string) => {
+    if (pendingDeleteId === id) {
+      clearTimeout(pendingDeleteTimeoutRef.current);
+      setPendingDeleteId(null);
+      handleDeleteTest(id);
+      return;
+    }
+    clearTimeout(pendingDeleteTimeoutRef.current);
+    setPendingDeleteId(id);
+    pendingDeleteTimeoutRef.current = setTimeout(() => setPendingDeleteId(null), 3000);
+  };
+
+  const cancelDeleteTest = () => {
+    clearTimeout(pendingDeleteTimeoutRef.current);
+    setPendingDeleteId(null);
+  };
+
   const sortedTests = useMemo(() => [...tests].sort((a, b) => a.date.localeCompare(b.date)), [tests]);
 
   const weakTopicCounts = useMemo(() => {
@@ -374,14 +400,35 @@ export function MockTestTab() {
                       );
                     })}
                     <span className="font-bold text-neutral-100">{totalScore}/{totalMax}</span>
-                    <button
-                      onClick={() => handleDeleteTest(t.id)}
-                      className="cursor-target p-1.5 rounded-lg text-neutral-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors"
-                      title="Delete this test"
-                      aria-label={`Delete mock test from ${t.date}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {pendingDeleteId === t.id ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => requestDeleteTest(t.id)}
+                          className="cursor-target flex items-center gap-1 px-2 py-1.5 rounded-lg bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[11px] font-semibold hover:bg-rose-500/25 transition-colors"
+                          title="Tap again to confirm delete"
+                          aria-label={`Confirm delete mock test from ${t.date}`}
+                        >
+                          <Check className="h-3.5 w-3.5" /> Confirm
+                        </button>
+                        <button
+                          onClick={cancelDeleteTest}
+                          className="cursor-target p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-800 hover:text-neutral-300 transition-colors"
+                          title="Cancel"
+                          aria-label="Cancel delete"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => requestDeleteTest(t.id)}
+                        className="cursor-target p-1.5 rounded-lg text-neutral-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors"
+                        title="Delete this test"
+                        aria-label={`Delete mock test from ${t.date}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
