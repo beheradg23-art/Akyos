@@ -106,6 +106,19 @@ export const SWEEP_REVEAL_ANIMATION = 'akyos-sweep-reveal 3s cubic-bezier(0.16, 
 const SWEEP_FADE_OUT_MS = 450;
 export const SWEEP_FADE_OUT_ANIMATION = `akyos-sweep-fade-out ${SWEEP_FADE_OUT_MS}ms ease-out both`;
 
+// The heading's plain-white base copy needs the opposite fade from the
+// gradient copy above: as the gradient fades OUT (opacity 1 -> 0), the
+// base should simultaneously fade IN (opacity 0 -> 1), not stay hidden
+// until the sweep overlay unmounts. Running the very same keyframes with
+// `direction: reverse` gives exactly that — it starts at the "to" frame
+// (opacity 0) and ends at the "from" frame (opacity 1) — while keeping
+// the two perfectly in sync (same duration, same easing, same clock).
+// This is only ever applied *without* SWEEP_REVEAL_STYLE_INVERSE's mask
+// (see SectionHeading) — during hover-out the base text should just be a
+// plain, unmasked fade-in; the masked/crossfade treatment is only needed
+// for the corner-to-corner sweep on hover-*in*.
+export const SWEEP_FADE_OUT_ANIMATION_INVERSE = `akyos-sweep-fade-out ${SWEEP_FADE_OUT_MS}ms ease-out reverse both`;
+
 // The mask itself — static across the whole animation (only the
 // `--akyos-sweep` custom property above changes), spread into an
 // element's style alongside SWEEP_REVEAL_ANIMATION.

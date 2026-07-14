@@ -10,7 +10,7 @@ import {
   Loader2, Calendar, Clock3,
 } from 'lucide-react';
 import { ConfigContext, HunterRank } from '../../lib/appConfig';
-import { liquidFillStyle, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_STYLE_INVERSE, SWEEP_FADE_OUT_ANIMATION, useSweepReveal } from '../../lib/liquidFill';
+import { liquidFillStyle, SWEEP_REVEAL_STYLE, SWEEP_REVEAL_STYLE_INVERSE, SWEEP_FADE_OUT_ANIMATION, SWEEP_FADE_OUT_ANIMATION_INVERSE, useSweepReveal } from '../../lib/liquidFill';
 
 // Lets a Card tell whatever it's wrapping (SectionHeading, in practice)
 // that the pointer is currently over it, without every one of the 30+
@@ -609,15 +609,29 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
   // The icon badge's base stays fully opaque throughout (it sits behind a
   // solid rounded-lg background, so nothing shows through it regardless).
   // The heading's base can't rely on that — text has no backing fill — so
-  // its base copy carries SWEEP_REVEAL_STYLE_INVERSE, the exact negative
-  // of the gradient copy's own mask (same --akyos-sweep variable, same
-  // feather, transparent/white stops swapped). That keeps the two
-  // opacities summing to ~1 all the way along the sweep line, so the
-  // white base is masked off at precisely the same rate the gradient
+  // while hovering, its base copy carries SWEEP_REVEAL_STYLE_INVERSE, the
+  // exact negative of the gradient copy's own mask (same --akyos-sweep
+  // variable, same feather, transparent/white stops swapped). That keeps
+  // the two opacities summing to ~1 all the way along the sweep line, so
+  // the white base is masked off at precisely the same rate the gradient
   // fades in on top of it — a single continuous crossfade rather than a
   // translucent gradient glyph sitting over a still-opaque white one,
   // which is what produced the pale "leaking" edge around the letters.
-  const { sweepMounted, sweepAnimation } = useContext(CardHoverContext);
+  //
+  // Hover-*out* needs different handling. The fade-out doesn't travel the
+  // sweep back across the box — it just fades the gradient copy's opacity
+  // to 0 in place (see SWEEP_FADE_OUT_ANIMATION), with --akyos-sweep
+  // pinned at its fully-revealed value the whole time. If the base copy
+  // kept its INVERSE mask during that fade, that mask would stay pinned
+  // at "fully hidden" for the entire 450ms too — so the white label
+  // wouldn't reappear until the instant the overlay unmounts, leaving a
+  // visible gap where no label is showing at all. So on hover-out the
+  // base copy drops the mask entirely and instead runs
+  // SWEEP_FADE_OUT_ANIMATION_INVERSE — the same keyframes, played in
+  // reverse — which fades its own opacity 0 -> 1 in lockstep with the
+  // gradient copy fading 1 -> 0. That keeps the crossfade seamless all
+  // the way through instead of only during hover-in.
+  const { hovering, sweepMounted, sweepAnimation } = useContext(CardHoverContext);
   return (
     <div className="flex items-center gap-3 mb-5">
       <div
@@ -637,10 +651,13 @@ export function SectionHeading({ icon: Icon, title, subtitle }: { icon: React.Co
       </div>
       <h2 className="relative text-[15px] font-semibold tracking-tight text-neutral-100">
         <span
-          style={{
-            ...SWEEP_REVEAL_STYLE_INVERSE,
-            ...(sweepMounted ? { animation: sweepAnimation } : null),
-          }}
+          style={
+            hovering
+              ? { ...SWEEP_REVEAL_STYLE_INVERSE, animation: sweepAnimation }
+              : sweepMounted
+              ? { animation: SWEEP_FADE_OUT_ANIMATION_INVERSE }
+              : undefined
+          }
         >
           {title}
         </span>
