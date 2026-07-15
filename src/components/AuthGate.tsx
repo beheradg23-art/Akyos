@@ -1234,6 +1234,26 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     }
   };
 
+  // Cancelling the Google consent screen (or any other OAuth cancel) often
+  // doesn't bring the user back via a fresh navigation — hitting the
+  // browser's back button restores this page straight from the
+  // back/forward cache (bfcache) instead of re-running any JS. That means
+  // whatever state was in memory the instant the browser left for Google
+  // — including `googleBusy: true`, set right before the redirect below —
+  // comes back frozen exactly as it was, so the button stays stuck on
+  // "Connecting…" until a manual full reload. `pageshow`'s `persisted`
+  // flag is what tells us "this is a bfcache restore, not a normal load",
+  // so we can un-stick any in-flight auth state right then.
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setGoogleBusy(false);
+      setAuthBusy(false);
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   const handleGoogleSignIn = async () => {
     setGoogleError('');
     setGoogleBusy(true);
