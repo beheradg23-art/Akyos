@@ -34,39 +34,49 @@ function TodoRow({ item, onToggle, onDelete }: { item: TodoItem; onToggle: () =>
   return (
     <div
       ref={ref}
+      onClick={(e) => {
+        spawnRipple(e, ref.current);
+        haptic.light();
+        onToggle();
+      }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          haptic.light();
+          onToggle();
+        }
+      }}
+      aria-pressed={item.done}
+      aria-label={`${item.text}, ${item.done ? 'completed' : 'not completed'}`}
       className={`cursor-target group relative flex items-center gap-3 overflow-hidden rounded-xl border px-3.5 py-3 transition-colors duration-200 ${
         item.done
           ? 'bg-violet-500/[0.08] border-violet-500/30'
           : 'bg-neutral-900/40 border-neutral-800 hover:border-neutral-700'
       }`}
     >
-      <button
-        onClick={(e) => {
-          spawnRipple(e, ref.current);
-          haptic.light();
-          onToggle();
-        }}
-        aria-pressed={item.done}
-        aria-label={`${item.text}, ${item.done ? 'completed' : 'not completed'}`}
-        className="cursor-target shrink-0"
-      >
+      <span className="shrink-0 pointer-events-none">
         {item.done ? (
           <CheckCircle2 className="h-5 w-5 text-violet-400" strokeWidth={2} />
         ) : (
           <Circle className="h-5 w-5 text-neutral-600 group-hover:text-neutral-400 transition-colors" strokeWidth={1.75} />
         )}
-      </button>
+      </span>
 
       <span
-        className={`flex-1 text-[13.5px] leading-snug transition-colors ${
-          item.done ? 'text-violet-200/70 line-through decoration-violet-400/40' : 'text-neutral-200'
+        className={`flex-1 text-[13.5px] leading-snug transition-colors pointer-events-none ${
+          item.done ? 'text-violet-200/70 line-through decoration-2 decoration-violet-400/80' : 'text-neutral-200'
         }`}
       >
         {item.text}
       </span>
 
       <button
-        onClick={onDelete}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
         aria-label={`Delete "${item.text}"`}
         className="cursor-target shrink-0 rounded-lg p-1.5 text-neutral-700 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-400"
       >

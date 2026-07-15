@@ -17,6 +17,7 @@ export const SYNC_KEYS = [
   'ash_clock_quests_cleared',
   'pomodoro_subject_log',
   'ash_clock_last_subject',
+  'jee_command_todos_v1',
   'app_config_v1',
   'dcc_content_cache_v1',
   'akyos_onboarding_completed_v1',
