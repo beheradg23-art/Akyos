@@ -17,7 +17,7 @@ import {
   AlertTriangle, Eye, Smile, RotateCcw,
   TrendingUp, Activity, Timer, Calendar,
   Music2, Crown, Swords, ShieldCheck, ClipboardList, BarChart3, Bell,
-  Settings, UserCircle2, ListChecks,
+  Settings, UserCircle2, ListChecks, Palette,
 } from 'lucide-react';
 
 
@@ -739,6 +739,7 @@ export const ICON_OPTIONS: Record<string, any> = {
   rotateCcw: RotateCcw,
   alertTriangle: AlertTriangle,
   listChecks: ListChecks,
+  palette: Palette,
 };
 
 export const ICON_OPTION_KEYS = Object.keys(ICON_OPTIONS);
@@ -749,9 +750,9 @@ export const ICON_OPTION_KEYS = Object.keys(ICON_OPTIONS);
 // TABS entries (defined further below) plus the two pinned Settings/Account
 // buttons, which aren't in TABS since they're rendered separately at the
 // bottom of the rail.
-export type TabLabelKey = 'overview' | 'timeline' | 'training' | 'syllabus' | 'mocktests' | 'ashclock' | 'todo' | 'history' | 'settings' | 'account';
+export type TabLabelKey = 'overview' | 'timeline' | 'training' | 'syllabus' | 'mocktests' | 'ashclock' | 'todo' | 'akyboard' | 'history' | 'settings' | 'account';
 
-export const TAB_LABEL_KEYS: TabLabelKey[] = ['overview', 'timeline', 'training', 'syllabus', 'mocktests', 'ashclock', 'todo', 'history', 'settings', 'account'];
+export const TAB_LABEL_KEYS: TabLabelKey[] = ['overview', 'timeline', 'training', 'syllabus', 'mocktests', 'ashclock', 'todo', 'akyboard', 'history', 'settings', 'account'];
 
 export const DEFAULT_TAB_LABELS: Record<TabLabelKey, string> = {
   overview: 'Dashboard Overview',
@@ -761,6 +762,7 @@ export const DEFAULT_TAB_LABELS: Record<TabLabelKey, string> = {
   mocktests: 'Mock Test Tracker',
   ashclock: 'Clock',
   todo: 'To-Do List',
+  akyboard: 'AkyBoard',
   history: 'Performance Calendar',
   settings: 'Settings',
   account: 'Account',
@@ -776,6 +778,7 @@ export const DEFAULT_TAB_ICONS: Record<TabLabelKey, string> = {
   mocktests: 'clipboardList',
   ashclock: 'timer',
   todo: 'listChecks',
+  akyboard: 'palette',
   history: 'calendar',
   settings: 'settings',
   account: 'userCircle2',
@@ -996,6 +999,7 @@ export const TABS = [
   { id: 'mocktests', label: 'Mock Test Tracker', icon: ClipboardList },
   { id: 'ashclock', label: 'Clock', icon: Timer },
   { id: 'todo', label: 'To-Do List', icon: ListChecks },
+  { id: 'akyboard', label: 'AkyBoard', icon: Palette },
   { id: 'history', label: 'Performance Calendar', icon: Calendar },
 ];
 
