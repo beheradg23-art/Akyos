@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Never commit real secrets (Supabase URL/anon key locally, and especially
+# SUPABASE_SERVICE_ROLE_KEY if anyone ever tests api/delete-account.ts
+# locally with a .env instead of host-level env vars).
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
