@@ -1,8 +1,8 @@
-// Account tab: profile summary, data backup/restore, password change, cloud
+// Account tab: profile summary, password change, cloud
 // sync card, and the performance calendar heatmap.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Sun, Calendar, ArrowUpRight, ChevronLeft, Download, Upload, ShieldCheck,
+  Sun, Calendar, ArrowUpRight, ChevronLeft,
   Settings, UserCircle2, KeyRound, LogOut, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { ConfigContext, SECTION_LABEL_ROWS, getLocalDateString, getDayName, DailyCheckLog } from '../../lib/appConfig';
@@ -16,190 +16,10 @@ import { haptic } from '../../lib/haptics';
 import PasswordField from '../PasswordField';
 import PasscodeChangeCard from '../PasscodeChangeCard';
 import {
-  SYNC_KEYS, resetLocalAccountState, LAST_ACTIVE_USER_KEY,
+  resetLocalAccountState, LAST_ACTIVE_USER_KEY,
   verifyPasscode, getPasscodeHash, setPasscodeHash, PASSCODE_HASH_KEY,
   registerFailedPasscodeAttempt, clearPasscodeAttempts, usePasscodeLockoutMs,
 } from '../../lib/cloudSync';
-
-export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHistory: DailyCheckLog; setGlobalHistory: React.Dispatch<React.SetStateAction<DailyCheckLog>> }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Built from cloudSync's SYNC_KEYS — the same list that already has to be
-  // kept up to date for cloud sync to work — instead of a second,
-  // independently hand-maintained list. Add a key to SYNC_KEYS once and both
-  // cloud sync *and* backup/restore pick it up automatically.
-  const collectBackupPayload = () => {
-    const payload: Record<string, unknown> = {
-      _meta: {
-        app: 'Akyos',
-        exportedAt: new Date().toISOString(),
-        version: 1,
-      },
-    };
-    SYNC_KEYS.forEach((key) => {
-      // globalHistory is the live in-memory copy of jee_command_history_v2 —
-      // prefer it over localStorage so an export always reflects what's on
-      // screen, not whatever was last flushed to disk.
-      payload[key] = key === 'jee_command_history_v2' ? globalHistory : localStorage.getItem(key);
-    });
-    return payload;
-  };
-
-  const handleExport = () => {
-    try {
-      const payload = collectBackupPayload();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `command-center-backup-${getLocalDateString()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success('Backup downloaded — keep it somewhere safe (Drive, email to yourself, etc).');
-    } catch {
-      toast.error('Could not create the backup file. Try again.');
-    }
-  };
-
-  const handleImportClick = () => fileInputRef.current?.click();
-
-  // Hard caps for restore-file validation. Kept well above anything a real
-  // export produces, but far below anything that could meaningfully bloat
-  // localStorage or hang the tab parsing/looping over attacker-supplied data.
-  const MAX_BACKUP_FILE_BYTES = 5 * 1024 * 1024; // 5MB total file
-  const MAX_BACKUP_VALUE_BYTES = 2 * 1024 * 1024; // 2MB per stored value
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    // Extension + MIME check. Neither is spoof-proof on its own (both are
-    // attacker-controlled metadata), but together they filter out obvious
-    // mistakes/mismatches before we ever try to parse the file, and every
-    // value inside is still fully validated below regardless.
-    const hasJsonExtension = /\.json$/i.test(file.name);
-    const hasJsonMime = file.type === '' || file.type === 'application/json' || file.type === 'text/json' || file.type === 'text/plain';
-    if (!hasJsonExtension || !hasJsonMime) {
-      toast.error('Please choose a .json backup file.');
-      return;
-    }
-
-    if (file.size > MAX_BACKUP_FILE_BYTES) {
-      toast.error('That file is too large to be a valid backup (max 5MB).');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const raw = String(evt.target?.result || '');
-        const parsed = JSON.parse(raw);
-
-        // Top-level shape: must be a plain object (not array, not scalar,
-        // not null), and must contain the one key we always expect.
-        if (
-          !parsed ||
-          typeof parsed !== 'object' ||
-          Array.isArray(parsed) ||
-          !('jee_command_history_v2' in parsed)
-        ) {
-          throw new Error('Not a valid backup file');
-        }
-
-        // Per-value checks before anything touches localStorage: each
-        // SYNC_KEYS entry present must be a string or a plain
-        // object/array (never a function, symbol, etc — JSON.parse can't
-        // actually produce those, but this also guards against unexpected
-        // shapes like numbers/booleans where a string was expected), and
-        // must be under the per-value size cap. Any single bad value
-        // aborts the whole restore, so we never end up half-applied.
-        const validated: Record<string, string> = {};
-        for (const key of SYNC_KEYS) {
-          const value = (parsed as Record<string, unknown>)[key];
-          if (value === undefined || value === null) continue;
-
-          const isPlainValue =
-            typeof value === 'string' ||
-            (typeof value === 'object' && value !== null);
-          if (!isPlainValue) {
-            throw new Error(`Unexpected value type for "${key}"`);
-          }
-
-          const serialized = typeof value === 'string' ? value : JSON.stringify(value);
-          const byteSize = new Blob([serialized]).size;
-          if (byteSize > MAX_BACKUP_VALUE_BYTES) {
-            throw new Error(`Value for "${key}" is too large`);
-          }
-
-          validated[key] = serialized;
-        }
-
-        if (!('jee_command_history_v2' in validated)) {
-          throw new Error('Not a valid backup file');
-        }
-
-        // Only now, after every value has passed validation, do we start
-        // applying anything — so a malformed later key can't leave earlier
-        // keys already written while the restore as a whole fails.
-        setGlobalHistory(JSON.parse(validated.jee_command_history_v2));
-
-        // Restore every other SYNC_KEYS entry present in the file. Driven by
-        // the same list as the export above (and as cloud sync), so a backup
-        // taken after a new feature ships restores that feature's data too,
-        // without this card needing a matching manual update.
-        SYNC_KEYS.forEach((key) => {
-          if (key === 'jee_command_history_v2') return; // handled above
-          if (validated[key] !== undefined) {
-            localStorage.setItem(key, validated[key]);
-          }
-        });
-
-        toast.success('Restored — reloading to apply everything…');
-        setTimeout(() => window.location.reload(), 1100);
-      } catch {
-        toast.error('That file is invalid or corrupted — nothing was changed.');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const dayCount = Object.keys(globalHistory || {}).length;
-
-  return (
-    <Card className="animate-fadeIn">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <EditableSectionHeading
-          id="ac_backup"
-          defaultTitle="Data Backup & Restore"
-          defaultIcon={ShieldCheck}
-          subtitle={`${dayCount} day${dayCount === 1 ? '' : 's'} of history, stored only in this browser`}
-        />
-        <div className="flex items-center gap-2 shrink-0">
-          <RippleButton
-            onClick={handleExport}
-            className="cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-200 hover:bg-neutral-800 transition-colors"
-          >
-            <Download className="h-3.5 w-3.5" /> Export
-          </RippleButton>
-          <RippleButton
-            onClick={handleImportClick}
-            className="cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-200 hover:bg-neutral-800 transition-colors"
-          >
-            <Upload className="h-3.5 w-3.5" /> Import
-          </RippleButton>
-          <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={handleFileChange} />
-        </div>
-      </div>
-
-      <p className="mt-4 text-[12.5px] text-neutral-500 leading-relaxed">
-        Everything here — the Daily Matrix history, streak, Hunter Rank, mock test scores, and weight log — lives only in this browser's storage. Clearing site data, switching devices, or reinstalling the browser erases it permanently, with no way to recover it. Export a backup file regularly, and import it to restore everything on a new device or after a reset.
-      </p>
-    </Card>
-  );
-}
 
 // ---------- Change Password (inside Account Menu) ----------
 
@@ -441,8 +261,7 @@ export function DeleteAccountCard() {
                 <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
                 <p className="text-[12px] leading-relaxed text-rose-200/90">
                   This deletes your account, your cloud-synced data, and your passcode.
-                  Anything only stored on THIS device (see Data Backup & Restore above)
-                  is not touched by this — export a backup first if you want to keep it.
+                  Anything only stored on THIS device is not touched by this.
                   This cannot be undone.
                 </p>
               </div>
@@ -523,7 +342,7 @@ export function DeleteAccountCard() {
 
 // ---------- Account Menu ----------
 // Slide-over panel replacing the old standalone "Config & Settings" tab.
-// Holds account identity, cloud sync, password change, data backup/restore,
+// Holds account identity, cloud sync, password change,
 // the entry point into Settings, and sign out — everything that isn't
 // day-to-day tracking content lives here now instead of the main nav.
 
@@ -567,7 +386,7 @@ export function AccountPage({
 
   return (
     <div className="max-w-xl space-y-5 animate-fadeIn">
-      <EditableSectionHeading id="ac_account" defaultTitle="Account" defaultIcon={UserCircle2} subtitle="Profile, cloud sync, security & backups" />
+      <EditableSectionHeading id="ac_account" defaultTitle="Account" defaultIcon={UserCircle2} subtitle="Profile, cloud sync & security" />
 
       <div className="flex items-center gap-3 rounded-2xl border border-neutral-800 bg-gradient-to-br from-violet-500/[0.08] via-neutral-950 to-indigo-500/[0.05] p-4">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[15px] font-bold text-neutral-950" style={liquidFillStyle()}>
@@ -582,8 +401,6 @@ export function AccountPage({
       <CloudSyncCard />
       <ChangePasswordCard />
       <PasscodeChangeCard />
-
-      <DataBackupCard globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />
 
       <button
         onClick={handleSignOut}

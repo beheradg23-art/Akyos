@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 
-// Same list of keys your existing "Data Backup & Restore" card (DataBackupCard,
-// in App__11_.tsx) already exports to a JSON file. Kept in sync intentionally —
-// if you ever add a new localStorage key to the app, add it here too and it
-// will be included in both the manual backup file AND the cloud sync.
+// The localStorage keys that get synced to the cloud (user_data table).
+// If you ever add a new localStorage key to the app, add it here too so it
+// gets picked up by cloud sync.
 export const SYNC_KEYS = [
   'jee_command_history_v2',
   'mock_test_log',

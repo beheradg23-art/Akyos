@@ -105,8 +105,8 @@ export function generateHealthPlan(issue: string, context?: string) {
 //
 // Icon names must come from the app's ICON_LIBRARY (defined in App.tsx).
 // Kept as a duplicate list here — rather than importing from App.tsx, which
-// would create a circular import — the same way SYNC_KEYS above is kept in
-// manual sync with DataBackupCard's export list. If ICON_LIBRARY ever
+// would create a circular import — the same way SYNC_KEYS in cloudSync.ts is
+// kept in manual sync with the app's localStorage keys. If ICON_LIBRARY ever
 // changes, update this too.
 export const TIMELINE_ICON_OPTIONS = [
   'Sunrise', 'Sun', 'Moon', 'BookOpen', 'Utensils', 'Dumbbell', 'Timer',

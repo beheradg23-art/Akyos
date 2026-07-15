@@ -789,9 +789,8 @@ const cascadeStyle = (index: number): React.CSSProperties => ({
 // JEEDashboard that reads localStorage.getItem(...) inside a useState
 // initializer already ran BEFORE the pull finished (those initializers only
 // run once, on mount). So instead of trying to force-update dozens of
-// pieces of state, we do one clean reload after the pull — same pattern
-// your own DataBackupCard import flow already uses. A sessionStorage flag
-// stops it from looping.
+// pieces of state, we do one clean reload after the pull. A sessionStorage
+// flag stops it from looping.
 const SYNCED_FLAG = 'dcc_cloud_synced_this_session';
 
 // Marks "the person just went to confirm their identity via Google in
