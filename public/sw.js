@@ -92,13 +92,27 @@ self.addEventListener('message', (event) => {
   const msg = event.data || {};
 
   if (msg.type === 'POMODORO_LIVE_UPDATE') {
+    // The app flags exactly one of these per session — the very first
+    // call, right as the session starts — with playSound:true. Every
+    // recurring call after that (the 20s countdown ticks) omits it, since
+    // showNotification() firing every 20 seconds with an alert would mean
+    // a chime for the whole length of the session instead of once at the
+    // start. Every other notification in this app already alerts by
+    // default (see the `push` handler above); this is the one deliberate,
+    // narrowly-scoped exception.
+    const isStart = !!msg.playSound;
     self.registration.showNotification(msg.title || 'Pomodoro running', {
       body: msg.body || '',
       tag: 'pomodoro-live',
-      silent: true,
+      silent: !isStart,
+      renotify: isStart,
+      vibrate: isStart ? [200, 100, 200, 100, 300] : undefined,
       icon: '/icons/icon-192.png',
       data: { url: '/' },
     });
+    if (isStart) {
+      messageClients({ type: 'PLAY_NOTIFICATION_SOUND', soundKey: 'pomodoro-start' });
+    }
   }
 
   if (msg.type === 'POMODORO_LIVE_CLEAR') {

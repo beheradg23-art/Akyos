@@ -153,9 +153,16 @@ export function PomodoroView({ onSessionComplete }) {
   // Live-updating "N:NN remaining" notification while the session runs —
   // this only needs the tab alive in the background (screen off is fine),
   // not a server push, so it just talks to the service worker directly.
+  //
+  // The very first call here IS "the start of the session" as far as the
+  // person is concerned — it deserves the same sound/vibration alert as
+  // any other notification. The recurring calls every 20s after that are
+  // just updating the same on-screen countdown and must stay silent, or
+  // starting a session would mean a chime every 20 seconds for its whole
+  // duration. `playSound` tells the service worker which case this is.
   useEffect(() => {
     if (!isRunning) return;
-    const sendLiveUpdate = () => {
+    const sendLiveUpdate = (playSound: boolean) => {
       const s = secondsLeftRef.current;
       const mm2 = Math.floor(s / 60).toString().padStart(2, '0');
       const ss2 = (s % 60).toString().padStart(2, '0');
@@ -163,10 +170,11 @@ export function PomodoroView({ onSessionComplete }) {
         type: 'POMODORO_LIVE_UPDATE',
         title: sessionType === 'focus' ? '⚔️ Focus Gate in progress' : '🌙 Rest Zone',
         body: `${mm2}:${ss2} remaining${sessionType === 'focus' ? ` · ${subject}` : ''}`,
+        playSound,
       });
     };
-    sendLiveUpdate();
-    const liveInterval = setInterval(sendLiveUpdate, 20000);
+    sendLiveUpdate(true);
+    const liveInterval = setInterval(() => sendLiveUpdate(false), 20000);
     return () => clearInterval(liveInterval);
   }, [isRunning, sessionType, subject]);
 
