@@ -738,10 +738,22 @@ export function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal 
                     <span className={`absolute bottom-1.5 h-1 w-1 rounded-full ${dateStr === getLocalDateString() || Object.values(globalHistory[dateStr]).filter(Boolean).length === trackerItems.length ? 'bg-neutral-950' : 'bg-current'}`} />
                   )}
                   {hasStudy && (
-                    <span className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-[0_0_4px_rgba(129,140,248,0.9)]" />
+                    <span
+                      className={`absolute top-1 left-1 h-1.5 w-1.5 rounded-full ${
+                        isPerfectHeatmapDay(dateStr)
+                          ? 'bg-indigo-950 shadow-[0_0_3px_rgba(0,0,0,0.6)]'
+                          : 'bg-indigo-400 shadow-[0_0_4px_rgba(129,140,248,0.9)]'
+                      }`}
+                    />
                   )}
                   {hasTest && (
-                    <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.9)]" />
+                    <span
+                      className={`absolute top-1 right-1 h-1.5 w-1.5 rounded-full ${
+                        isPerfectHeatmapDay(dateStr)
+                          ? 'bg-amber-950 shadow-[0_0_3px_rgba(0,0,0,0.6)]'
+                          : 'bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.9)]'
+                      }`}
+                    />
                   )}
                 </>
               )}
