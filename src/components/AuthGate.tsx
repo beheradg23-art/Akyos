@@ -1835,9 +1835,37 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             <button
               type="button"
               onClick={handleGoogleVerifyForRecovery}
+              onMouseEnter={() => setGoogleHovered(true)}
+              onMouseLeave={() => setGoogleHovered(false)}
               disabled={googleBusy}
-              className="flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+              className="relative overflow-hidden flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             >
+              {googleSweep.mounted && (
+                // Same hover-gated sweep border as the sign-in page's own
+                // Google button — ring-only cutout filled with the local
+                // liquidFillStyle() brand gradient, revealed via the
+                // --akyos-sweep mask, faded back out (no re-sweep) via
+                // useSweepReveal on hover-out. Reuses that same
+                // googleHovered/googleSweep state rather than a second
+                // copy, since only one of the two Google buttons is ever
+                // mounted (and hoverable) at once.
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-xl"
+                  style={{ animation: googleSweep.animation, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-xl"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
               <GoogleIcon className="h-4 w-4" />
               {googleBusy ? 'Connecting…' : 'Continue with Google to verify'}
             </button>
