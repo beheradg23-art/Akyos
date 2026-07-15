@@ -5,13 +5,26 @@ import { ConfigContext, getSubjectStyle, getSubjectHex, getLocalDateString, getD
 import { Card, RippleButton, DateField } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 
+// Point count past which the chart stops squeezing everything into a fixed
+// 600px canvas and instead grows wide enough to give every point real
+// breathing room, scrolling horizontally instead of compressing. Below this
+// threshold the old fixed-width, scale-to-fit behavior is unchanged.
+const DENSE_POINT_THRESHOLD = 14;
+// Target pixel spacing between plotted points once the chart goes wide/scrollable.
+const POINT_SPACING = 42;
+// Minimum pixel gap we'll allow between two x-axis date labels before we
+// start skipping labels — this is what keeps a year of tests from turning
+// into an unreadable smear of overlapping dates.
+const MIN_LABEL_GAP = 34;
+
 export function ScoreTrendChart({ tests, subjects }) {
-  const width = 600;
   const height = 220;
   const padding = { top: 10, right: 10, bottom: 24, left: 32 };
-  const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
   const n = tests.length;
+  const dense = n > DENSE_POINT_THRESHOLD;
+  const width = dense ? Math.round(padding.left + padding.right + (n - 1) * POINT_SPACING) : 600;
+  const innerW = width - padding.left - padding.right;
 
   // Every test can have a different max-marks per subject, so the chart plots
   // percentage-of-max (score / max * 100) rather than the raw score. That's
@@ -41,38 +54,56 @@ export function ScoreTrendChart({ tests, subjects }) {
     };
   });
 
+  // Adaptive x-axis labeling: figure out how many points can fit a date
+  // label without crowding, then take an evenly-spaced subset of indices
+  // (always including the first and last) rather than hardcoding "first,
+  // middle, last" regardless of how many tests are logged.
+  const pxPerPoint = n > 1 ? innerW / (n - 1) : innerW;
+  const labelStep = Math.max(1, Math.ceil(MIN_LABEL_GAP / Math.max(pxPerPoint, 1)));
+  const labeledIndices = new Set<number>();
+  for (let i = 0; i < n; i += labelStep) labeledIndices.add(i);
+  if (n > 0) labeledIndices.add(n - 1);
+
+  const chart = (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className={dense ? 'h-auto block' : 'w-full h-auto'}
+      style={dense ? { width, minWidth: '100%' } : undefined}
+    >
+      {[0, 25, 50, 75, 100].map((gVal) => (
+        <g key={gVal}>
+          <line x1={padding.left} x2={width - padding.right} y1={yFor(gVal)} y2={yFor(gVal)} stroke="#27272a" strokeWidth="1" />
+          <text x={padding.left - 6} y={yFor(gVal) + 3} fontSize="9" fill="#71717a" textAnchor="end">{gVal}%</text>
+        </g>
+      ))}
+      {series.map((s) => (
+        <path key={s.key} d={buildPath(s.key)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      ))}
+      {series.map((s) =>
+        tests.map((t, i) => {
+          const raw = t.scores[s.key];
+          if (!raw) return null;
+          return (
+            <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" fill={s.color}>
+              <title>{`${s.label}: ${raw.score}/${raw.max} (${pctFor(t, s.key).toFixed(1)}%)`}</title>
+            </circle>
+          );
+        })
+      )}
+      {tests.map(
+        (t, i) =>
+          labeledIndices.has(i) && (
+            <text key={i} x={xFor(i)} y={height - 6} fontSize="9" fill="#71717a" textAnchor="middle">
+              {t.date.slice(5)}
+            </text>
+          )
+      )}
+    </svg>
+  );
+
   return (
     <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
-        {[0, 25, 50, 75, 100].map((gVal) => (
-          <g key={gVal}>
-            <line x1={padding.left} x2={width - padding.right} y1={yFor(gVal)} y2={yFor(gVal)} stroke="#27272a" strokeWidth="1" />
-            <text x={padding.left - 6} y={yFor(gVal) + 3} fontSize="9" fill="#71717a" textAnchor="end">{gVal}%</text>
-          </g>
-        ))}
-        {series.map((s) => (
-          <path key={s.key} d={buildPath(s.key)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        ))}
-        {series.map((s) =>
-          tests.map((t, i) => {
-            const raw = t.scores[s.key];
-            if (!raw) return null;
-            return (
-              <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" fill={s.color}>
-                <title>{`${s.label}: ${raw.score}/${raw.max} (${pctFor(t, s.key).toFixed(1)}%)`}</title>
-              </circle>
-            );
-          })
-        )}
-        {tests.map(
-          (t, i) =>
-            (i === 0 || i === n - 1 || i === Math.floor((n - 1) / 2)) && (
-              <text key={i} x={xFor(i)} y={height - 6} fontSize="9" fill="#71717a" textAnchor="middle">
-                {t.date.slice(5)}
-              </text>
-            )
-        )}
-      </svg>
+      {dense ? <div className="overflow-x-auto pb-1">{chart}</div> : chart}
       <div className="flex items-center gap-4 mt-1 justify-center text-[11px] text-neutral-400">
         {series.map((s) => (
           <span key={s.key} className="flex items-center gap-1.5">
@@ -80,7 +111,10 @@ export function ScoreTrendChart({ tests, subjects }) {
           </span>
         ))}
       </div>
-      <p className="text-center text-[10.5px] text-neutral-600 mt-2">Plotted as % of that test's max marks, since full marks vary test to test — hover a point for the raw score.</p>
+      <p className="text-center text-[10.5px] text-neutral-600 mt-2">
+        Plotted as % of that test's max marks, since full marks vary test to test — hover a point for the raw score.
+        {dense ? ' Scroll horizontally to see the rest.' : ''}
+      </p>
     </div>
   );
 }
@@ -150,7 +184,36 @@ export function MockTestTab() {
   }, [scorableSubjects]);
 
   const setFormScore = (key: string, field: 'score' | 'max', value: string) => {
-    setFormScores((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+    setFormScores((prev) => {
+      const current = prev[key] || { score: '', max: '100' };
+      // Clamp the score live as the user types, not just on submit — otherwise
+      // a value like 150/100 is visible for a moment before "Log Test" is hit.
+      // Only rewrite the digits once they actually exceed the current max, so
+      // this never fights the user mid-keystroke (e.g. typing "1" then "10"
+      // then "100" toward a max of 100 never gets clamped along the way).
+      if (field === 'score' && value !== '') {
+        const num = Number(value);
+        if (!Number.isNaN(num)) {
+          const max = Number(current.max) || 100;
+          const clamped = Math.min(Math.max(num, 0), max);
+          if (clamped !== num) value = String(clamped);
+        }
+        return { ...prev, [key]: { ...current, score: value } };
+      }
+      if (field === 'max') {
+        const newMax = Number(value);
+        const curScore = Number(current.score);
+        // If they lower the max below a score already typed, pull the score
+        // down with it rather than leaving a stale out-of-range value sitting
+        // in the box.
+        const nextScore =
+          value !== '' && !Number.isNaN(newMax) && current.score !== '' && !Number.isNaN(curScore) && curScore > newMax
+            ? String(Math.max(0, newMax))
+            : current.score;
+        return { ...prev, [key]: { ...current, max: value, score: nextScore } };
+      }
+      return { ...prev, [key]: { ...current, [field]: value } };
+    });
   };
 
   const activePhaseData = syllabus.find((p) => p.phase === formPhase);
@@ -222,6 +285,26 @@ export function MockTestTab() {
   };
 
   const sortedTests = useMemo(() => [...tests].sort((a, b) => a.date.localeCompare(b.date)), [tests]);
+
+  // Date-range filter for the Score Trend chart only — the weak-topic ranking
+  // and the full test log below are unaffected and always reflect every
+  // logged test, regardless of which trend window is selected.
+  const TREND_RANGES = [
+    { key: 'all', label: 'All', days: null },
+    { key: '30', label: '30d', days: 30 },
+    { key: '90', label: '90d', days: 90 },
+    { key: '180', label: '6mo', days: 180 },
+    { key: '365', label: '1yr', days: 365 },
+  ] as const;
+  const [trendRange, setTrendRange] = useState<(typeof TREND_RANGES)[number]['key']>('all');
+  const trendTests = useMemo(() => {
+    const range = TREND_RANGES.find((r) => r.key === trendRange);
+    if (!range || range.days == null) return sortedTests;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - range.days);
+    const cutoffStr = getLocalDateString(cutoff);
+    return sortedTests.filter((t) => t.date >= cutoffStr);
+  }, [sortedTests, trendRange]);
 
   const weakTopicCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -341,9 +424,37 @@ export function MockTestTab() {
 
       {sortedTests.length > 0 && (
         <Card>
-          <EditableSectionHeading id="mt_trend" defaultTitle="Score Trend" defaultIcon={BarChart3} subtitle={`${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`} />
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <EditableSectionHeading
+              id="mt_trend"
+              defaultTitle="Score Trend"
+              defaultIcon={BarChart3}
+              subtitle={
+                trendTests.length === sortedTests.length
+                  ? `${sortedTests.length} test${sortedTests.length === 1 ? '' : 's'} logged — shown as % of that test's max marks`
+                  : `${trendTests.length} of ${sortedTests.length} tests in range — shown as % of that test's max marks`
+              }
+            />
+            <div className="flex gap-1 flex-wrap">
+              {TREND_RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setTrendRange(r.key)}
+                  className={`cursor-target px-2.5 py-1 rounded-md text-[10.5px] font-semibold transition-colors ${
+                    trendRange === r.key ? 'bg-neutral-100 text-neutral-900' : 'bg-neutral-900 text-neutral-500 hover:text-neutral-300'
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mt-4">
-            <ScoreTrendChart tests={sortedTests} subjects={subjects} />
+            {trendTests.length > 0 ? (
+              <ScoreTrendChart tests={trendTests} subjects={subjects} />
+            ) : (
+              <p className="text-[13px] text-neutral-500">No tests logged in this range.</p>
+            )}
           </div>
         </Card>
       )}
