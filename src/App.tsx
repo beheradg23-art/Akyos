@@ -710,8 +710,41 @@ export default function JEEDashboard() {
           </aside>
         </div>
 
-        <footer className="mt-8 pb-2 text-center">
-          <p className="text-[11px] text-neutral-600">Built By Ash - With Love and Peace</p>
+        <footer className="mt-8 pb-2 text-center space-y-1.5">
+          <div className="flex items-center justify-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-neutral-600">
+            <a
+              href="mailto:kiwieatspumpkin@gmail.com"
+              className="hover:text-neutral-400 transition-colors"
+            >
+              Contact Akyos
+            </a>
+            <span className="text-neutral-800">•</span>
+            <a
+              href="mailto:kiwieatspumpkin@gmail.com?subject=To%20Report%20a%20Bug"
+              className="hover:text-neutral-400 transition-colors"
+            >
+              Report a Bug
+            </a>
+            <span className="text-neutral-800">•</span>
+            <a
+              href="https://www.instagram.com/akyos.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-400 transition-colors"
+            >
+              Akyos Instagram
+            </a>
+          </div>
+          <p className="text-[11px] text-neutral-600">
+            <a
+              href="https://www.instagram.com/saltlysweet/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-neutral-400 transition-colors"
+            >
+              Built By Ash - With Love and Peace
+            </a>
+          </p>
         </footer>
         </div>
       </div>
