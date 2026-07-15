@@ -65,20 +65,86 @@ export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHist
 
   const handleImportClick = () => fileInputRef.current?.click();
 
+  // Hard caps for restore-file validation. Kept well above anything a real
+  // export produces, but far below anything that could meaningfully bloat
+  // localStorage or hang the tab parsing/looping over attacker-supplied data.
+  const MAX_BACKUP_FILE_BYTES = 5 * 1024 * 1024; // 5MB total file
+  const MAX_BACKUP_VALUE_BYTES = 2 * 1024 * 1024; // 2MB per stored value
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
 
+    // Extension + MIME check. Neither is spoof-proof on its own (both are
+    // attacker-controlled metadata), but together they filter out obvious
+    // mistakes/mismatches before we ever try to parse the file, and every
+    // value inside is still fully validated below regardless.
+    const hasJsonExtension = /\.json$/i.test(file.name);
+    const hasJsonMime = file.type === '' || file.type === 'application/json' || file.type === 'text/json' || file.type === 'text/plain';
+    if (!hasJsonExtension || !hasJsonMime) {
+      toast.error('Please choose a .json backup file.');
+      return;
+    }
+
+    if (file.size > MAX_BACKUP_FILE_BYTES) {
+      toast.error('That file is too large to be a valid backup (max 5MB).');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const parsed = JSON.parse(String(evt.target?.result || ''));
-        if (!parsed || typeof parsed !== 'object' || !parsed.jee_command_history_v2) {
+        const raw = String(evt.target?.result || '');
+        const parsed = JSON.parse(raw);
+
+        // Top-level shape: must be a plain object (not array, not scalar,
+        // not null), and must contain the one key we always expect.
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          Array.isArray(parsed) ||
+          !('jee_command_history_v2' in parsed)
+        ) {
           throw new Error('Not a valid backup file');
         }
 
-        setGlobalHistory(parsed.jee_command_history_v2);
+        // Per-value checks before anything touches localStorage: each
+        // SYNC_KEYS entry present must be a string or a plain
+        // object/array (never a function, symbol, etc — JSON.parse can't
+        // actually produce those, but this also guards against unexpected
+        // shapes like numbers/booleans where a string was expected), and
+        // must be under the per-value size cap. Any single bad value
+        // aborts the whole restore, so we never end up half-applied.
+        const validated: Record<string, string> = {};
+        for (const key of SYNC_KEYS) {
+          const value = (parsed as Record<string, unknown>)[key];
+          if (value === undefined || value === null) continue;
+
+          const isPlainValue =
+            typeof value === 'string' ||
+            (typeof value === 'object' && value !== null);
+          if (!isPlainValue) {
+            throw new Error(`Unexpected value type for "${key}"`);
+          }
+
+          const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+          const byteSize = new Blob([serialized]).size;
+          if (byteSize > MAX_BACKUP_VALUE_BYTES) {
+            throw new Error(`Value for "${key}" is too large`);
+          }
+
+          validated[key] = serialized;
+        }
+
+        if (!('jee_command_history_v2' in validated)) {
+          throw new Error('Not a valid backup file');
+        }
+
+        // Only now, after every value has passed validation, do we start
+        // applying anything — so a malformed later key can't leave earlier
+        // keys already written while the restore as a whole fails.
+        setGlobalHistory(JSON.parse(validated.jee_command_history_v2));
 
         // Restore every other SYNC_KEYS entry present in the file. Driven by
         // the same list as the export above (and as cloud sync), so a backup
@@ -86,8 +152,8 @@ export function DataBackupCard({ globalHistory, setGlobalHistory }: { globalHist
         // without this card needing a matching manual update.
         SYNC_KEYS.forEach((key) => {
           if (key === 'jee_command_history_v2') return; // handled above
-          if (parsed[key] !== undefined && parsed[key] !== null) {
-            localStorage.setItem(key, parsed[key]);
+          if (validated[key] !== undefined) {
+            localStorage.setItem(key, validated[key]);
           }
         });
 

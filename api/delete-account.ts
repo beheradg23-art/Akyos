@@ -1,6 +1,43 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
+// --- Best-effort per-IP rate limiting -------------------------------------
+// In-memory only: this resets on every cold start and isn't shared across
+// serverless instances, so it will NOT hold under real concurrent traffic
+// or multiple regions/instances. It's a cheap deterrent against casual
+// abuse, not a real defense. If this endpoint ever sees real traffic, swap
+// this for a shared store (Upstash Redis / Vercel KV) keyed the same way.
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const RATE_LIMIT_MAX_REQUESTS = 5;
+const rateLimitHits = new Map<string, number[]>();
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - RATE_LIMIT_WINDOW_MS;
+  const hits = (rateLimitHits.get(ip) || []).filter((t) => t > windowStart);
+  hits.push(now);
+  rateLimitHits.set(ip, hits);
+
+  // Opportunistic cleanup so this map doesn't grow unbounded across the
+  // lifetime of a warm serverless instance.
+  if (rateLimitHits.size > 5000) {
+    for (const [key, timestamps] of rateLimitHits) {
+      const recent = timestamps.filter((t) => t > windowStart);
+      if (recent.length === 0) rateLimitHits.delete(key);
+      else rateLimitHits.set(key, recent);
+    }
+  }
+
+  return hits.length > RATE_LIMIT_MAX_REQUESTS;
+}
+
+function getClientIp(req: VercelRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const ip = first ? first.split(',')[0].trim() : req.socket?.remoteAddress;
+  return ip || 'unknown';
+}
+
 // Deletes the signed-in caller's account entirely: their `user_data` cloud
 // row (config, logs, passcode hash) and the Supabase Auth user itself.
 //
@@ -24,6 +61,11 @@ import { createClient } from '@supabase/supabase-js';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const clientIp = getClientIp(req);
+  if (isRateLimited(clientIp)) {
+    return res.status(429).json({ error: 'Too many requests — please try again later.' });
   }
 
   const authHeader = req.headers.authorization || '';
@@ -72,14 +114,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .delete()
     .eq('user_id', userId);
   if (dataDeleteError) {
-    return res.status(500).json({ error: 'Failed to delete account data', details: dataDeleteError.message });
+    // Log full details server-side only — never echo Supabase's raw error
+    // message back to the client, since it can leak internal schema/config
+    // details. The client just gets a generic, safe message.
+    console.error('[delete-account] Failed to delete user_data row', { userId, error: dataDeleteError });
+    return res.status(500).json({ error: 'Failed to delete account data. Please try again or contact support.' });
   }
 
   // Delete the Auth user itself — this is the step that actually requires
   // the service role key; nothing else in this endpoint does.
   const { error: authDeleteError } = await adminClient.auth.admin.deleteUser(userId);
   if (authDeleteError) {
-    return res.status(500).json({ error: 'Failed to delete account', details: authDeleteError.message });
+    // Same rationale as above: log the real error server-side only, keep
+    // the client-facing message generic.
+    console.error('[delete-account] Failed to delete auth user', { userId, error: authDeleteError });
+    return res.status(500).json({ error: 'Failed to delete account. Please try again or contact support.' });
   }
 
   return res.status(200).json({ success: true });
