@@ -592,9 +592,23 @@ export default function JEEDashboard() {
         } ${sidebarExpanded ? 'lg:w-[240px]' : 'lg:w-[68px]'}`}
       >
         <div className="flex items-center gap-2.5 px-4 pt-5 pb-4">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20" style={liquidFillStyle()}>
+          {/* Hover expands the rail on desktop, but a tablet at this same
+              width (e.g. iPad landscape) has no mouse to hover with — the
+              rail would otherwise be stuck collapsed with no way to reach
+              the labels. Making the badge itself tappable (toggling the
+              same sidebarExpanded state hover already drives) gives touch
+              users an explicit open/close control that works everywhere
+              hover doesn't, without changing anything for mouse users. */}
+          <button
+            type="button"
+            onClick={() => setSidebarExpanded((v) => !v)}
+            aria-label={sidebarExpanded ? 'Collapse navigation' : 'Expand navigation'}
+            aria-expanded={sidebarExpanded}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg shadow-md shadow-violet-500/20"
+            style={liquidFillStyle()}
+          >
             <AkyosMark className="h-4 w-4 text-neutral-950" />
-          </div>
+          </button>
           <span className={`text-[13px] font-semibold tracking-tight text-neutral-200 truncate overflow-hidden ${SIDEBAR_TRANSITION} ${sidebarExpanded ? 'lg:max-w-[140px] lg:opacity-100' : 'lg:max-w-0 lg:opacity-0'}`}>Akyos</span>
           <button
             onClick={() => setSidebarOpen(false)}
