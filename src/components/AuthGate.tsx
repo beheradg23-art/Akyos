@@ -794,6 +794,17 @@ const cascadeStyle = (index: number): React.CSSProperties => ({
 // stops it from looping.
 const SYNCED_FLAG = 'dcc_cloud_synced_this_session';
 
+// Marks "the person just went to confirm their identity via Google in
+// order to reset a forgotten passcode" — set right before we redirect to
+// Google, consumed on the way back (see the getSession() mount effect
+// below). Deliberately a SEPARATE key from PASSCODE_RECOVERY_PENDING_KEY
+// (the email/password reset one): that key can sit around for a while —
+// person sends themselves a reset email, closes the tab, comes back later
+// — during which a plain page reload must NOT auto-clear the passcode.
+// This key should only ever be consumed within the same OAuth round-trip
+// it was set for.
+const PASSCODE_RECOVERY_GOOGLE_PENDING_KEY = 'dcc_passcode_recovery_google_pending';
+
 type Stage = 'checking' | 'auth' | 'syncing' | 'setPasscode' | 'passcode' | 'passcodeRecovery' | 'forgotPassword' | 'resetPassword';
 
 export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
@@ -862,6 +873,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   // device reset its own passcode with zero verification, which would make
   // the passcode pointless as a lock screen.
   const [recoveryEmail, setRecoveryEmail] = useState('');
+  // null while we haven't checked yet, then true/false once we know
+  // whether this account has a password at all. Accounts created purely
+  // through "Continue with Google" never set one, so the password-based
+  // recovery form below is a dead end for them — signInWithPassword would
+  // just fail forever since there's nothing to check against. When this is
+  // true, we swap in a "confirm it's you via Google" step instead.
+  const [recoveryIsGoogleOnly, setRecoveryIsGoogleOnly] = useState<boolean | null>(null);
   const [recoveryPassword, setRecoveryPassword] = useState('');
   const [recoveryError, setRecoveryError] = useState('');
   const [recoveryBusy, setRecoveryBusy] = useState(false);
@@ -951,10 +969,34 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (data.session?.user) {
-        syncThenContinue(data.session.user.id);
+        const userId = data.session.user.id;
+        // Returning here with this flag set means the person just
+        // confirmed their identity via Google as a passcode-recovery step
+        // (see handleGoogleVerifyForRecovery / the passcodeRecovery stage
+        // below) — for a Google-only account, successfully completing that
+        // round-trip IS the proof of identity, playing the same role the
+        // password check does in the email/password recovery path. Clear
+        // the passcode now, before syncThenContinue decides whether this
+        // lands on "enter your passcode" (hash still present) or "choose a
+        // new one" (hash gone).
+        if (localStorage.getItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY) === '1') {
+          localStorage.removeItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY);
+          try {
+            await clearPasscodeHash(userId);
+          } catch (e) {
+            console.error('[AuthGate] failed to clear passcode hash during Google recovery', e);
+          }
+          localStorage.removeItem(PASSCODE_HASH_KEY);
+          clearPasscodeAttempts();
+        }
+        syncThenContinue(userId);
       } else {
+        // No session at all — any leftover recovery flag from an
+        // abandoned attempt is meaningless without one, so don't let it
+        // linger and affect some unrelated future sign-in.
+        localStorage.removeItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY);
         setStage('auth');
       }
     });
@@ -1048,12 +1090,25 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pcValue, pendingUserId]);
 
-  // --- "forgot passcode" recovery: fetch the account email to display/verify against ---
+  // --- "forgot passcode" recovery: fetch the account email/identities to display/verify against ---
   useEffect(() => {
     if (stage !== 'passcodeRecovery') return;
     let cancelled = false;
+    setRecoveryIsGoogleOnly(null);
     supabase.auth.getUser().then(({ data }) => {
       if (!cancelled) setRecoveryEmail(data.user?.email ?? '');
+    });
+    supabase.auth.getUserIdentities().then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data) {
+        // Can't tell — fall back to the password form rather than getting
+        // anyone stuck on a step we're not sure applies to them.
+        setRecoveryIsGoogleOnly(false);
+        return;
+      }
+      const hasPassword = data.identities.some((i) => i.provider === 'email');
+      const hasGoogle = data.identities.some((i) => i.provider === 'google');
+      setRecoveryIsGoogleOnly(hasGoogle && !hasPassword);
     });
     const t = setTimeout(() => recoveryPasswordRef.current?.focus(), 150);
     return () => {
@@ -1061,6 +1116,11 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       clearTimeout(t);
     };
   }, [stage]);
+
+  const handleGoogleVerifyForRecovery = () => {
+    localStorage.setItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY, '1');
+    handleGoogleSignIn();
+  };
 
   const handleVerifyPasswordForRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1249,6 +1309,11 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (!e.persisted) return;
       setGoogleBusy(false);
       setAuthBusy(false);
+      // If the person cancelled the Google recovery round-trip and got
+      // here via a bfcache restore rather than a real redirect back, the
+      // flag set right before leaving is now stale — it must not survive
+      // to silently clear the passcode on some later, unrelated reload.
+      localStorage.removeItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY);
     };
     window.addEventListener('pageshow', handlePageShow);
     return () => window.removeEventListener('pageshow', handlePageShow);
@@ -1748,50 +1813,83 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50">
           Reset Your Passcode
         </h1>
-        <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
-          {recoveryEmail
-            ? `Enter the account password for ${recoveryEmail} to continue.`
-            : 'Enter your account password to continue.'}
-        </p>
 
-        <form onSubmit={handleVerifyPasswordForRecovery} className="w-full max-w-xs space-y-3">
-          <PasswordField
-            value={recoveryPassword}
-            onChange={setRecoveryPassword}
-            required
-            autoComplete="current-password"
-            placeholder="Account password"
-            inputRef={recoveryPasswordRef}
-            className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
-          />
-          {recoveryError && <p className="text-[12px] text-rose-400">{recoveryError}</p>}
-          <button
-            type="submit"
-            disabled={recoveryBusy || !recoveryPassword || !recoveryEmail}
-            className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
-            style={liquidFillStyle()}
-          >
-            {recoveryBusy ? 'Verifying…' : 'Verify & Reset Passcode'}
-          </button>
-        </form>
+        {recoveryIsGoogleOnly === null ? (
+          // Still checking whether this account has a password at all —
+          // hold off on rendering either form so a Google-only account
+          // never even flashes the password form it can't use.
+          <div className="mb-2 flex flex-col items-center gap-3">
+            <p className="max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+              Checking your account…
+            </p>
+            <Loader2 className="h-5 w-5 text-violet-400 animate-spin" strokeWidth={2} />
+          </div>
+        ) : recoveryIsGoogleOnly ? (
+          <>
+            <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+              {recoveryEmail
+                ? `${recoveryEmail} signs in with Google and doesn't have a separate password. Confirm it's you through Google to reset your passcode.`
+                : "This account signs in with Google and doesn't have a separate password. Confirm it's you through Google to reset your passcode."}
+            </p>
+            {googleError && <p className="mb-4 max-w-xs text-center text-[12px] text-rose-400">{googleError}</p>}
+            <button
+              type="button"
+              onClick={handleGoogleVerifyForRecovery}
+              disabled={googleBusy}
+              className="flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+            >
+              <GoogleIcon className="h-4 w-4" />
+              {googleBusy ? 'Connecting…' : 'Continue with Google to verify'}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="mb-8 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500">
+              {recoveryEmail
+                ? `Enter the account password for ${recoveryEmail} to continue.`
+                : 'Enter your account password to continue.'}
+            </p>
 
-        <button
-          onClick={() => {
-            // Same recovery email your account password already uses —
-            // clicking the emailed link proves identity on its own, so
-            // that flow clears the passcode too once a new password is
-            // saved. See PASSCODE_RECOVERY_PENDING_KEY in cloudSync.ts.
-            localStorage.setItem(PASSCODE_RECOVERY_PENDING_KEY, '1');
-            setCameFromPasscodeRecovery(true);
-            setResetEmail(recoveryEmail);
-            setResetError('');
-            setResetSent(false);
-            setStage('forgotPassword');
-          }}
-          className="mt-5 text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
-        >
-          Forgot your password too? Email me a reset link
-        </button>
+            <form onSubmit={handleVerifyPasswordForRecovery} className="w-full max-w-xs space-y-3">
+              <PasswordField
+                value={recoveryPassword}
+                onChange={setRecoveryPassword}
+                required
+                autoComplete="current-password"
+                placeholder="Account password"
+                inputRef={recoveryPasswordRef}
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+              />
+              {recoveryError && <p className="text-[12px] text-rose-400">{recoveryError}</p>}
+              <button
+                type="submit"
+                disabled={recoveryBusy || !recoveryPassword || !recoveryEmail}
+                className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                style={liquidFillStyle()}
+              >
+                {recoveryBusy ? 'Verifying…' : 'Verify & Reset Passcode'}
+              </button>
+            </form>
+
+            <button
+              onClick={() => {
+                // Same recovery email your account password already uses —
+                // clicking the emailed link proves identity on its own, so
+                // that flow clears the passcode too once a new password is
+                // saved. See PASSCODE_RECOVERY_PENDING_KEY in cloudSync.ts.
+                localStorage.setItem(PASSCODE_RECOVERY_PENDING_KEY, '1');
+                setCameFromPasscodeRecovery(true);
+                setResetEmail(recoveryEmail);
+                setResetError('');
+                setResetSent(false);
+                setStage('forgotPassword');
+              }}
+              className="mt-5 text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
+            >
+              Forgot your password too? Email me a reset link
+            </button>
+          </>
+        )}
 
         <button
           onClick={() => {
