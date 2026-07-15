@@ -399,7 +399,7 @@ export function buildGoalContext(answers: QuestionnaireAnswers): string {
 //    still don't get 'ashclock' by default — 'custom' has no well-defined
 //    shape to justify it, and a diet/fitness-only account already has a
 //    dedicated Training & Fuel tab for its actual tracking needs.
-export const CORE_TAB_KEYS: TabLabelKey[] = ['overview', 'timeline', 'todo', 'akyboard', 'history'];
+export const CORE_TAB_KEYS: TabLabelKey[] = ['overview', 'timeline', 'history'];
 
 export const DOMAIN_TAB_KEYS: Record<GoalDomain, TabLabelKey[]> = {
   exam: ['syllabus', 'mocktests', 'ashclock'],
