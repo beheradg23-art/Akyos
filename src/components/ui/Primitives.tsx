@@ -529,7 +529,12 @@ export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData
   if (!modalData) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="w-full max-w-lg overflow-hidden border border-neutral-800 bg-neutral-900 rounded-2xl shadow-2xl animate-modalPop">
         <div className="flex items-center justify-between border-b border-neutral-800 p-4">
           <div className="flex items-center gap-2">
