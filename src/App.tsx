@@ -21,9 +21,6 @@ import { AkyosMark } from './components/shared/AkyosMark';
 import AuthGate from './components/AuthGate';
 import OnboardingWizard from './components/OnboardingWizard';
 import { useCloudAutoSync } from './lib/cloudSync';
-import { supabase } from './lib/supabaseClient';
-import { subscribeToPush, registerServiceWorker } from './lib/pushNotifications';
-import { initNotificationSoundListener, primeNotificationSound } from './lib/notificationSound';
 import { Toaster } from './lib/toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { NO_SELECT_CSS } from './styles/noSelect';
@@ -71,16 +68,6 @@ const ONBOARDING_STORAGE_KEY = 'akyos_onboarding_completed_v1';
 const SIDEBAR_TRANSITION = 'transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]';
 
 export default function JEEDashboard() {
-  // Fires once on mount, independent of auth/onboarding state, so the
-  // service worker is registered and listening for its "play the custom
-  // chime" signal (see src/lib/notificationSound.ts) as early as possible —
-  // notifications can arrive the moment a push subscription exists, well
-  // before or after any particular screen is showing.
-  useEffect(() => {
-    registerServiceWorker();
-    initNotificationSoundListener();
-  }, []);
-
   const [unlocked, setUnlocked] = useState(false);
   useCloudAutoSync(unlocked);
   const [introDone, setIntroDone] = useState(false);
@@ -345,93 +332,6 @@ export default function JEEDashboard() {
     });
   }, [allMealsHitToday, currentDateStr]);
 
-  // ---- Time-block notifications ----
-  // The Master Timeline is a strict schedule but nothing previously enforced
-  // it. This effect still does a foreground-only reminder via the local
-  // Notification API (fires immediately, no round trip). The *reliable*
-  // version — 5 min before each block, even with the app closed — is handled
-  // server-side by the push-scheduler Edge Function, which reads
-  // `timeline_notifications_enabled` + `app_config_v1.timeline` from each
-  // user's cloud-synced data once a minute. See supabase/functions/push-scheduler.
-  const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('timeline_notifications_enabled') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [notificationPermission, setNotificationPermission] = useState(() =>
-    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
-  );
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('timeline_notifications_enabled', String(notificationsEnabled));
-    } catch {
-      /* storage unavailable — fail silently */
-    }
-  }, [notificationsEnabled]);
-
-  const handleToggleNotifications = async () => {
-    if (notificationsEnabled) {
-      setNotificationsEnabled(false);
-      // Leaves the push subscription itself alone (that's a per-device toggle
-      // in Account > Push Notifications) — this only stops Timeline reminders
-      // specifically, both the foreground ones below and the server-side ones
-      // the push-scheduler sends by reading `timeline_notifications_enabled`.
-      return;
-    }
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      setNotificationPermission('unsupported');
-      return;
-    }
-    primeNotificationSound();
-    const permission = await Notification.requestPermission();
-    setNotificationPermission(permission);
-    if (permission === 'granted') {
-      setNotificationsEnabled(true);
-      const { data } = await supabase.auth.getUser();
-      const userId = data.user?.id;
-      if (userId) await subscribeToPush(userId);
-    }
-  };
-
-  // Schedules one timer per remaining timeline block for today, 5 minutes
-  // ahead of its start time. Re-runs at midnight rollover (currentDateStr
-  // changes) and whenever the feature is toggled, always clearing prior
-  // timers first so nothing double-fires.
-  useEffect(() => {
-    if (!notificationsEnabled) return;
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission !== 'granted') return;
-
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    const now = new Date();
-
-    config.timeline.forEach((slot) => {
-      if (slot.start === slot.end) return; // zero-length marker (Sleep Lock) — nothing to alert before
-      const [h, m] = slot.start.split(':').map(Number);
-      const slotTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0, 0);
-      const alertTime = new Date(slotTime.getTime() - 5 * 60 * 1000);
-      const msUntil = alertTime.getTime() - now.getTime();
-      if (msUntil <= 0) return;
-
-      const timer = setTimeout(() => {
-        try {
-          new Notification(`Starting soon: ${slot.label}`, {
-            body: `${slot.detail} — begins at ${slot.start}`,
-            tag: `timeline-${slot.start}`,
-          });
-        } catch {
-          /* Notification constructor can throw in some restricted contexts */
-        }
-      }, msUntil);
-      timers.push(timer);
-    });
-
-    return () => timers.forEach(clearTimeout);
-  }, [notificationsEnabled, currentDateStr, config.timeline]);
-
   // Read current active item checklist matrix
   const checked = useMemo(() => {
     return globalHistory[currentDateStr] || {};
@@ -512,14 +412,7 @@ export default function JEEDashboard() {
   const renderTab = () => {
     switch (activeTab) {
       case 'overview': return <OverviewTab setModal={setModal} />;
-      case 'timeline': return (
-        <TimelineTab
-          setModal={setModal}
-          notificationsEnabled={notificationsEnabled}
-          notificationPermission={notificationPermission}
-          onToggleNotifications={handleToggleNotifications}
-        />
-      );
+      case 'timeline': return <TimelineTab setModal={setModal} />;
       case 'training': return <TrainingFuelTab setModal={setModal} dietLog={dietLog} setDietLog={setDietLog} currentDateStr={currentDateStr} />;
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
       case 'mocktests': return <MockTestTab />;

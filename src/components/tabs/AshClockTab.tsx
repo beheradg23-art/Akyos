@@ -6,9 +6,6 @@ import { ConfigContext, getSubjectStyle, getLocalDateString } from '../../lib/ap
 import { liquidFillStyle, liquidFillStyleFor } from '../../lib/liquidFill';
 import { Card, RippleButton } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
-import { supabase } from '../../lib/supabaseClient';
-import { messageServiceWorker } from '../../lib/pushNotifications';
-import { startActiveTimer, clearActiveTimer } from '../../lib/activeTimers';
 import { haptic } from '../../lib/haptics';
 
 export const DEFAULT_FOCUS_MIN = 50;
@@ -106,6 +103,32 @@ export function LiveClockView() {
   );
 }
 
+// Everything needed to resume a session exactly where it left off after a
+// refresh/close: which phase it's in, the subject, whether it was running,
+// and either an absolute end timestamp (running) or a frozen countdown
+// (paused). Storing an absolute `endTime` instead of just the raw seconds
+// is what makes this survive a refresh accurately — the remaining time is
+// recomputed from "how long until endTime", not from a counter that gets
+// reset back to the full duration the moment the component remounts.
+const POMODORO_STATE_KEY = 'ash_clock_pomodoro_state_v1';
+
+type PersistedPomodoroState = {
+  sessionType: 'focus' | 'break';
+  isRunning: boolean;
+  secondsLeft: number;
+  endTime: number | null; // Date.now() + secondsLeft*1000 while running, else null
+};
+
+function loadPersistedPomodoroState(): PersistedPomodoroState | null {
+  try {
+    const raw = localStorage.getItem(POMODORO_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export function PomodoroView({ onSessionComplete }) {
   const { subjects } = React.useContext(ConfigContext);
   const [focusMinutes, setFocusMinutes] = useState<number>(() => {
@@ -120,9 +143,36 @@ export function PomodoroView({ onSessionComplete }) {
   const [subject, setSubject] = useState<string>(() => localStorage.getItem('ash_clock_last_subject') || subjects[0]?.key || 'math');
   useEffect(() => { localStorage.setItem('ash_clock_last_subject', subject); }, [subject]);
 
-  const [sessionType, setSessionType] = useState<'focus' | 'break'>('focus');
-  const [secondsLeft, setSecondsLeft] = useState(() => focusMinutes * 60);
-  const [isRunning, setIsRunning] = useState(false);
+  // Restore whatever was running/paused before the page was refreshed or
+  // closed, computed once on mount (a ref, not state, so it's read exactly
+  // once and doesn't force a re-render of its own).
+  const restoredRef = useRef<PersistedPomodoroState | null>(null);
+  if (restoredRef.current === null) {
+    restoredRef.current = loadPersistedPomodoroState() || ({} as PersistedPomodoroState);
+  }
+  const restored = restoredRef.current;
+  // If the session was still "running" and its end time already passed
+  // while the tab was closed/refreshed/backgrounded, treat it as already
+  // finished rather than resuming a live countdown — this is decided once,
+  // up front, so the initial render never briefly starts a live interval
+  // for a session that's actually over.
+  const alreadyExpiredRef = useRef<boolean | null>(null);
+  if (alreadyExpiredRef.current === null) {
+    alreadyExpiredRef.current = !!(restored.isRunning && restored.endTime && restored.endTime <= Date.now());
+  }
+  const alreadyExpired = alreadyExpiredRef.current;
+
+  const [sessionType, setSessionType] = useState<'focus' | 'break'>(restored.sessionType || 'focus');
+  const [isRunning, setIsRunning] = useState<boolean>(() => !!restored.isRunning && !alreadyExpired);
+  const [secondsLeft, setSecondsLeft] = useState<number>(() => {
+    if (alreadyExpired) return 0;
+    if (restored.isRunning && restored.endTime) {
+      const remaining = Math.round((restored.endTime - Date.now()) / 1000);
+      return Math.max(remaining, 0);
+    }
+    if (typeof restored.secondsLeft === 'number') return restored.secondsLeft;
+    return focusMinutes * 60;
+  });
 
   const [hunterLevel, setHunterLevel] = useState<number>(() => {
     const saved = localStorage.getItem('ash_clock_hunter_level');
@@ -139,52 +189,36 @@ export function PomodoroView({ onSessionComplete }) {
 
   const intervalRef = useRef<any>(null);
 
-  // Needed so the running session survives the app being backgrounded/closed:
-  // the server-side scheduler pushes the "session complete" notification by
-  // reading the active_timers row this component keeps in sync.
-  const [userId, setUserId] = useState<string | null>(null);
+  // Persist sessionType/isRunning/secondsLeft on every change so a refresh
+  // (or the tab being closed) can pick the countdown back up instead of
+  // losing it. `endTime` is recomputed from the live secondsLeft each time,
+  // so it stays self-correcting even while the interval ticks every second.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
-  }, []);
-
-  const secondsLeftRef = useRef(secondsLeft);
-  useEffect(() => { secondsLeftRef.current = secondsLeft; }, [secondsLeft]);
-
-  // Live-updating "N:NN remaining" notification while the session runs —
-  // this only needs the tab alive in the background (screen off is fine),
-  // not a server push, so it just talks to the service worker directly.
-  //
-  // The very first call here IS "the start of the session" as far as the
-  // person is concerned — it deserves the same sound/vibration alert as
-  // any other notification. The recurring calls every 20s after that are
-  // just updating the same on-screen countdown and must stay silent, or
-  // starting a session would mean a chime every 20 seconds for its whole
-  // duration. `playSound` tells the service worker which case this is.
-  useEffect(() => {
-    if (!isRunning) return;
-    const sendLiveUpdate = (playSound: boolean) => {
-      const s = secondsLeftRef.current;
-      const mm2 = Math.floor(s / 60).toString().padStart(2, '0');
-      const ss2 = (s % 60).toString().padStart(2, '0');
-      messageServiceWorker({
-        type: 'POMODORO_LIVE_UPDATE',
-        title: sessionType === 'focus' ? '⚔️ Focus Gate in progress' : '🌙 Rest Zone',
-        body: `${mm2}:${ss2} remaining${sessionType === 'focus' ? ` · ${subject}` : ''}`,
-        playSound,
-      });
-    };
-    sendLiveUpdate(true);
-    const liveInterval = setInterval(() => sendLiveUpdate(false), 20000);
-    return () => clearInterval(liveInterval);
-  }, [isRunning, sessionType, subject]);
+    const endTime = isRunning ? Date.now() + secondsLeft * 1000 : null;
+    try {
+      localStorage.setItem(
+        POMODORO_STATE_KEY,
+        JSON.stringify({ sessionType, isRunning, secondsLeft, endTime })
+      );
+    } catch {
+      /* storage unavailable — fail silently, worst case a refresh loses the timer again */
+    }
+  }, [sessionType, isRunning, secondsLeft]);
 
   useEffect(() => { localStorage.setItem('ash_clock_focus_min', String(focusMinutes)); }, [focusMinutes]);
   useEffect(() => { localStorage.setItem('ash_clock_break_min', String(breakMinutes)); }, [breakMinutes]);
   useEffect(() => { localStorage.setItem('ash_clock_hunter_level', String(hunterLevel)); }, [hunterLevel]);
   useEffect(() => { localStorage.setItem('ash_clock_quests_cleared', String(questsCleared)); }, [questsCleared]);
 
-  // If duration settings change while idle, keep the countdown in sync
+  // If duration settings change while idle, keep the countdown in sync.
+  // Skipped on the very first run (mount) so restoring a saved countdown
+  // above doesn't immediately get overwritten back to the full duration.
+  const durationSyncMounted = useRef(false);
   useEffect(() => {
+    if (!durationSyncMounted.current) {
+      durationSyncMounted.current = true;
+      return;
+    }
     if (!isRunning) {
       setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
     }
@@ -213,15 +247,6 @@ export function PomodoroView({ onSessionComplete }) {
   const handleSessionComplete = () => {
     playChime();
     haptic.success();
-    if (userId) clearActiveTimer(userId, 'pomodoro');
-    messageServiceWorker({
-      type: 'POMODORO_COMPLETE',
-      title: sessionType === 'focus' ? '⚔️ Focus Gate cleared!' : '🌙 Rest Zone complete',
-      body:
-        sessionType === 'focus'
-          ? `${subject} session done — time to rest.`
-          : "Break's over — a new Gate awaits, Hunter.",
-    });
     if (sessionType === 'focus') {
       const nextQuests = questsCleared + 1;
       setQuestsCleared(nextQuests);
@@ -242,6 +267,20 @@ export function PomodoroView({ onSessionComplete }) {
     }
     setIsRunning(false);
   };
+
+  // If the session was still running and its end time already passed while
+  // the tab was closed/refreshed/backgrounded, wrap it up now instead of
+  // just silently sitting at 0 — same as if the countdown had hit zero
+  // normally, just a beat late.
+  const resumeCheckedRef = useRef(false);
+  useEffect(() => {
+    if (resumeCheckedRef.current) return;
+    resumeCheckedRef.current = true;
+    if (alreadyExpired) {
+      handleSessionComplete();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isRunning) {
@@ -276,12 +315,6 @@ export function PomodoroView({ onSessionComplete }) {
           ? '[Quest Alert] A Focus Gate has opened. Clear it before the timer expires.'
           : '[Rest Zone] Recovering mana. The next Gate awaits.'
       );
-      if (userId) {
-        startActiveTimer(userId, 'pomodoro', new Date(Date.now() + newSecondsLeft * 1000), { subject, sessionType });
-      }
-    } else {
-      if (userId) clearActiveTimer(userId, 'pomodoro');
-      messageServiceWorker({ type: 'POMODORO_LIVE_CLEAR' });
     }
     setIsRunning((r) => !r);
   };
@@ -290,8 +323,6 @@ export function PomodoroView({ onSessionComplete }) {
     setIsRunning(false);
     setSecondsLeft((sessionType === 'focus' ? focusMinutes : breakMinutes) * 60);
     setSystemMessage("[Timer reset.] Awaiting the Hunter's command.");
-    if (userId) clearActiveTimer(userId, 'pomodoro');
-    messageServiceWorker({ type: 'POMODORO_LIVE_CLEAR' });
   };
 
   const handleSkip = () => {

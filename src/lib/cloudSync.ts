@@ -18,7 +18,6 @@ export const SYNC_KEYS = [
   'pomodoro_subject_log',
   'ash_clock_last_subject',
   'app_config_v1',
-  'timeline_notifications_enabled',
   'dcc_content_cache_v1',
   'akyos_onboarding_completed_v1',
 ] as const;

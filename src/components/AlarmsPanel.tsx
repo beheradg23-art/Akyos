@@ -1,9 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Trash2, AlarmClock, BellOff } from 'lucide-react';
+import { Plus, Trash2, BellOff } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { fetchAlarms, createAlarm, updateAlarm, deleteAlarm, readCachedAlarms, type Alarm } from '../lib/alarms';
-import { getPushStatus, subscribeToPush, type PushStatus } from '../lib/pushNotifications';
-import { primeNotificationSound } from '../lib/notificationSound';
 import { TimeField } from './ui/Primitives';
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -23,7 +21,6 @@ function formatDays(days: number[]): string {
 export default function AlarmsPanel() {
   const [userId, setUserId] = useState<string | null>(null);
   const [alarms, setAlarms] = useState<Alarm[]>(() => readCachedAlarms());
-  const [pushStatus, setPushStatus] = useState<PushStatus>('unsubscribed');
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState('Alarm');
   const [time, setTime] = useState('07:00');
@@ -36,18 +33,10 @@ export default function AlarmsPanel() {
       setUserId(uid);
       if (uid) fetchAlarms(uid).then(setAlarms);
     });
-    getPushStatus().then(setPushStatus);
   }, []);
 
   const toggleDay = (d: number) => {
     setDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
-  };
-
-  const handleEnablePush = async () => {
-    if (!userId) return;
-    primeNotificationSound();
-    const next = await subscribeToPush(userId);
-    setPushStatus(next);
   };
 
   const handleAdd = async () => {
@@ -77,16 +66,6 @@ export default function AlarmsPanel() {
 
   return (
     <div className="flex flex-col items-center py-4 w-full">
-      {pushStatus !== 'subscribed' && (
-        <button
-          onClick={handleEnablePush}
-          className="cursor-target mb-5 flex items-center gap-2 rounded-2xl sm:rounded-full border border-purple-500/30 bg-purple-500/10 px-4 py-2.5 sm:py-2 text-[11.5px] sm:text-[12px] font-semibold text-purple-300 hover:bg-purple-500/15 transition-colors w-full sm:w-auto max-w-md text-left sm:text-center"
-        >
-          <AlarmClock className="h-3.5 w-3.5 shrink-0" />
-          <span>Enable push so alarms fire even when this tab is closed</span>
-        </button>
-      )}
-
       <div className="w-full max-w-md space-y-2.5">
         {alarms.length === 0 && !showForm && (
           <div className="flex flex-col items-center gap-2 text-center py-8 text-neutral-600">

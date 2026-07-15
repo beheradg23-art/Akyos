@@ -1,9 +1,9 @@
 // Daily Timeline tab: the hour-by-hour schedule (study slots, meals, gym,
-// sleep) plus the weight tracker and push-notification toggle.
-import React, { useState, useEffect } from 'react';
-import { Clock3, Weight, ArrowUpRight, Bell, BellOff } from 'lucide-react';
+// sleep) plus the weight tracker.
+import React, { useState } from 'react';
+import { Clock3, Weight, ArrowUpRight } from 'lucide-react';
 import { ConfigContext, getSubjectStyle } from '../../lib/appConfig';
-import { RippleButton, ModalData } from '../ui/Primitives';
+import { ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 import { liquidFillStyle, SWEEP_REVEAL_STYLE, useSweepReveal } from '../../lib/liquidFill';
 
@@ -72,13 +72,8 @@ function TimelineBlock({ slot, sub, borderClass, iconBg, onClick }: { slot: any;
   );
 }
 
-export function TimelineTab({ setModal, notificationsEnabled, notificationPermission, onToggleNotifications }: { setModal: (data: ModalData | null) => void; notificationsEnabled: boolean; notificationPermission: NotificationPermission | 'unsupported'; onToggleNotifications: () => void }) {
+export function TimelineTab({ setModal }: { setModal: (data: ModalData | null) => void }) {
   const { timeline, subjects } = React.useContext(ConfigContext);
-  // Hover flag for the "Enable Block Reminders" pill — same sweep overlay
-  // technique as the timeline blocks below, just a single boolean since
-  // there's only one button.
-  const [reminderHovered, setReminderHovered] = useState(false);
-  const reminderSweep = useSweepReveal(reminderHovered);
   const typeStyle = {
     study: 'border-l-indigo-500',
     gym: 'border-l-violet-500',
@@ -98,60 +93,7 @@ export function TimelineTab({ setModal, notificationsEnabled, notificationPermis
     <div className="animate-fadeIn">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
         <EditableSectionHeading id="tl_master" defaultTitle="Master Timeline" defaultIcon={Clock3} subtitle="Interactive structural day architecture — Click any block for tactical execution logs" />
-        <div
-          className="relative shrink-0"
-          onMouseEnter={() => setReminderHovered(true)}
-          onMouseLeave={() => setReminderHovered(false)}
-        >
-          <RippleButton
-            onClick={onToggleNotifications}
-            className={`cursor-target flex items-center gap-2 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition-colors ${
-              notificationsEnabled
-                ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15'
-                : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800'
-            }`}
-          >
-            {notificationsEnabled ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5" />}
-            {notificationsEnabled ? 'Block Reminders On' : 'Enable Block Reminders'}
-          </RippleButton>
-          {reminderSweep.mounted && (
-            // Same animated gradient sweep border as the timeline blocks,
-            // Syllabus Month pills, and day-selector pills — ring-only
-            // cutout filled with the shared liquidFillStyle() brand
-            // gradient, revealed via the --akyos-sweep mask on hover-in,
-            // faded back out (no re-sweep) via useSweepReveal on
-            // hover-out. Sits in a wrapper div (not inside RippleButton)
-            // since RippleButton doesn't forward onMouseEnter/Leave to
-            // its underlying <button>.
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-full"
-              style={{ animation: reminderSweep.animation, ...SWEEP_REVEAL_STYLE }}
-            >
-              <div
-                className="absolute inset-0 rounded-full"
-                style={{
-                  padding: '1.5px',
-                  WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                  WebkitMaskComposite: 'xor',
-                  maskComposite: 'exclude',
-                  ...liquidFillStyle(),
-                } as React.CSSProperties}
-              />
-            </div>
-          )}
-        </div>
       </div>
-      {notificationPermission === 'denied' && (
-        <p className="text-[11.5px] text-rose-400/80 mb-4">
-          Notifications are blocked for this site in your browser settings — allow them there first, then try again.
-        </p>
-      )}
-      {notificationsEnabled && notificationPermission === 'granted' && (
-        <p className="text-[11.5px] text-neutral-600 mb-4">
-          You'll get a ping 5 minutes before each block starts — this now works even if the app is closed or your phone is asleep, as long as Push Notifications is on for this device (Account &gt; Push Notifications).
-        </p>
-      )}
       <div className="space-y-2.5">
         {timeline.map((slot, i) => {
           const sub = slot.subject ? getSubjectStyle(slot.subject, subjects) : null;

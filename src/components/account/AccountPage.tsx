@@ -1,5 +1,5 @@
 // Account tab: profile summary, data backup/restore, password change, cloud
-// sync + push notification cards, and the performance calendar heatmap.
+// sync card, and the performance calendar heatmap.
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sun, Calendar, ArrowUpRight, ChevronLeft, Download, Upload, ShieldCheck,
@@ -10,7 +10,6 @@ import { liquidFillStyle } from '../../lib/liquidFill';
 import { Card, RippleButton, SectionHeading, ModalData } from '../ui/Primitives';
 import { EditableSectionHeading } from '../shared/EditableSectionHeading';
 import CloudSyncCard from '../CloudSyncCard';
-import PushNotificationsCard from '../PushNotificationsCard';
 import { supabase } from '../../lib/supabaseClient';
 import { toast } from '../../lib/toast';
 import { haptic } from '../../lib/haptics';
@@ -515,7 +514,6 @@ export function AccountPage({
       </div>
 
       <CloudSyncCard />
-      <PushNotificationsCard />
       <ChangePasswordCard />
       <PasscodeChangeCard />
 

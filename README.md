@@ -53,15 +53,11 @@ is pulled from or pushed to the cloud. This prevents a new signup, or a
 sign-in on a shared/previously-used device, from silently inheriting the
 previous account's config, logs, or passcode.
 
-### Cloud sync, push notifications, integrations
+### Cloud sync, integrations
 
 - **Cloud sync** — a defined set of `localStorage` keys (config, logs,
   onboarding state, etc.) sync to Supabase, the same list used by the
   app's manual backup/restore export.
-- **Push notifications** — a service worker (`public/sw.js`) plus a VAPID
-  key pair (public half in client code, private half kept as a Supabase
-  Edge Function secret) power reminders and live Pomodoro-style
-  notifications.
 - **Spotify / Strava** — OAuth callback and sync endpoints live under
   `api/` (`spotify-callback.ts`, `spotify-sync.ts`, `strava-callback.ts`,
   `strava-sync.ts`) for connecting external accounts.
@@ -101,10 +97,7 @@ territory, not something already validated.
   `public/icons/` currently only has `apple-touch-icon.png`. Until real
   PNGs are generated (from the existing `favicon.svg`/`icons.svg` brand
   assets) and placed there, installing Akyos as a PWA will show a
-  broken/missing home-screen icon, and push notifications will fail to
-  load their icon/badge image. `public/sw.js` has been updated to use the
-  same `/icons/` path convention as the manifest, so this is now a single
-  well-defined gap (missing files) rather than two conflicting paths.
+  broken/missing home-screen icon.
 
 ## Project history
 
