@@ -49,6 +49,7 @@ import { TrainingFuelTab } from './components/tabs/TrainingFuelTab';
 import { SyllabusTab } from './components/tabs/SyllabusTab';
 import { MockTestTab } from './components/tabs/MockTestTab';
 import { AshClockTab } from './components/tabs/AshClockTab';
+import { TodoTab } from './components/tabs/TodoTab';
 import { ConfigEditorTab } from './components/settings/ConfigEditors';
 
 // Every account gets asked this exactly once, right after their first
@@ -417,6 +418,7 @@ export default function JEEDashboard() {
       case 'syllabus': return <SyllabusTab setModal={setModal} />;
       case 'mocktests': return <MockTestTab />;
       case 'ashclock': return <AshClockTab />;
+      case 'todo': return <TodoTab />;
       case 'history': return <PerformanceCalendar globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} setModal={setModal} />;
       case 'settings': return <ConfigEditorTab />;
       case 'account': return <AccountPage globalHistory={globalHistory} setGlobalHistory={setGlobalHistory} />;
