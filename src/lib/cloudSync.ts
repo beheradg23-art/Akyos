@@ -304,22 +304,32 @@ export function consumePasscodeRecoveryGooglePending(userId: string): boolean {
 }
 
 // ---------- Passcode attempt lockout ----------
-// Purely a client-side speed bump against rapid repeated guessing typed
-// straight into the passcode screen itself — the PBKDF2 stretching above
-// is the real defense against someone brute-forcing a *leaked* hash
-// offline. This can't stop that (anyone with the hash and unlimited local
-// compute can ignore any UI-level cooldown), only someone trying guess
-// after guess through the app. Escalates: the first few misses cost
-// nothing extra (typos happen), then a growing cooldown kicks in, capped
-// so a genuine mistake never turns into an effectively permanent lock.
-// Shared (one localStorage key) across every place a passcode gets
-// checked — AuthGate's unlock screen, PasscodeChangeCard, and
-// DeleteAccountCard — since they all guess against the same hash, the
-// strike count should be too.
+// The escalating cooldown (5 free tries, then 15s→...→5min) is now
+// server-authoritative — see api/passcode-lockout.ts and the
+// register_passcode_failure/get_passcode_lockout/clear_passcode_lockout
+// RPCs in supabase/migrations/0001_server_side_rate_limiting.sql. Simply
+// running `localStorage.removeItem('dcc_passcode_attempts')` in devtools no
+// longer resets the strike count — the server remembers it per user id
+// regardless of what the local cache says.
+//
+// The local copy below is kept as a FAST, OFFLINE-CAPABLE FALLBACK, not the
+// source of truth: the base "unlock the app" screen intentionally still
+// checks the passcode guess itself against a locally-cached hash (so it
+// keeps working with no network at all), so the lockout layered on top of
+// it degrades the same way — best-effort synced with the server whenever
+// online, computed locally when it isn't. Every write here is immediately
+// followed by a background attempt to reconcile with the server; the
+// server's value wins whenever it's reachable.
+//
+// api/delete-account.ts and api/change-passcode.ts don't go through this
+// endpoint at all — they already talk to the DB directly and register
+// failures against the same RPCs themselves, since they're doing
+// server-side passcode verification anyway.
 const PASSCODE_ATTEMPTS_KEY = 'dcc_passcode_attempts';
 const LOCKOUT_FREE_ATTEMPTS = 5; // wrong guesses allowed before any cooldown starts
 const LOCKOUT_BASE_MS = 15_000; // first cooldown once the free attempts run out
 const LOCKOUT_MAX_MS = 5 * 60_000; // cooldown never grows past this
+const LOCKOUT_SYNC_TIMEOUT_MS = 4_000; // don't let a stalled request block the UI for long
 
 function readAttemptState(): { failCount: number; lockedUntil: number } {
   try {
@@ -340,13 +350,69 @@ function writeAttemptState(state: { failCount: number; lockedUntil: number }) {
   }
 }
 
-/** Milliseconds remaining before another guess is allowed (0 if not locked out right now). */
+/**
+ * Calls /api/passcode-lockout. Returns the server's `lockedUntil` (epoch
+ * ms, or null if not locked) on success, or `undefined` if the call
+ * couldn't complete (offline, timeout, not signed in, server error) — the
+ * caller falls back to the local-only value in that case.
+ */
+async function syncPasscodeLockout(userId: string, action: 'status' | 'fail' | 'clear'): Promise<number | null | undefined> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) return undefined;
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), LOCKOUT_SYNC_TIMEOUT_MS);
+    try {
+      const res = await fetch('/api/passcode-lockout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action }),
+        signal: controller.signal,
+      });
+      if (!res.ok) return undefined;
+      const body = await res.json();
+      return typeof body?.lockedUntil === 'number' ? body.lockedUntil : null;
+    } finally {
+      clearTimeout(t);
+    }
+  } catch {
+    return undefined; // offline / network error / aborted — fall back to local state
+  }
+}
+
+/** Milliseconds remaining before another guess is allowed (0 if not locked out right now), from the local cache only. */
 export function getPasscodeLockoutRemainingMs(): number {
   return Math.max(0, readAttemptState().lockedUntil - Date.now());
 }
 
-/** Call after a WRONG passcode guess. Returns the lockout duration (ms) now in effect — 0 if still within the free-attempt allowance. */
-export function registerFailedPasscodeAttempt(): number {
+/**
+ * Refreshes the local cache from the server-authoritative lockout state for
+ * `userId`, if reachable. Safe to call opportunistically (mount, focus,
+ * periodic poll) — a no-op if offline or the request fails.
+ */
+export async function refreshPasscodeLockoutFromServer(userId: string): Promise<void> {
+  const serverLockedUntil = await syncPasscodeLockout(userId, 'status');
+  if (serverLockedUntil === undefined) return; // couldn't reach the server — keep local value
+  const local = readAttemptState();
+  writeAttemptState({
+    failCount: local.failCount,
+    // Server is authoritative once reachable; a null server value (no
+    // lockout on record) should win even if a stale local cooldown is
+    // still sitting around from before a manual server-side clear.
+    lockedUntil: serverLockedUntil ?? 0,
+  });
+}
+
+/**
+ * Call after a WRONG passcode guess. Returns the lockout duration (ms) now
+ * in effect — 0 if still within the free-attempt allowance. Updates the
+ * local cache immediately (so the UI never waits on a network round trip),
+ * then reconciles with the server-authoritative count in the background if
+ * `userId` is provided and reachable.
+ */
+export async function registerFailedPasscodeAttempt(userId?: string | null): Promise<number> {
   const state = readAttemptState();
   const failCount = state.failCount + 1;
   let lockoutMs = 0;
@@ -354,22 +420,68 @@ export function registerFailedPasscodeAttempt(): number {
     const exponent = failCount - LOCKOUT_FREE_ATTEMPTS - 1;
     lockoutMs = Math.min(LOCKOUT_BASE_MS * 2 ** exponent, LOCKOUT_MAX_MS);
   }
-  writeAttemptState({ failCount, lockedUntil: lockoutMs ? Date.now() + lockoutMs : 0 });
-  return lockoutMs;
+  const localLockedUntil = lockoutMs ? Date.now() + lockoutMs : 0;
+  writeAttemptState({ failCount, lockedUntil: localLockedUntil });
+
+  if (!userId) return lockoutMs;
+
+  const serverLockedUntil = await syncPasscodeLockout(userId, 'fail');
+  if (serverLockedUntil === undefined) return lockoutMs; // offline — local value stands
+
+  // The server has its own fail count (it can't be reset by clearing
+  // localStorage), so its lockedUntil can be later than what the local math
+  // above produced — e.g. if attempts were also made from another device,
+  // or a previous localStorage clear locally "forgot" some failures the
+  // server still remembers. Always defer to the server's value once it's
+  // reachable.
+  const reconciled = serverLockedUntil ?? localLockedUntil;
+  writeAttemptState({ failCount, lockedUntil: reconciled });
+  return Math.max(0, reconciled - Date.now());
 }
 
-/** Call after a CORRECT passcode guess — clears the strike count entirely. */
-export function clearPasscodeAttempts(): void {
+/**
+ * Call after a CORRECT passcode guess — clears the strike count entirely,
+ * locally and (if `userId` is provided and reachable) on the server.
+ */
+export async function clearPasscodeAttempts(userId?: string | null): Promise<void> {
   try { localStorage.removeItem(PASSCODE_ATTEMPTS_KEY); } catch { /* ignore */ }
+  if (userId) await syncPasscodeLockout(userId, 'clear');
 }
 
-/** Live-updating ms-remaining-locked-out value, ticking down on its own. 0 whenever not locked out. */
-export function usePasscodeLockoutMs(): number {
+/**
+ * Live-updating ms-remaining-locked-out value, ticking down on its own. 0
+ * whenever not locked out. Pass the signed-in user's id so this can
+ * periodically reconcile with the server-authoritative lockout (on mount,
+ * on tab focus, and every 15s while mounted) — without a userId it falls
+ * back to local-only behavior.
+ */
+export function usePasscodeLockoutMs(userId?: string | null): number {
   const [remaining, setRemaining] = useState(() => getPasscodeLockoutRemainingMs());
+
   useEffect(() => {
     const interval = setInterval(() => setRemaining(getPasscodeLockoutRemainingMs()), 500);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    const sync = () => {
+      refreshPasscodeLockoutFromServer(userId).then(() => {
+        if (!cancelled) setRemaining(getPasscodeLockoutRemainingMs());
+      });
+    };
+    sync();
+    const poll = setInterval(sync, 15_000);
+    const onFocus = () => sync();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [userId]);
+
   return remaining;
 }
 

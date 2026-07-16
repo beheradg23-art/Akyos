@@ -1,43 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { verifyPasscodeServerSide, isPlausiblePasscode } from './_passcodeCrypto';
+import { isRateLimited, getClientIp } from './_rateLimit';
 
-// --- Best-effort per-IP rate limiting -------------------------------------
-// In-memory only: this resets on every cold start and isn't shared across
-// serverless instances, so it will NOT hold under real concurrent traffic
-// or multiple regions/instances. It's a cheap deterrent against casual
-// abuse, not a real defense. If this endpoint ever sees real traffic, swap
-// this for a shared store (Upstash Redis / Vercel KV) keyed the same way.
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+// --- Per-IP rate limiting -------------------------------------------------
+// Backed by a Postgres table + RPC (see _rateLimit.ts and
+// supabase/migrations/0001_server_side_rate_limiting.sql) — shared across
+// every serverless instance/region, unlike an in-memory Map (what this used
+// to be), which reset on every cold start and let a distributed caller
+// exceed the limit just by hitting different cold-started instances.
+const RATE_LIMIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
 const RATE_LIMIT_MAX_REQUESTS = 5;
-const rateLimitHits = new Map<string, number[]>();
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT_WINDOW_MS;
-  const hits = (rateLimitHits.get(ip) || []).filter((t) => t > windowStart);
-  hits.push(now);
-  rateLimitHits.set(ip, hits);
-
-  // Opportunistic cleanup so this map doesn't grow unbounded across the
-  // lifetime of a warm serverless instance.
-  if (rateLimitHits.size > 5000) {
-    for (const [key, timestamps] of rateLimitHits) {
-      const recent = timestamps.filter((t) => t > windowStart);
-      if (recent.length === 0) rateLimitHits.delete(key);
-      else rateLimitHits.set(key, recent);
-    }
-  }
-
-  return hits.length > RATE_LIMIT_MAX_REQUESTS;
-}
-
-function getClientIp(req: VercelRequest): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const ip = first ? first.split(',')[0].trim() : req.socket?.remoteAddress;
-  return ip || 'unknown';
-}
 
 // Deletes the signed-in caller's account entirely: their `user_data` cloud
 // row (config, logs, passcode hash) and the Supabase Auth user itself.
@@ -47,7 +20,7 @@ function getClientIp(req: VercelRequest): string {
 // never ship to the browser. The anon key the client already uses (see
 // src/lib/supabaseClient.ts) deliberately has no permission to do this.
 //
-// Required auth, THREE layers (see DeleteAccountCard in
+// Required auth, FOUR layers (see DeleteAccountCard in
 // src/components/account/AccountPage.tsx for the client-side half):
 // 1. Client-side: the person must re-enter their current 6-digit app
 //    passcode and type a literal "DELETE" confirmation before this
@@ -66,14 +39,15 @@ function getClientIp(req: VercelRequest): string {
 //    bump — a bare stolen/leaked session token (e.g. via an XSS payload
 //    reading localStorage) is no longer sufficient on its own to delete the
 //    account; the caller also has to actually know the passcode.
+// 4. Server-side passcode lockout (this file): wrong-passcode guesses
+//    against this endpoint count against the SAME server-authoritative
+//    lockout as the app's unlock screen and change-passcode.ts (see
+//    _passcodeCrypto's sibling, api/passcode-lockout.ts, and the
+//    register_passcode_failure/get_passcode_lockout RPCs) — clearing
+//    localStorage client-side no longer resets the strike count.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp)) {
-    return res.status(429).json({ error: 'Too many requests — please try again later.' });
   }
 
   const passcode = (req.body as { passcode?: unknown } | undefined)?.passcode;
@@ -101,6 +75,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Server misconfigured — missing Supabase env vars' });
   }
 
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // IP-based rate limiting stays first (cheapest check, and it protects the
+  // session-verification call below too from being hammered).
+  const clientIp = getClientIp(req);
+  if (await isRateLimited(adminClient, `delete-account:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)) {
+    return res.status(429).json({ error: 'Too many requests — please try again later.' });
+  }
+
   // Step 1: verify the token belongs to a real, currently-valid session,
   // using the same low-privilege anon client the app already uses. This
   // is the only source of truth for "who is this" — nothing from the
@@ -112,13 +97,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const userId = userData.user.id;
 
-  // Step 2: only now, bound to a verified session's own user id, use the
-  // service-role client (full admin rights) for everything else — reading
-  // the stored passcode hash to check the guess against, then (if it
-  // checks out) actually deleting things.
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  // Step 2: server-authoritative passcode lockout — bound to this exact
+  // user id, so it can't be reset by clearing localStorage. Checked before
+  // even looking at the passcode guess.
+  const { data: lockoutRow, error: lockoutReadError } = await adminClient.rpc('get_passcode_lockout', { p_user_id: userId });
+  if (lockoutReadError) {
+    console.error('[delete-account] Failed to read passcode lockout state', { userId, error: lockoutReadError });
+    return res.status(500).json({ error: 'Could not verify your passcode. Please try again.' });
+  }
+  const lockedUntil = lockoutRow?.[0]?.locked_until ? new Date(lockoutRow[0].locked_until).getTime() : 0;
+  if (lockedUntil > Date.now()) {
+    return res.status(429).json({ error: 'Too many attempts — try again later.', lockedUntil });
+  }
 
   // Step 3: independently verify the passcode server-side, against the
   // stored hash — not just trusting that the client-side UI already did
@@ -134,8 +124,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const passcodeOk = verifyPasscodeServerSide(passcode, userId, userRow?.passcode_hash ?? null);
   if (!passcodeOk) {
-    return res.status(401).json({ error: 'Incorrect passcode.' });
+    const { data: failRow, error: failError } = await adminClient.rpc('register_passcode_failure', { p_user_id: userId });
+    if (failError) console.error('[delete-account] Failed to register passcode failure', { userId, error: failError });
+    const newLockedUntil = failRow?.[0]?.locked_until ? new Date(failRow[0].locked_until).getTime() : 0;
+    return res.status(401).json({ error: 'Incorrect passcode.', lockedUntil: newLockedUntil || undefined });
   }
+  // Correct passcode — clear the strike count so a later legitimate retry
+  // (e.g. after cancelling the DELETE confirmation) isn't still counted
+  // against a stale streak of earlier wrong guesses.
+  const { error: clearError } = await adminClient.rpc('clear_passcode_lockout', { p_user_id: userId });
+  if (clearError) console.error('[delete-account] Failed to clear passcode lockout', { userId, error: clearError });
 
   // Delete the cloud data row first (config, logs, passcode hash — see
   // cloudSync.ts's `user_data` table). If this fails, bail out before
@@ -162,6 +160,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[delete-account] Failed to delete auth user', { userId, error: authDeleteError });
     return res.status(500).json({ error: 'Failed to delete account. Please try again or contact support.' });
   }
+
+  // Also clean up this user's lockout row now that the account is gone —
+  // not strictly necessary (it's keyed by a user id that no longer exists
+  // and will never collide with a real future user), but tidy.
+  await adminClient.rpc('clear_passcode_lockout', { p_user_id: userId }).catch(() => {});
 
   return res.status(200).json({ success: true });
 }

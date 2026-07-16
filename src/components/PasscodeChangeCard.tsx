@@ -83,7 +83,7 @@ export default function PasscodeChangeCard() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const lockoutMs = usePasscodeLockoutMs();
+  const lockoutMs = usePasscodeLockoutMs(userId);
 
   const currentRef = useRef<HTMLInputElement>(null);
   const nextRef = useRef<HTMLInputElement>(null);
@@ -131,7 +131,7 @@ export default function PasscodeChangeCard() {
         const { valid, upgradedHash } = await verifyPasscode(current, userId, cached);
         if (cancelled) return;
         if (valid) {
-          clearPasscodeAttempts();
+          clearPasscodeAttempts(userId);
           setError(false);
           if (upgradedHash) {
             localStorage.setItem(PASSCODE_HASH_KEY, upgradedHash);
@@ -139,7 +139,7 @@ export default function PasscodeChangeCard() {
           }
           setStep('new');
         } else {
-          registerFailedPasscodeAttempt();
+          await registerFailedPasscodeAttempt(userId);
           haptic.error();
           setError(true);
           setTimeout(() => {

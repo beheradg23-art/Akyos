@@ -863,7 +863,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const pcInputRef = useRef<HTMLInputElement>(null);
   // Ticks down on its own once too many wrong guesses trip the cooldown —
   // see registerFailedPasscodeAttempt/usePasscodeLockoutMs in cloudSync.ts.
-  const pcLockoutMs = usePasscodeLockoutMs();
+  const pcLockoutMs = usePasscodeLockoutMs(pendingUserId);
 
   // --- "forgot passcode" recovery state ---
   // Re-proves identity via the account's real password (which the person
@@ -995,7 +995,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             console.error('[AuthGate] failed to clear passcode hash during Google recovery', e);
           }
           localStorage.removeItem(PASSCODE_HASH_KEY);
-          clearPasscodeAttempts();
+          clearPasscodeAttempts(userId);
         }
         syncThenContinue(userId);
       } else {
@@ -1070,7 +1070,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (cancelled) return;
       setPcChecking(false);
       if (valid) {
-        clearPasscodeAttempts();
+        clearPasscodeAttempts(pendingUserId);
         // A correct guess against an old (pre-PBKDF2) hash — silently
         // upgrade the stored hash to the stretched format now, both in the
         // cloud and the local cache, so this account never gets checked
@@ -1083,7 +1083,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         }
         onUnlock();
       } else {
-        registerFailedPasscodeAttempt();
+        await registerFailedPasscodeAttempt(pendingUserId);
         setPcError(true);
         setTimeout(() => {
           setPcValue('');
@@ -1154,7 +1154,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
       await clearPasscodeHash(pendingUserId);
       localStorage.removeItem(PASSCODE_HASH_KEY);
-      clearPasscodeAttempts();
+      clearPasscodeAttempts(pendingUserId);
       setRecoveryPassword('');
       setPcValue('');
       setPcError(false);
@@ -1400,7 +1400,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             console.error('[AuthGate] failed to clear passcode hash during recovery', e);
           }
           localStorage.removeItem(PASSCODE_HASH_KEY);
-          clearPasscodeAttempts();
+          clearPasscodeAttempts(userId);
         }
         await syncThenContinue(userId);
       } else {

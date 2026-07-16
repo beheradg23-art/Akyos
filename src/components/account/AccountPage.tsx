@@ -141,7 +141,7 @@ export function DeleteAccountCard() {
   const [busy, setBusy] = useState(false);
   const passcodeRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLInputElement>(null);
-  const lockoutMs = usePasscodeLockoutMs();
+  const lockoutMs = usePasscodeLockoutMs(userId);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
@@ -183,7 +183,7 @@ export function DeleteAccountCard() {
         const { valid, upgradedHash } = await verifyPasscode(passcode, userId, cached);
         if (cancelled) return;
         if (valid) {
-          clearPasscodeAttempts();
+          clearPasscodeAttempts(userId);
           setPasscodeError(false);
           if (upgradedHash) {
             localStorage.setItem(PASSCODE_HASH_KEY, upgradedHash);
@@ -191,7 +191,7 @@ export function DeleteAccountCard() {
           }
           setStep('confirm-text');
         } else {
-          registerFailedPasscodeAttempt();
+          await registerFailedPasscodeAttempt(userId);
           haptic.error();
           setPasscodeError(true);
           setTimeout(() => {

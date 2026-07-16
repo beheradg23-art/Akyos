@@ -1,40 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { verifyPasscodeServerSide, hashPasscodeServerSide, isPlausiblePasscode } from './_passcodeCrypto';
+import { isRateLimited, getClientIp } from './_rateLimit';
 
-// --- Best-effort per-IP rate limiting -------------------------------------
-// Same caveat as api/delete-account.ts: in-memory only, resets on cold
-// start, not shared across instances/regions. A cheap deterrent against
-// casual abuse, not a real defense — swap for a shared store (Upstash
-// Redis / Vercel KV) if this ever sees real traffic.
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+// --- Per-IP rate limiting -------------------------------------------------
+// Backed by the same Postgres table + RPC as api/delete-account.ts (see
+// _rateLimit.ts) — shared across every serverless instance/region.
+const RATE_LIMIT_WINDOW_SECONDS = 15 * 60; // 15 minutes
 const RATE_LIMIT_MAX_REQUESTS = 10;
-const rateLimitHits = new Map<string, number[]>();
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const windowStart = now - RATE_LIMIT_WINDOW_MS;
-  const hits = (rateLimitHits.get(ip) || []).filter((t) => t > windowStart);
-  hits.push(now);
-  rateLimitHits.set(ip, hits);
-
-  if (rateLimitHits.size > 5000) {
-    for (const [key, timestamps] of rateLimitHits) {
-      const recent = timestamps.filter((t) => t > windowStart);
-      if (recent.length === 0) rateLimitHits.delete(key);
-      else rateLimitHits.set(key, recent);
-    }
-  }
-
-  return hits.length > RATE_LIMIT_MAX_REQUESTS;
-}
-
-function getClientIp(req: VercelRequest): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const ip = first ? first.split(',')[0].trim() : req.socket?.remoteAddress;
-  return ip || 'unknown';
-}
 
 // Changes the signed-in caller's 6-digit app passcode, requiring proof of
 // the CURRENT passcode server-side before the new one is written.
@@ -60,14 +33,14 @@ function getClientIp(req: VercelRequest): string {
 //    scratch — never trusting a pre-hashed value from the client) and
 //    written. A stolen session token alone can no longer change the
 //    passcode without also knowing it.
+// 4. Server-side passcode lockout (this file): wrong-guess attempts here
+//    count against the same server-authoritative lockout as the unlock
+//    screen and api/delete-account.ts (see api/passcode-lockout.ts and the
+//    register_passcode_failure/get_passcode_lockout RPCs) — clearing
+//    localStorage client-side no longer resets the strike count.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const clientIp = getClientIp(req);
-  if (isRateLimited(clientIp)) {
-    return res.status(429).json({ error: 'Too many requests — please try again later.' });
   }
 
   const body = req.body as { currentPasscode?: unknown; newPasscode?: unknown } | undefined;
@@ -94,6 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Server misconfigured — missing Supabase env vars' });
   }
 
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const clientIp = getClientIp(req);
+  if (await isRateLimited(adminClient, `change-passcode:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)) {
+    return res.status(429).json({ error: 'Too many requests — please try again later.' });
+  }
+
   // Step 1: verify the token belongs to a real, currently-valid session.
   const authClient = createClient(supabaseUrl, anonKey);
   const { data: userData, error: userError } = await authClient.auth.getUser(accessToken);
@@ -102,11 +84,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const userId = userData.user.id;
 
-  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
+  // Step 2: server-authoritative passcode lockout, checked before looking
+  // at the guess at all.
+  const { data: lockoutRow, error: lockoutReadError } = await adminClient.rpc('get_passcode_lockout', { p_user_id: userId });
+  if (lockoutReadError) {
+    console.error('[change-passcode] Failed to read passcode lockout state', { userId, error: lockoutReadError });
+    return res.status(500).json({ error: 'Could not verify your passcode. Please try again.' });
+  }
+  const lockedUntil = lockoutRow?.[0]?.locked_until ? new Date(lockoutRow[0].locked_until).getTime() : 0;
+  if (lockedUntil > Date.now()) {
+    return res.status(429).json({ error: 'Too many attempts — try again later.', lockedUntil });
+  }
 
-  // Step 2: independently verify the CURRENT passcode against the stored
+  // Step 3: independently verify the CURRENT passcode against the stored
   // hash before allowing any change.
   const { data: userRow, error: userRowError } = await adminClient
     .from('user_data')
@@ -119,10 +109,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const currentOk = verifyPasscodeServerSide(currentPasscode, userId, userRow?.passcode_hash ?? null);
   if (!currentOk) {
-    return res.status(401).json({ error: 'Incorrect passcode.' });
+    const { data: failRow, error: failError } = await adminClient.rpc('register_passcode_failure', { p_user_id: userId });
+    if (failError) console.error('[change-passcode] Failed to register passcode failure', { userId, error: failError });
+    const newLockedUntil = failRow?.[0]?.locked_until ? new Date(failRow[0].locked_until).getTime() : 0;
+    return res.status(401).json({ error: 'Incorrect passcode.', lockedUntil: newLockedUntil || undefined });
   }
 
-  // Step 3: only now compute and store the new hash.
+  // Step 4: only now compute and store the new hash, and clear the strike
+  // count since the current passcode just checked out.
   const newHash = hashPasscodeServerSide(newPasscode, userId);
   const { error: updateError } = await adminClient
     .from('user_data')
@@ -131,6 +125,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[change-passcode] Failed to store new passcode hash', { userId, error: updateError });
     return res.status(500).json({ error: 'Could not update your passcode. Please try again.' });
   }
+  const { error: clearError } = await adminClient.rpc('clear_passcode_lockout', { p_user_id: userId });
+  if (clearError) console.error('[change-passcode] Failed to clear passcode lockout', { userId, error: clearError });
 
   return res.status(200).json({ success: true, passcodeHash: newHash });
 }
