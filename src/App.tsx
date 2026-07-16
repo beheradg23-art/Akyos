@@ -13,13 +13,15 @@
 // This file is now just the shell: auth/onboarding gating, top-level state,
 // the sidebar/nav, and wiring the tabs together.
 // ---------------------------------------------------------------------------
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense, lazy } from 'react';
 import {
   ChevronRight, X, ChevronLeft, Swords, Settings, UserCircle2,
 } from 'lucide-react';
 import { AkyosMark } from './components/shared/AkyosMark';
+// AuthGate stays a static import: it's the very first thing every visitor
+// sees, so there's nothing to gain from splitting it into its own chunk —
+// it would just add a network round trip before the app can render at all.
 import AuthGate from './components/AuthGate';
-import OnboardingWizard from './components/OnboardingWizard';
 import { useCloudAutoSync } from './lib/cloudSync';
 import { Toaster } from './lib/toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -42,15 +44,43 @@ import {
 } from './components/ui/Primitives';
 import { DailyTracker } from './components/shared/DailyTracker';
 import { IntroLoader } from './components/shared/IntroLoader';
-import { AccountPage, PerformanceCalendar } from './components/account/AccountPage';
-import { OverviewTab } from './components/tabs/OverviewTab';
-import { TimelineTab } from './components/tabs/TimelineTab';
-import { TrainingFuelTab } from './components/tabs/TrainingFuelTab';
-import { SyllabusTab } from './components/tabs/SyllabusTab';
-import { MockTestTab } from './components/tabs/MockTestTab';
-import { AshClockTab } from './components/tabs/AshClockTab';
-import { TodoTab } from './components/tabs/TodoTab';
-import { ConfigEditorTab } from './components/settings/ConfigEditors';
+
+// Everything below is only needed after sign-in (and most of it only once
+// the user picks a specific tab), so it's split into its own chunk and
+// fetched on demand instead of bloating the initial bundle. Named exports
+// need the `.then(m => ({ default: m.X }))` wrapper since React.lazy only
+// accepts modules with a default export.
+const OnboardingWizard = lazy(() => import('./components/OnboardingWizard'));
+const AccountPage = lazy(() =>
+  import('./components/account/AccountPage').then((m) => ({ default: m.AccountPage }))
+);
+const PerformanceCalendar = lazy(() =>
+  import('./components/account/AccountPage').then((m) => ({ default: m.PerformanceCalendar }))
+);
+const OverviewTab = lazy(() =>
+  import('./components/tabs/OverviewTab').then((m) => ({ default: m.OverviewTab }))
+);
+const TimelineTab = lazy(() =>
+  import('./components/tabs/TimelineTab').then((m) => ({ default: m.TimelineTab }))
+);
+const TrainingFuelTab = lazy(() =>
+  import('./components/tabs/TrainingFuelTab').then((m) => ({ default: m.TrainingFuelTab }))
+);
+const SyllabusTab = lazy(() =>
+  import('./components/tabs/SyllabusTab').then((m) => ({ default: m.SyllabusTab }))
+);
+const MockTestTab = lazy(() =>
+  import('./components/tabs/MockTestTab').then((m) => ({ default: m.MockTestTab }))
+);
+const AshClockTab = lazy(() =>
+  import('./components/tabs/AshClockTab').then((m) => ({ default: m.AshClockTab }))
+);
+const TodoTab = lazy(() =>
+  import('./components/tabs/TodoTab').then((m) => ({ default: m.TodoTab }))
+);
+const ConfigEditorTab = lazy(() =>
+  import('./components/settings/ConfigEditors').then((m) => ({ default: m.ConfigEditorTab }))
+);
 
 // Every account gets asked this exactly once, right after their first
 // passcode is set up (see OnboardingWizard.tsx). Synced via cloudSync's
@@ -67,6 +97,18 @@ const ONBOARDING_STORAGE_KEY = 'akyos_onboarding_completed_v1';
 // on these elements anymore — only width/max-width/opacity/transform do,
 // all of which interpolate smoothly.
 const SIDEBAR_TRANSITION = 'transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]';
+
+// Shown briefly while a lazy-loaded tab/onboarding chunk is fetched. Chunks
+// are small and typically cached after first visit, so this is rarely on
+// screen for more than a frame or two — kept intentionally minimal rather
+// than a full skeleton.
+function TabLoadingFallback() {
+  return (
+    <div className="flex h-full min-h-[40vh] w-full items-center justify-center">
+      <span className="h-2 w-2 rounded-full bg-violet-400 animate-pulse" />
+    </div>
+  );
+}
 
 export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
@@ -395,17 +437,19 @@ export default function JEEDashboard() {
   if (!onboardingDone) {
     return (
       <ErrorBoundary label="Onboarding">
-        <OnboardingWizard
-          onComplete={(generated) => {
-            updateConfig(generated);
-            try {
-              localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
-            } catch (e) {
-              console.error('[Onboarding] failed to persist completion flag', e);
-            }
-            setOnboardingDone(true);
-          }}
-        />
+        <Suspense fallback={<TabLoadingFallback />}>
+          <OnboardingWizard
+            onComplete={(generated) => {
+              updateConfig(generated);
+              try {
+                localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+              } catch (e) {
+                console.error('[Onboarding] failed to persist completion flag', e);
+              }
+              setOnboardingDone(true);
+            }}
+          />
+        </Suspense>
       </ErrorBoundary>
     );
   }
@@ -704,7 +748,7 @@ export default function JEEDashboard() {
 
           <main>
             <ErrorBoundary key={activeTab} label={TABS.find((t) => t.id === activeTab)?.label}>
-              {renderTab()}
+              <Suspense fallback={<TabLoadingFallback />}>{renderTab()}</Suspense>
             </ErrorBoundary>
           </main>
           <aside>
