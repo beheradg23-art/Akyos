@@ -71,8 +71,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
+  // SECURITY FIX: failClosed here too, for the same reason as
+  // delete-account.ts — this endpoint gates changing the account's
+  // passcode, so an RPC/infra error must block the request rather than
+  // silently allow unlimited guesses against the current passcode for the
+  // duration of any outage.
   const clientIp = getClientIp(req);
-  if (await isRateLimited(adminClient, `change-passcode:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)) {
+  if (await isRateLimited(adminClient, `change-passcode:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, { failClosed: true })) {
     return res.status(429).json({ error: 'Too many requests — please try again later.' });
   }
 

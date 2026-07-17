@@ -81,8 +81,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // IP-based rate limiting stays first (cheapest check, and it protects the
   // session-verification call below too from being hammered).
+  // SECURITY FIX: failClosed here — this endpoint permanently destroys
+  // data, so an RPC/infra error must block the request (503) rather than
+  // silently degrade to "no rate limiting", which would otherwise hand an
+  // attacker unlimited passcode-guessing attempts for the duration of any
+  // outage or forced error.
   const clientIp = getClientIp(req);
-  if (await isRateLimited(adminClient, `delete-account:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS)) {
+  if (await isRateLimited(adminClient, `delete-account:${clientIp}`, RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, { failClosed: true })) {
     return res.status(429).json({ error: 'Too many requests — please try again later.' });
   }
 

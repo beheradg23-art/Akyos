@@ -3,7 +3,27 @@ import { createHash, pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 // Must match PBKDF2_ITERATIONS in src/lib/cloudSync.ts — kept as a separate
 // constant here (rather than importing across the client/server boundary)
 // since this file intentionally has zero dependency on browser-only code.
-const PBKDF2_ITERATIONS = 150_000;
+//
+// SECURITY FIX: raised from 150_000 -> 310_000. Rationale: the app's
+// "unlock" screen intentionally verifies a passcode guess CLIENT-SIDE
+// against a locally-cached hash (see cloudSync.ts), so it keeps working
+// offline. That means the server-authoritative lockout in
+// passcode-lockout.ts does NOT bound guesses made against that cached
+// hash by someone who already has local access to the device/browser
+// storage (a shared/stolen device, a malicious extension, devtools) — the
+// PBKDF2 cost is the ONLY thing slowing that specific attack down, since
+// there's no live rate limit to hit in an offline context. A 6-digit
+// passcode is only 1,000,000 candidates, so this cost is load-bearing.
+// 310_000 rounds keeps a single real verification well under 100ms while
+// meaningfully raising the offline cost of walking the full keyspace.
+// This is a mitigation, not a fix for the underlying tradeoff: treat the
+// offline unlock as a convenience gate, not an independent secret, against
+// anyone who already has local device/browser access. New/changed
+// passcodes use this constant; existing stored hashes keep whatever
+// iteration count they already have (each hash carries its own iteration
+// count in its format, so old and new hashes verify correctly side by
+// side — see the format note below).
+const PBKDF2_ITERATIONS = 310_000;
 
 // Server-side mirror of the hashing scheme in src/lib/cloudSync.ts
 // (hashPasscode/verifyPasscode). Deliberately kept in lock-step with that

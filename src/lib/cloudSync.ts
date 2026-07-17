@@ -155,7 +155,19 @@ export async function pullFromCloud(userId: string): Promise<boolean> {
 // new format the instant that person next enters their passcode correctly.
 
 export const PASSCODE_HASH_KEY = 'dcc_passcode_hash';
-const PBKDF2_ITERATIONS = 150_000;
+// SECURITY FIX: raised from 150_000 -> 310_000, kept in lock-step with
+// PBKDF2_ITERATIONS in api/_passcodeCrypto.ts. See that file's comment for
+// the full rationale — short version: the base "unlock the app" screen
+// below checks a guess against this locally-cached hash entirely
+// client-side (by design, for offline use), which means the server-side
+// lockout does not bound guesses made by someone who already has local
+// access to this device's storage. The PBKDF2 cost is the only thing
+// slowing that specific attack down, so it needs to be taken seriously —
+// but it's still a mitigation, not a substitute for treating "someone got
+// local access to this browser" as a real compromise of the local unlock
+// screen specifically (cloud data stays protected by RLS/session auth
+// regardless of this).
+const PBKDF2_ITERATIONS = 310_000;
 
 function bufferToHex(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
