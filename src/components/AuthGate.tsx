@@ -221,7 +221,7 @@ function AkyosWordRotator() {
   return (
     <span
       className="relative inline-block"
-      style={{ paddingTop: '0.2em', paddingBottom: '0.3em', paddingRight: '0.15em', marginBottom: '-0.3em' }}
+      style={{ paddingTop: '0.15em', paddingBottom: '0.55em', paddingRight: '0.15em', marginBottom: '-0.5em' }}
     >
       <style>{LANDING_ODOMETER_KEYFRAMES}</style>
       <span
@@ -231,7 +231,12 @@ function AkyosWordRotator() {
           fontFamily: EDWARDIAN_SCRIPT_STACK,
           fontWeight: 400,
           fontSize: 'clamp(2.6rem, 6vw, 4.4rem)',
-          lineHeight: 1,
+          // A tight line-height (this used to be 1) crops a script font's
+          // tall descenders — the tail on a "y" or "g" — right where the
+          // background-clip:text gradient trick draws its clip region.
+          // A generous line-height gives the full glyph, descender
+          // included, room to actually render.
+          lineHeight: 1.6,
           filter: 'drop-shadow(0 2px 14px rgba(167,139,250,0.35))',
           backgroundImage:
             'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
@@ -265,6 +270,14 @@ const LANDING_BG_KEYFRAMES = `
   @keyframes akyos-feature-float {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-3px); }
+  }
+  @keyframes akyos-levitate {
+    0%, 100% { transform: translateY(0) rotate(-1.2deg); }
+    50% { transform: translateY(-22px) rotate(1.2deg); }
+  }
+  @keyframes akyos-levitate-glow {
+    0%, 100% { opacity: 0.55; transform: translateY(0) scale(1); }
+    50% { opacity: 0.8; transform: translateY(-22px) scale(1.04); }
   }
 `;
 
@@ -310,6 +323,25 @@ function SignInVisualPanel() {
               backgroundSize: '44px 44px',
               maskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
               WebkitMaskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
+            }}
+          />
+
+          {/* Guardian render, floating in the empty space to the right of
+              the copy — a soft pulsing glow underneath sells the
+              "levitating" read, in sync with the render's own slow
+              float/rotate drift. */}
+          <div
+            className="absolute -right-10 bottom-[-30px] h-[380px] w-[380px] rounded-full bg-violet-600/25 blur-[90px]"
+            style={{ animation: 'akyos-levitate-glow 7s ease-in-out infinite' }}
+          />
+          <img
+            src="/images/akyos-guardian.png"
+            alt=""
+            className="absolute -right-16 bottom-[-36px] w-[420px] max-w-none select-none xl:w-[470px]"
+            style={{
+              opacity: 0.6,
+              filter: 'drop-shadow(0 30px 55px rgba(124,58,237,0.45)) drop-shadow(0 0 36px rgba(217,70,239,0.25))',
+              animation: 'akyos-levitate 7s ease-in-out infinite',
             }}
           />
         </div>
