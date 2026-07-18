@@ -152,17 +152,15 @@ const LANDING_WORD_HOLD_MS = 2000; // how long a word sits fully visible before 
 const LANDING_WORD_OUT_MS = 380; // blur/fade/rise out
 const LANDING_WORD_IN_MS = 520; // blur/fade/settle in — slightly slower than the exit for a gentler landing, same asymmetry as the intro's own word-in beat
 
-// "Akyos is" is set in Druk Wide (a bold, wide display grotesk); the
-// rotating word after it is set in Edwardian Script. Neither ships on
-// Google Fonts, so they're pulled from cdnfonts.com the same way Poppins
-// is pulled from Google Fonts elsewhere in this file — with a sane
-// fallback stack after each in case that CDN is ever unreachable, so the
-// headline degrades gracefully instead of breaking.
+// "Akyos is" is set in Poppins Medium; the rotating word after it is set
+// in Edwardian Script (pulled from cdnfonts.com, since it doesn't ship on
+// Google Fonts) — with a sane fallback stack in case that CDN is ever
+// unreachable, so the headline degrades gracefully instead of breaking.
 const LANDING_FONT_IMPORTS = `
-  @import url('https://fonts.cdnfonts.com/css/druk-wide-bold');
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap');
   @import url('https://fonts.cdnfonts.com/css/edwardian-script-itc');
 `;
-const DRUK_WIDE_STACK = "'Druk Wide Bold', 'Druk Wide', 'Poppins', sans-serif";
+const POPPINS_MEDIUM_STACK = "'Poppins', sans-serif";
 const EDWARDIAN_SCRIPT_STACK = "'Edwardian Script ITC', 'Brush Script MT', cursive";
 
 const LANDING_ODOMETER_KEYFRAMES = `
@@ -275,10 +273,6 @@ const LANDING_BG_KEYFRAMES = `
     0%, 100% { transform: translateY(0) rotate(-1.2deg); }
     50% { transform: translateY(-22px) rotate(1.2deg); }
   }
-  @keyframes akyos-levitate-glow {
-    0%, 100% { opacity: 0.55; transform: translateY(0) scale(1); }
-    50% { opacity: 0.8; transform: translateY(-22px) scale(1.04); }
-  }
 `;
 
 // The app's core areas, named in one word each — mirrors the real tabs
@@ -327,20 +321,13 @@ function SignInVisualPanel() {
           />
 
           {/* Guardian render, floating in the empty space to the right of
-              the copy — a soft pulsing glow underneath sells the
-              "levitating" read, in sync with the render's own slow
-              float/rotate drift. */}
-          <div
-            className="absolute -right-10 bottom-[-30px] h-[380px] w-[380px] rounded-full bg-violet-600/25 blur-[90px]"
-            style={{ animation: 'akyos-levitate-glow 7s ease-in-out infinite' }}
-          />
+              the copy — just the slow float/rotate drift, no glow behind
+              it, at full brightness/opacity. */}
           <img
             src="/images/akyos-guardian.png"
             alt=""
             className="absolute -right-16 bottom-[-36px] w-[420px] max-w-none select-none xl:w-[470px]"
             style={{
-              opacity: 0.6,
-              filter: 'drop-shadow(0 30px 55px rgba(124,58,237,0.45)) drop-shadow(0 0 36px rgba(217,70,239,0.25))',
               animation: 'akyos-levitate 7s ease-in-out infinite',
             }}
           />
@@ -369,8 +356,8 @@ function SignInVisualPanel() {
 
           <h1 className="flex flex-wrap items-baseline gap-x-3 text-neutral-50">
             <span
-              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-bold leading-[1.3] tracking-[-0.01em]"
-              style={{ fontFamily: DRUK_WIDE_STACK }}
+              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-medium leading-[1.3] tracking-[-0.01em]"
+              style={{ fontFamily: POPPINS_MEDIUM_STACK, fontWeight: 500 }}
             >
               Akyos is
             </span>
