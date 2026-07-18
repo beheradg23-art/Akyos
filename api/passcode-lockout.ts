@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { isRateLimited, getClientIp } from './_rateLimit';
+import { isRateLimited, getClientIp } from './_rateLimit.js';
 
 // Exposes the server-authoritative passcode-lockout state (see
 // supabase/migrations/0001_server_side_rate_limiting.sql) to the client, so

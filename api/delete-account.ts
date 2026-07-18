@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { verifyPasscodeServerSide, isPlausiblePasscode } from './_passcodeCrypto';
-import { isRateLimited, getClientIp } from './_rateLimit';
+import { verifyPasscodeServerSide, isPlausiblePasscode } from './_passcodeCrypto.js';
+import { isRateLimited, getClientIp } from './_rateLimit.js';
 
 // --- Per-IP rate limiting -------------------------------------------------
 // Backed by a Postgres table + RPC (see _rateLimit.ts and
