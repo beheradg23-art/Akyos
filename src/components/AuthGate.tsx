@@ -221,7 +221,7 @@ function AkyosWordRotator() {
   return (
     <span
       className="relative inline-block"
-      style={{ paddingTop: '0.2em', paddingBottom: '0.3em', marginBottom: '-0.3em' }}
+      style={{ paddingTop: '0.2em', paddingBottom: '0.3em', paddingRight: '0.15em', marginBottom: '-0.3em' }}
     >
       <style>{LANDING_ODOMETER_KEYFRAMES}</style>
       <span
@@ -337,7 +337,7 @@ function SignInVisualPanel() {
 
           <h1 className="flex flex-wrap items-baseline gap-x-3 text-neutral-50">
             <span
-              className="text-[clamp(2rem,3.7vw,3.15rem)] font-bold leading-[1.1] tracking-wide"
+              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-bold leading-[1.3] tracking-[-0.01em]"
               style={{ fontFamily: DRUK_WIDE_STACK }}
             >
               Akyos is
