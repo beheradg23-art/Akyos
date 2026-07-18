@@ -7,3 +7,30 @@
     font-family: 'Poppins', ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
 }
+
+/* ---------------------------------------------------------------------
+   Black & White Minimalism themes.
+   One filter, applied to the whole page, so every color anywhere in the
+   app — including gradients, blurred glow orbs, box-shadows, images and
+   anything rendered into a portal (modals/toasts) — desaturates together.
+   Animations (including animated gradients) are untouched: only the
+   colors they paint change, never the motion.
+   [dark]  = grayscale only: dark stays dark, light stays light, as gray.
+   [light] = grayscale + inverted luminance: dark shell -> light shell.
+   ------------------------------------------------------------------- */
+html,
+body {
+  transition: filter 0.45s ease;
+}
+
+html {
+  background-color: #09090b;
+}
+
+html.theme-mono-dark body {
+  filter: grayscale(1) contrast(1.05);
+}
+
+html.theme-mono-light body {
+  filter: grayscale(1) invert(1) contrast(1.05);
+}

@@ -5,9 +5,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LayoutGrid, Clock3, Dumbbell, BookOpen, Sparkles, Target, GraduationCap,
-  Weight, Droplets, Moon, Utensils, Flame, ChevronRight, ChevronDown,
+  Weight, Droplets, Moon, Sun, Utensils, Flame, ChevronRight, ChevronDown,
   Activity, ClipboardList, Trash2, Plus, Settings, Save, PenLine, RefreshCcw,
+  Check,
 } from 'lucide-react';
+import { ThemeMode, THEME_OPTIONS, useTheme } from '../../lib/theme';
 import {
   ConfigContext, CountdownItem, DietMeal, DietOverrideKey, OverviewOverrideKey,
   TabLabelKey, DEFAULT_TAB_LABELS, MAX_DIET_MEALS, ICON_LIBRARY, ICON_LIBRARY_KEYS,
@@ -1315,6 +1317,59 @@ export function SectionLabelsEditor() {
   );
 }
 
+const THEME_OPTION_ICONS: Record<ThemeMode, React.ComponentType<{ className?: string }>> = {
+  'mono-dark': Moon,
+  'mono-light': Sun,
+  colorful: Sparkles,
+};
+
+export function ThemeEditor() {
+  const { theme, setTheme } = useTheme();
+
+  return (
+    <Card className="animate-fadeIn">
+      <SectionHeading icon={Moon} title="Appearance" />
+      <div className="space-y-2.5">
+        {THEME_OPTIONS.map((opt) => {
+          const Icon = THEME_OPTION_ICONS[opt.id];
+          const active = theme === opt.id;
+          return (
+            <RippleButton
+              key={opt.id}
+              onClick={() => setTheme(opt.id)}
+              ariaLabel={opt.label}
+              className={`w-full flex items-center gap-3 rounded-lg border px-3.5 py-3 text-left transition-colors ${
+                active
+                  ? 'border-violet-500/30 bg-violet-500/[0.06]'
+                  : 'border-neutral-800 bg-neutral-900/60 hover:border-neutral-700 hover:bg-neutral-900'
+              }`}
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-neutral-800/80 border border-neutral-700/60">
+                <Icon className="h-4.5 w-4.5 text-neutral-300" strokeWidth={1.75} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-neutral-100">{opt.label}</p>
+                <p className="text-[11px] text-neutral-500 mt-0.5">{opt.description}</p>
+              </div>
+              <div
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                  active ? 'border-violet-400 bg-violet-500/20' : 'border-neutral-700'
+                }`}
+              >
+                {active && <Check className="h-3 w-3 text-violet-300" strokeWidth={2.5} />}
+              </div>
+            </RippleButton>
+          );
+        })}
+      </div>
+      <p className="mt-4 text-[11px] text-neutral-600 leading-relaxed">
+        Black &amp; White Minimalism desaturates every screen — colors, glows and gradients alike — down to grayscale (inverted to a light shell for the light variant). Every animation, including the moving gradients, keeps playing exactly as it does in color; only the colors themselves change.
+      </p>
+    </Card>
+  );
+}
+
+
 // Each row's `title`/`subtitle` can be a plain string OR a function of
 // (tabLabels, sectionLabels, tabIcons) — used for rows that describe a tab
 // (or a specific panel inside one) that's renameable in Tab Names & Icons /
@@ -1322,6 +1377,7 @@ export function SectionLabelsEditor() {
 // with whatever the user has renamed things to. `tabKey` additionally lets
 // the row's icon follow that tab's icon override.
 export const SETTINGS_SECTIONS = [
+  { key: 'theme', icon: Moon, title: 'Appearance', subtitle: 'Switch between the colorful app and Black & White Minimalism', Component: ThemeEditor },
   { key: 'tabLabels', icon: PenLine, title: 'Tab Names & Icons', subtitle: 'Rename and re-icon the sidebar navigation', Component: TabLabelsEditor },
   { key: 'sectionLabels', icon: LayoutGrid, title: 'Section Labels', subtitle: 'Rename & re-icon panels in every tab', Component: SectionLabelsEditor },
   { key: 'profile', icon: GraduationCap, title: 'Profile & Goals', subtitle: 'Identity, exam/goal & priority targets', Component: ProfileEditor },
