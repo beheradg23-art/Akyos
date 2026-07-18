@@ -152,15 +152,15 @@ const LANDING_WORD_HOLD_MS = 2000; // how long a word sits fully visible before 
 const LANDING_WORD_OUT_MS = 380; // blur/fade/rise out
 const LANDING_WORD_IN_MS = 520; // blur/fade/settle in — slightly slower than the exit for a gentler landing, same asymmetry as the intro's own word-in beat
 
-// "Akyos is" is set in Poppins Medium; the rotating word after it is set
+// "Akyos is" is set in Poppins SemiBold; the rotating word after it is set
 // in Edwardian Script (pulled from cdnfonts.com, since it doesn't ship on
 // Google Fonts) — with a sane fallback stack in case that CDN is ever
 // unreachable, so the headline degrades gracefully instead of breaking.
 const LANDING_FONT_IMPORTS = `
-  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600&display=swap');
   @import url('https://fonts.cdnfonts.com/css/edwardian-script-itc');
 `;
-const POPPINS_MEDIUM_STACK = "'Poppins', sans-serif";
+const POPPINS_SEMIBOLD_STACK = "'Poppins', sans-serif";
 const EDWARDIAN_SCRIPT_STACK = "'Edwardian Script ITC', 'Brush Script MT', cursive";
 
 const LANDING_ODOMETER_KEYFRAMES = `
@@ -356,8 +356,8 @@ function SignInVisualPanel() {
 
           <h1 className="flex flex-wrap items-baseline gap-x-3 text-neutral-50">
             <span
-              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-medium leading-[1.3] tracking-[-0.01em]"
-              style={{ fontFamily: POPPINS_MEDIUM_STACK, fontWeight: 500 }}
+              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-semibold leading-[1.3] tracking-[-0.03em]"
+              style={{ fontFamily: POPPINS_SEMIBOLD_STACK, fontWeight: 600 }}
             >
               Akyos is
             </span>
