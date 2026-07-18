@@ -917,7 +917,7 @@ export default function JEEDashboard() {
           justify-content: center;
           font-size: calc(var(--fade-h) * 0.52);
           font-weight: 800;
-          font-family: 'Poppins', sans-serif;
+          font-family: 'SF Mono', 'Courier New', monospace;
           color: #f3e8ff;
           font-variant-numeric: tabular-nums;
         }
