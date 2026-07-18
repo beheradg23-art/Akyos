@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check } from 'lucide-react';
+import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check, Sparkles, BookOpen, ClipboardList, Clock3, ListChecks, Dumbbell, Timer } from 'lucide-react';
 import { AkyosMark } from './shared/AkyosMark';
 import LegalPage from './legal/LegalPage';
 import { supabase } from '../lib/supabaseClient';
@@ -138,14 +138,205 @@ function GoogleIcon({ className }: { className?: string }) {
 
 // The left-half visual panel for the desktop sign-in layout.
 //
-// Deliberately blank rather than busy: just a near-black panel that plays
-// the "1% → Better Every Day." counter once (see PanelBrandIntro below)
-// and then sits still on that finished line, instead of a static dot grid
-// or icon.
+// A proper landing-page-style pitch rather than a blank filler panel: a
+// brand lockup up top, a big "Akyos is ___" headline whose last word
+// rotates through the app's core value props (odometer-style — each word
+// blurs/fades up and out, the next blurs/fades in from below, the same
+// crossfade language used everywhere else in this file), a one-line
+// explainer, and a small grid naming the app's core areas in one word
+// each. Sits over a soft animated glow/grid background for a premium
+// feel. Confined entirely to the left half — the right half (sign-in
+// form) is untouched.
+const LANDING_ROTATE_WORDS = ['Focus.', 'Discipline.', 'Structure.', 'Clarity.', 'Momentum.', 'Consistency.', 'Progress.', 'Control.'];
+const LANDING_WORD_HOLD_MS = 2000; // how long a word sits fully visible before rotating out
+const LANDING_WORD_OUT_MS = 380; // blur/fade/rise out
+const LANDING_WORD_IN_MS = 520; // blur/fade/settle in — slightly slower than the exit for a gentler landing, same asymmetry as the intro's own word-in beat
+
+const LANDING_ODOMETER_KEYFRAMES = `
+  @keyframes akyos-odometer-out {
+    from { opacity: 1; transform: translateY(0); filter: blur(0px); }
+    to   { opacity: 0; transform: translateY(-0.4em); filter: blur(6px); }
+  }
+  @keyframes akyos-odometer-in {
+    from { opacity: 0; transform: translateY(0.4em); filter: blur(6px); }
+    to   { opacity: 1; transform: translateY(0); filter: blur(0px); }
+  }
+`;
+
+// The last word of "Akyos is ___", cycling on its own clock. Each cycle:
+// sit fully visible (LANDING_WORD_HOLD_MS) -> play the "out" keyframe on
+// the CURRENT word (same key, so the animation just restarts in place
+// rather than remounting) -> once that's done, advance to the next word
+// and mount it fresh so it plays the "in" keyframe. Reduced-motion users
+// get the gradient text with no rotation at all — just the first word,
+// static.
+function AkyosWordRotator() {
+  const [index, setIndex] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(mq.matches);
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const t = setTimeout(() => setLeaving(true), LANDING_WORD_HOLD_MS);
+    return () => clearTimeout(t);
+  }, [index, reduceMotion]);
+
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => {
+      setIndex((i) => (i + 1) % LANDING_ROTATE_WORDS.length);
+      setLeaving(false);
+    }, LANDING_WORD_OUT_MS);
+    return () => clearTimeout(t);
+  }, [leaving]);
+
+  return (
+    <span className="relative inline-block overflow-hidden align-baseline">
+      <style>{LANDING_ODOMETER_KEYFRAMES}</style>
+      <span
+        key={index}
+        className="inline-block"
+        style={{
+          backgroundImage:
+            'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
+          backgroundSize: '250% 100%',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          color: 'transparent',
+          animation: reduceMotion
+            ? 'akyos-liquid-gradient 3s ease-in-out infinite'
+            : `${leaving ? 'akyos-odometer-out' : 'akyos-odometer-in'} ${leaving ? LANDING_WORD_OUT_MS : LANDING_WORD_IN_MS}ms cubic-bezier(0.16,1,0.3,1) both, akyos-liquid-gradient 3s ease-in-out infinite`,
+        }}
+      >
+        {LANDING_ROTATE_WORDS[index]}
+      </span>
+    </span>
+  );
+}
+
+// Slow, subtle drift for the background glow blobs — big, soft, and slow
+// enough to read as ambient rather than distracting.
+const LANDING_BG_KEYFRAMES = `
+  @keyframes akyos-drift-a {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(28px, 22px) scale(1.08); }
+  }
+  @keyframes akyos-drift-b {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(-26px, -18px) scale(1.05); }
+  }
+  @keyframes akyos-feature-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+`;
+
+// The app's core areas, named in one word each — mirrors the real tabs
+// (Syllabus, Mock Tests, Timeline, To-Do, Training/Fuel, the AshClock
+// focus timer) rather than generic marketing bullets.
+const LANDING_FEATURES: { icon: typeof BookOpen; label: string }[] = [
+  { icon: BookOpen, label: 'Syllabus' },
+  { icon: ClipboardList, label: 'Mock Tests' },
+  { icon: Clock3, label: 'Timeline' },
+  { icon: ListChecks, label: 'Habits' },
+  { icon: Dumbbell, label: 'Fitness' },
+  { icon: Timer, label: 'Focus' },
+];
+
 function SignInVisualPanel() {
   return (
     <div className="hidden h-full lg:flex lg:w-1/2">
-      <PanelBrandIntro />
+      <div className="relative flex h-full w-full flex-col overflow-hidden bg-zinc-950 px-12 py-10 xl:px-16">
+        <style>{LANDING_BG_KEYFRAMES}</style>
+
+        {/* Premium ambient background: soft brand-color glows drifting
+            slowly behind a faint grid, all decorative/inert. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div
+            className="absolute -left-28 -top-24 h-[420px] w-[420px] rounded-full bg-violet-600/[0.18] blur-[110px]"
+            style={{ animation: 'akyos-drift-a 14s ease-in-out infinite' }}
+          />
+          <div
+            className="absolute -bottom-32 -right-16 h-[460px] w-[460px] rounded-full bg-fuchsia-600/[0.14] blur-[120px]"
+            style={{ animation: 'akyos-drift-b 17s ease-in-out infinite' }}
+          />
+          <div
+            className="absolute right-1/4 top-1/3 h-64 w-64 rounded-full bg-indigo-600/[0.14] blur-[100px]"
+            style={{ animation: 'akyos-drift-a 20s ease-in-out infinite reverse' }}
+          />
+          <div
+            className="absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                'linear-gradient(to right, rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.6) 1px, transparent 1px)',
+              backgroundSize: '44px 44px',
+              maskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
+            }}
+          />
+        </div>
+
+        {/* Brand lockup, top-left. */}
+        <div className="relative z-10 flex items-center gap-2.5">
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg shadow-lg shadow-violet-500/20"
+            style={liquidFillStyle()}
+          >
+            <AkyosMark className="h-4 w-4 text-neutral-950" />
+          </div>
+          <span className="text-[13px] font-semibold tracking-tight text-neutral-100">Akyos</span>
+        </div>
+
+        {/* Headline + pitch + feature grid, vertically centered in the
+            remaining space. */}
+        <div className="relative z-10 flex flex-1 flex-col justify-center">
+          <div className="mb-5 inline-flex w-fit items-center gap-1.5 rounded-full border border-violet-500/20 bg-violet-500/[0.08] px-3 py-1">
+            <Sparkles className="h-3 w-3 text-violet-300" strokeWidth={2} />
+            <span className="text-[10.5px] font-semibold uppercase tracking-wider text-violet-300">
+              Your Answer to Chaos
+            </span>
+          </div>
+
+          <h1
+            className="text-[clamp(2.1rem,4vw,3.4rem)] font-extrabold leading-[1.08] tracking-tight text-neutral-50"
+            style={{ fontFamily: "'Poppins', sans-serif" }}
+          >
+            Akyos is <AkyosWordRotator />
+          </h1>
+
+          <p className="mt-5 max-w-sm text-[13.5px] leading-relaxed text-neutral-400">
+            One app that adapts to every goal you're chasing — exam prep, fitness, diet, or a habit you're finally
+            sticking to. Plans, tracking, and momentum, all in one place.
+          </p>
+
+          <div className="mt-9 grid max-w-md grid-cols-3 gap-2.5">
+            {LANDING_FEATURES.map(({ icon: Icon, label }, i) => (
+              <div
+                key={label}
+                className="flex flex-col items-start gap-2 rounded-xl border border-neutral-800/70 bg-neutral-900/40 p-3 backdrop-blur-sm"
+                style={{ animation: `akyos-feature-float 5s ease-in-out ${i * 0.35}s infinite` }}
+              >
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={liquidFillStyle()}>
+                  <Icon className="h-3.5 w-3.5 text-neutral-950" strokeWidth={2.25} />
+                </div>
+                <span className="text-[11.5px] font-medium text-neutral-300">{label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer strip. */}
+        <div className="relative z-10 flex items-center gap-2 text-[11px] text-neutral-600">
+          <span className="h-1.5 w-1.5 rounded-full bg-violet-500/70" />
+          Built around a simple idea: 1% better, every single day.
+        </div>
+      </div>
     </div>
   );
 }
@@ -641,124 +832,6 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
               key={word}
               className={`inline-block text-white font-semibold ${ONE_PCT_TEXT_CLASS}`}
               style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- One-time "1% Better Every Day." animation for the sign-in panel -----
-//
-// A trimmed-down version of the "1%" beat from OnePercentIntro above: the
-// counter climbs to 1%, then "Better Every Day." drifts in one word at a
-// time. Once the last word has finished writing itself in, it just stops —
-// no zoom, no badge reveal, no fade-out, no loop. The panel is left sitting
-// on that frozen final line.
-//
-// The count-up runs on its own, slower, *linear* clock rather than
-// OnePercentIntro's ease-out-cubic: eased-out easing front-loads almost all
-// of the 0.0→1.0 change into the first ~150ms (fine against a big
-// full-screen number with other things also happening), then the digit
-// just sits at 0.9%/1.0% doing nothing for the rest of the duration — for
-// this small, quiet panel readout that read as the number barely counting
-// at all before snapping straight to "1%". Linear pacing over a longer
-// stretch keeps each tenth on screen for an even, readable beat.
-const PANEL_TEXT_CLASS = 'text-[clamp(1rem,3.2vw,2.35rem)] leading-[1.15]';
-const PANEL_COUNT_MS = 1900; // slower than OnePercentIntro's count — this is the whole show here
-const PANEL_COUNT_PAUSE_MS = 400; // "1%" sits settled before the words start
-
-function PanelBrandIntro() {
-  const [countLabel, setCountLabel] = useState('0.0%');
-  const [visibleWordCount, setVisibleWordCount] = useState(0);
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduceMotion(mq.matches);
-  }, []);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      setCountLabel(`${ONE_PCT_TARGET}%`);
-      setVisibleWordCount(ONE_PCT_WORDS.length);
-      return;
-    }
-
-    let rafId = 0;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min((now - start) / PANEL_COUNT_MS, 1);
-      if (t >= 1) {
-        setCountLabel(`${ONE_PCT_TARGET}%`);
-        return;
-      }
-      // Linear, not eased — every tenth-percent step gets an equal, visible
-      // share of the duration instead of bunching near the start.
-      setCountLabel(`${(t * ONE_PCT_TARGET).toFixed(1)}%`);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, [reduceMotion]);
-
-  useEffect(() => {
-    if (reduceMotion) return;
-    const wordStartAt = PANEL_COUNT_MS + PANEL_COUNT_PAUSE_MS;
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    ONE_PCT_WORDS.forEach((_, i) => {
-      timers.push(
-        setTimeout(() => setVisibleWordCount(i + 1), wordStartAt + i * ONE_PCT_WORD_STAGGER_MS)
-      );
-    });
-    return () => timers.forEach(clearTimeout);
-  }, [reduceMotion]);
-
-  return (
-    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-zinc-950 px-6">
-      <style>{ONE_PCT_KEYFRAMES}</style>
-
-      <div
-        className="flex flex-nowrap items-baseline justify-center gap-x-1.5 text-center whitespace-nowrap"
-        style={{ fontFamily: "'Poppins', sans-serif" }}
-      >
-        {/* "1%" — smooth eased count-up, then just sits there once settled. */}
-        <span
-          className="relative inline-block align-baseline"
-          style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
-        >
-          <span
-            className={`inline-block min-w-[3ch] text-center tabular-nums font-extrabold ${PANEL_TEXT_CLASS}`}
-            style={{
-              animation: 'akyos-liquid-gradient 3s ease-in-out infinite',
-              backgroundImage:
-                'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
-              backgroundSize: '250% 100%',
-              WebkitBackgroundClip: 'text',
-              backgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              color: 'transparent',
-            }}
-          >
-            {countLabel}
-          </span>
-        </span>
-
-        {/* "Better Every Day." — each word mounts and drifts in, one at a
-            time. Nothing collapses or exits once the line is complete. */}
-        <div className="flex items-baseline gap-x-1.5">
-          {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
-            <span
-              key={word}
-              className={`inline-block text-white font-semibold ${PANEL_TEXT_CLASS}`}
-              style={{
-                animation: reduceMotion
-                  ? undefined
-                  : `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both`,
-              }}
             >
               {word}
             </span>
