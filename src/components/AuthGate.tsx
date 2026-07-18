@@ -837,15 +837,23 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [signupNotice, setSignupNotice] = useState('');
-  // Gates the "Sign Up" and "Continue with Google" buttons in signup mode
-  // until the user ticks the Terms/Privacy checkbox — see the consent
-  // block rendered just above the submit button, and the disabled= props
-  // on both buttons below. Deliberately NOT applied in signin mode:
-  // consent is captured once, at the moment an account is created, not
-  // re-demanded on every later login.
+  // Consent to the Terms of Service / Privacy Policy is captured once, at
+  // the "setPasscode" stage below — the single choke point every genuinely
+  // new account (email OR Google) passes through exactly once, right
+  // after the account is created and before any real app data exists.
+  // Deliberately NOT gated here on the auth screen itself: Google's
+  // signInWithOAuth doesn't distinguish "sign up" from "sign in" ahead of
+  // time (same call either way), so gating pre-click here either had to
+  // annoy returning Google users every login, or miss new ones — gating
+  // post-redirect at setPasscode, which only ever fires for accounts with
+  // no passcode set anywhere yet, avoids both problems.
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [legalOverlay, setLegalOverlay] = useState<'terms' | 'privacy' | null>(null);
-  const signupConsentBlocked = authMode === 'signup' && !agreedToTerms;
+  // Flips true once the person taps "Continue" on the consent gate below
+  // (only reachable with agreedToTerms already true) — separate from
+  // agreedToTerms itself so the checkbox's live-toggle state doesn't have
+  // to double as "has this screen been passed yet".
+  const [passedConsentGate, setPassedConsentGate] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
 
   // --- Google OAuth state ---
@@ -1254,10 +1262,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     e.preventDefault();
     setAuthError('');
     setSignupNotice('');
-    if (authMode === 'signup' && !agreedToTerms) {
-      setAuthError('Please agree to the Terms of Service and Privacy Policy to continue.');
-      return;
-    }
     setAuthBusy(true);
     try {
       if (authMode === 'signup') {
@@ -1345,10 +1349,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   }, []);
 
   const handleGoogleSignIn = async () => {
-    if (authMode === 'signup' && !agreedToTerms) {
-      setGoogleError('Please agree to the Terms of Service and Privacy Policy to continue.');
-      return;
-    }
     setGoogleError('');
     setGoogleBusy(true);
     try {
@@ -1477,7 +1477,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             onClick={handleGoogleSignIn}
             onMouseEnter={() => setGoogleHovered(true)}
             onMouseLeave={() => setGoogleHovered(false)}
-            disabled={googleBusy || signupConsentBlocked}
+            disabled={googleBusy}
             className="relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             style={authCascadeStyle(2)}
           >
@@ -1570,66 +1570,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               style={authCascadeStyle(5)}
             />
 
-            {authMode === 'signup' && (
-              <label
-                className="flex cursor-pointer items-start gap-2.5 pt-1 select-none"
-                style={authCascadeStyle(5.5)}
-              >
-                <span
-                  role="checkbox"
-                  aria-checked={agreedToTerms}
-                  tabIndex={0}
-                  onClick={() => setAgreedToTerms((v) => !v)}
-                  onKeyDown={(e) => {
-                    if (e.key === ' ' || e.key === 'Enter') {
-                      e.preventDefault();
-                      setAgreedToTerms((v) => !v);
-                    }
-                  }}
-                  className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
-                  style={
-                    agreedToTerms
-                      ? { ...liquidFillStyle(), border: '1px solid transparent' }
-                      : { borderColor: 'rgb(64 64 70)', background: 'rgba(39,39,42,0.5)' }
-                  }
-                >
-                  {agreedToTerms && <Check className="h-3 w-3 text-neutral-950" strokeWidth={3} />}
-                </span>
-                <span className="text-[11.5px] leading-snug text-neutral-500">
-                  I agree to the{' '}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setLegalOverlay('terms');
-                    }}
-                    className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
-                  >
-                    Terms of Service
-                  </button>{' '}
-                  and{' '}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setLegalOverlay('privacy');
-                    }}
-                    className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
-                  >
-                    Privacy Policy
-                  </button>
-                </span>
-              </label>
-            )}
 
             {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
             {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
 
             <button
               type="submit"
-              disabled={authBusy || signupConsentBlocked}
+              disabled={authBusy}
               className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
               style={liquidFillStyle(authCascadeStyle(6))}
             >
@@ -1678,6 +1625,103 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   }
 
   if (stage === 'setPasscode') {
+    // This stage only ever fires for an account with no passcode set
+    // anywhere — cloud included (see decidePostSyncStage/syncThenContinue
+    // above) — which in this app means "genuinely new account, first time
+    // completing setup", regardless of whether it arrived via email
+    // signup or Google. That makes it the one reliable, single place to
+    // require Terms/Privacy consent: it fires exactly once per account,
+    // never again for a returning sign-in (even on a new device — an
+    // existing account's passcode hash gets pulled from the cloud and
+    // cached locally before this stage is ever evaluated), and it fires
+    // uniformly for both auth methods instead of needing separate gating
+    // logic on the Sign Up button and the Google button.
+    if (!passedConsentGate) {
+      return (
+        <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+          <style>{CASCADE_KEYFRAMES}</style>
+          <div
+            className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+            style={liquidFillStyle(cascadeStyle(0))}
+          >
+            <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+          </div>
+
+          <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+            One Last Thing
+          </h1>
+          <p className="mb-7 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
+            Before you choose your passcode and get started, please agree to the terms below — this only
+            appears once.
+          </p>
+
+          <label
+            className="mb-7 flex w-full max-w-xs cursor-pointer items-start gap-2.5 select-none"
+            style={cascadeStyle(3)}
+          >
+            <span
+              role="checkbox"
+              aria-checked={agreedToTerms}
+              tabIndex={0}
+              onClick={() => setAgreedToTerms((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setAgreedToTerms((v) => !v);
+                }
+              }}
+              className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
+              style={
+                agreedToTerms
+                  ? { ...liquidFillStyle(), border: '1px solid transparent' }
+                  : { borderColor: 'rgb(64 64 70)', background: 'rgba(39,39,42,0.5)' }
+              }
+            >
+              {agreedToTerms && <Check className="h-3 w-3 text-neutral-950" strokeWidth={3} />}
+            </span>
+            <span className="text-[12px] leading-snug text-neutral-400">
+              I agree to the{' '}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLegalOverlay('terms');
+                }}
+                className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+              >
+                Terms of Service
+              </button>{' '}
+              and{' '}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setLegalOverlay('privacy');
+                }}
+                className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+              >
+                Privacy Policy
+              </button>
+            </span>
+          </label>
+
+          <button
+            type="button"
+            disabled={!agreedToTerms}
+            onClick={() => setPassedConsentGate(true)}
+            className="w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
+            style={liquidFillStyle(cascadeStyle(4))}
+          >
+            Continue
+          </button>
+
+          {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
+        </div>
+      );
+    }
+
     const boxes = Array.from({ length: PASSCODE_LENGTH });
     const value = pcSetupValue;
     return (
