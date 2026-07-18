@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check } from 'lucide-react';
 import { AkyosMark } from './shared/AkyosMark';
-import { BenchmarkBarsArt } from './shared/BenchmarkBarsArt';
 import LegalPage from './legal/LegalPage';
 import { supabase } from '../lib/supabaseClient';
 import {
@@ -139,16 +138,14 @@ function GoogleIcon({ className }: { className?: string }) {
 
 // The left-half visual panel for the desktop sign-in layout.
 //
-// A near-black panel with a looping 3D bar-chart visual (see
-// BenchmarkBarsArt) — columns continuously morphing between an arc and
-// an "M" formation, rendered in the app's own liquid violet/indigo/
-// fuchsia gradient — instead of the static dot grid or icon this used
-// to have, or the one-shot "1% → Better Every Day." counter it had most
-// recently.
+// Deliberately blank rather than busy: just a near-black panel that plays
+// the "1% → Better Every Day." counter once (see PanelBrandIntro below)
+// and then sits still on that finished line, instead of a static dot grid
+// or icon.
 function SignInVisualPanel() {
   return (
     <div className="hidden h-full lg:flex lg:w-1/2">
-      <BenchmarkBarsArt />
+      <PanelBrandIntro />
     </div>
   );
 }
@@ -644,6 +641,124 @@ function OnePercentIntro({ onComplete }: { onComplete: () => void }) {
               key={word}
               className={`inline-block text-white font-semibold ${ONE_PCT_TEXT_CLASS}`}
               style={{ animation: `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both` }}
+            >
+              {word}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- One-time "1% Better Every Day." animation for the sign-in panel -----
+//
+// A trimmed-down version of the "1%" beat from OnePercentIntro above: the
+// counter climbs to 1%, then "Better Every Day." drifts in one word at a
+// time. Once the last word has finished writing itself in, it just stops —
+// no zoom, no badge reveal, no fade-out, no loop. The panel is left sitting
+// on that frozen final line.
+//
+// The count-up runs on its own, slower, *linear* clock rather than
+// OnePercentIntro's ease-out-cubic: eased-out easing front-loads almost all
+// of the 0.0→1.0 change into the first ~150ms (fine against a big
+// full-screen number with other things also happening), then the digit
+// just sits at 0.9%/1.0% doing nothing for the rest of the duration — for
+// this small, quiet panel readout that read as the number barely counting
+// at all before snapping straight to "1%". Linear pacing over a longer
+// stretch keeps each tenth on screen for an even, readable beat.
+const PANEL_TEXT_CLASS = 'text-[clamp(1rem,3.2vw,2.35rem)] leading-[1.15]';
+const PANEL_COUNT_MS = 1900; // slower than OnePercentIntro's count — this is the whole show here
+const PANEL_COUNT_PAUSE_MS = 400; // "1%" sits settled before the words start
+
+function PanelBrandIntro() {
+  const [countLabel, setCountLabel] = useState('0.0%');
+  const [visibleWordCount, setVisibleWordCount] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(mq.matches);
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      setCountLabel(`${ONE_PCT_TARGET}%`);
+      setVisibleWordCount(ONE_PCT_WORDS.length);
+      return;
+    }
+
+    let rafId = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / PANEL_COUNT_MS, 1);
+      if (t >= 1) {
+        setCountLabel(`${ONE_PCT_TARGET}%`);
+        return;
+      }
+      // Linear, not eased — every tenth-percent step gets an equal, visible
+      // share of the duration instead of bunching near the start.
+      setCountLabel(`${(t * ONE_PCT_TARGET).toFixed(1)}%`);
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const wordStartAt = PANEL_COUNT_MS + PANEL_COUNT_PAUSE_MS;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    ONE_PCT_WORDS.forEach((_, i) => {
+      timers.push(
+        setTimeout(() => setVisibleWordCount(i + 1), wordStartAt + i * ONE_PCT_WORD_STAGGER_MS)
+      );
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [reduceMotion]);
+
+  return (
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-zinc-950 px-6">
+      <style>{ONE_PCT_KEYFRAMES}</style>
+
+      <div
+        className="flex flex-nowrap items-baseline justify-center gap-x-1.5 text-center whitespace-nowrap"
+        style={{ fontFamily: "'Poppins', sans-serif" }}
+      >
+        {/* "1%" — smooth eased count-up, then just sits there once settled. */}
+        <span
+          className="relative inline-block align-baseline"
+          style={{ animation: 'akyos-glow-pulse 2.2s ease-in-out infinite' }}
+        >
+          <span
+            className={`inline-block min-w-[3ch] text-center tabular-nums font-extrabold ${PANEL_TEXT_CLASS}`}
+            style={{
+              animation: 'akyos-liquid-gradient 3s ease-in-out infinite',
+              backgroundImage:
+                'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
+              backgroundSize: '250% 100%',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              color: 'transparent',
+            }}
+          >
+            {countLabel}
+          </span>
+        </span>
+
+        {/* "Better Every Day." — each word mounts and drifts in, one at a
+            time. Nothing collapses or exits once the line is complete. */}
+        <div className="flex items-baseline gap-x-1.5">
+          {ONE_PCT_WORDS.slice(0, visibleWordCount).map((word) => (
+            <span
+              key={word}
+              className={`inline-block text-white font-semibold ${PANEL_TEXT_CLASS}`}
+              style={{
+                animation: reduceMotion
+                  ? undefined
+                  : `akyos-word-fade-in ${ONE_PCT_WORD_FADE_MS}ms cubic-bezier(0.19,1,0.22,1) both`,
+              }}
             >
               {word}
             </span>
