@@ -426,7 +426,7 @@ export function PomodoroView({ onSessionComplete }) {
 
       {/* System message banner */}
       <div className="mt-6 w-full max-w-md text-center px-4 py-2.5 rounded-xl bg-purple-950/30 border border-purple-800/30">
-        <p className="text-[11px] font-mono text-purple-300/80 leading-relaxed">{systemMessage}</p>
+        <p className="text-[11px] text-purple-300/80 leading-relaxed">{systemMessage}</p>
       </div>
 
       {/* Duration settings */}

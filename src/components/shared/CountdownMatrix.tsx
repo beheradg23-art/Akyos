@@ -113,7 +113,7 @@ export function CountdownEntry({ countdown, result, compact }: { countdown: Coun
         <div className={`text-[10px] uppercase font-bold tracking-widest ${palette.text}/80 truncate`}>{label}</div>
       </div>
       <div className={compact ? 'mt-2.5' : 'mt-4'}>
-        <span className={`${compact ? 'text-xl' : 'text-3xl'} font-bold font-mono tracking-tight tabular-nums ${result.expired ? 'text-neutral-500' : palette.text}`}>
+        <span className={`${compact ? 'text-xl' : 'text-3xl'} font-semibold tracking-tight tabular-nums ${result.expired ? 'text-neutral-500' : palette.text}`}>
           {result.text}
         </span>
       </div>

@@ -313,7 +313,7 @@ export function DeleteAccountCard() {
           {step === 'confirm-text' && (
             <>
               <p className="text-[12px] text-neutral-400">
-                Type <span className="font-mono font-bold text-rose-300">DELETE</span> to permanently delete your account
+                Type <span className="font-semibold text-rose-300">DELETE</span> to permanently delete your account
               </p>
               <input
                 ref={confirmRef}
@@ -323,7 +323,7 @@ export function DeleteAccountCard() {
                 autoComplete="off"
                 aria-label="Type DELETE to confirm"
                 placeholder="DELETE"
-                className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] font-mono text-neutral-100 placeholder:text-neutral-700 outline-none focus:border-rose-500/50"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-950/60 px-3 py-2.5 text-[13px] font-medium text-neutral-100 placeholder:text-neutral-700 outline-none focus:border-rose-500/50"
               />
               <button
                 onClick={handleDelete}
@@ -623,7 +623,7 @@ export function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal 
             >
               {dateStr && (
                 <>
-                  <span className="font-mono">{parseInt(dateStr.split('-')[2])}</span>
+                  <span className="tabular-nums">{parseInt(dateStr.split('-')[2])}</span>
                   {globalHistory[dateStr] && Object.values(globalHistory[dateStr]).filter(Boolean).length > 0 && (
                     <span className={`absolute bottom-1.5 h-1 w-1 rounded-full ${dateStr === getLocalDateString() || Object.values(globalHistory[dateStr]).filter(Boolean).length === trackerItems.length ? 'bg-neutral-950' : 'bg-current'}`} />
                   )}
@@ -655,7 +655,7 @@ export function PerformanceCalendar({ globalHistory, setGlobalHistory, setModal 
       <div className="mt-6 pt-4 border-t border-neutral-800 flex flex-wrap gap-4 items-center justify-between text-xs text-neutral-400">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-neutral-500 font-mono">Legend Matrix:</span>
+            <span className="text-neutral-500 font-medium">Legend Matrix:</span>
             <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-neutral-900 border border-neutral-800" /> <span>0%</span></div>
             <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-rose-950/60 border border-rose-800/40" /> <span>1-30%</span></div>
             <div className="flex items-center gap-1"><div className="h-3 w-3 rounded bg-amber-950/60 border border-amber-800/40" /> <span>31-60%</span></div>

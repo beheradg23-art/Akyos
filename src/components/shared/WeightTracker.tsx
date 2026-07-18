@@ -128,7 +128,7 @@ export function WeightTrackerCard() {
         <EditableSectionHeading id="tl_weight" defaultTitle="Body Weight Trend" defaultIcon={TrendingUp} subtitle="Weekly weigh-ins — the real check on whether the recomposition plan is working" />
         <div className="flex items-end gap-2">
           <div>
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Date</label>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold block mb-1.5">Date</label>
             <DateField
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
@@ -136,7 +136,7 @@ export function WeightTrackerCard() {
             />
           </div>
           <div>
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Weight (kg)</label>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold block mb-1.5">Weight (kg)</label>
             <input
               type="number" min={0} step="0.1" value={formWeight}
               onChange={(e) => setFormWeight(e.target.value)}

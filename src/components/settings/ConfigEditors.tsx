@@ -22,7 +22,7 @@ import { generateProfileTargets } from '../../lib/contentGen';
 export const btnGhost = 'cursor-target flex items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 text-[12px] font-semibold text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors';
 export const btnSave = (dirty: boolean) => `cursor-target flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-semibold transition-colors ${dirty ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15' : 'border-neutral-800 bg-neutral-900 text-neutral-600'}`;
 export const fieldInput = 'w-full rounded-lg border border-neutral-800 bg-neutral-950/50 px-2.5 py-1.5 text-[12px] text-neutral-200 focus:outline-none focus:border-neutral-600';
-export const fieldLabel = 'text-[10px] uppercase tracking-wide text-neutral-600 font-bold block mb-1';
+export const fieldLabel = 'text-[10px] uppercase tracking-wide text-neutral-600 font-semibold block mb-1';
 
 export function TrackerItemsEditor() {
   const { trackerItems, updateConfig, resetConfigSection } = React.useContext(ConfigContext);
@@ -481,7 +481,7 @@ export function DietEditor() {
 
       <div className="mt-6 pt-5 border-t border-neutral-800/60">
         <div className="mb-3">
-          <span className="text-[11px] uppercase tracking-wide text-neutral-600 font-bold">Calorie / Protein / Hydration Targets</span>
+          <span className="text-[11px] uppercase tracking-wide text-neutral-600 font-semibold">Calorie / Protein / Hydration Targets</span>
           <p className="text-[11.5px] text-neutral-600 mt-1">Auto-estimated from the meals above using their bodyweight — override any row with your own number if you'd rather track it yourself.</p>
         </div>
         <div className="space-y-2.5">
@@ -653,7 +653,7 @@ export function ProfileEditor() {
       </div>
 
       <div className="flex items-center justify-between mb-2.5">
-        <span className="text-[11px] uppercase tracking-wide text-neutral-600 font-bold">Priority Targets</span>
+        <span className="text-[11px] uppercase tracking-wide text-neutral-600 font-semibold">Priority Targets</span>
         <RippleButton onClick={handleSuggestTargets} disabled={suggesting} className={btnGhost}>
           <Sparkles className="h-3.5 w-3.5" /> {suggesting ? 'Thinking…' : 'Suggest targets for me'}
         </RippleButton>
@@ -1088,7 +1088,7 @@ export function SubjectsAndSyllabusEditor() {
                             value={(p.subjects[s.key] || []).join('\n')}
                             onChange={(e) => setPhaseTopics(p.phase, s.key, e.target.value)}
                             rows={4}
-                            className={`${fieldInput} resize-none font-mono`}
+                            className={`${fieldInput} resize-none`}
                           />
                         </div>
                       ))}
@@ -1291,7 +1291,7 @@ export function SectionLabelsEditor() {
       <div className="space-y-5">
         {SECTION_LABEL_GROUP_TAB_KEYS.map((tabKey) => (
           <div key={tabKey}>
-            <h4 className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{tabLabels[tabKey] || DEFAULT_TAB_LABELS[tabKey]}</h4>
+            <h4 className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">{tabLabels[tabKey] || DEFAULT_TAB_LABELS[tabKey]}</h4>
             <div className="space-y-2">
               {SECTION_LABEL_ROWS.filter((r) => r.tabKey === tabKey).map(({ key }) => (
                 <div key={key} className="flex items-center gap-2">

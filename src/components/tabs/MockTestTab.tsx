@@ -328,7 +328,7 @@ export function MockTestTab() {
 
         <div className="grid sm:grid-cols-2 gap-3 mb-4 mt-4">
           <div>
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Test Date</label>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold block mb-1.5">Test Date</label>
             <DateField
               value={formDate}
               onChange={(e) => setFormDate(e.target.value)}
@@ -336,7 +336,7 @@ export function MockTestTab() {
             />
           </div>
           <div>
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold block mb-1.5">Test Name (optional)</label>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold block mb-1.5">Test Name (optional)</label>
             <input
               type="text"
               value={formLabel}
@@ -353,7 +353,7 @@ export function MockTestTab() {
             const v = formScores[s.key] || { score: '', max: '100' };
             return (
               <div key={s.key} className="rounded-xl border border-neutral-800/70 bg-neutral-950/30 p-3 sm:border-0 sm:bg-transparent sm:p-0">
-                <label className={`text-[11px] uppercase tracking-wider font-bold block mb-2 sm:mb-1.5 ${style.text}`}>{s.label}</label>
+                <label className={`text-[11px] uppercase tracking-wider font-semibold block mb-2 sm:mb-1.5 ${style.text}`}>{s.label}</label>
                 <div className="flex items-stretch gap-2">
                   <input
                     type="number" inputMode="decimal" min={0} value={v.score}
@@ -377,7 +377,7 @@ export function MockTestTab() {
 
         <div className="mb-5">
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold">Flag Weak Topics (optional)</label>
+            <label className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold">Flag Weak Topics (optional)</label>
             <div className="flex gap-1 flex-wrap">
               {syllabus.map((p) => (
                 <button
@@ -466,7 +466,7 @@ export function MockTestTab() {
             {weakTopicCounts.map(([topic, count], idx) => (
               <div key={topic} className="flex items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/40 px-3 py-2.5">
                 <div className="flex items-center gap-2.5">
-                  <span className={`text-[11px] font-mono w-5 text-center ${idx < 3 ? 'text-rose-400' : 'text-neutral-600'}`}>#{idx + 1}</span>
+                  <span className={`text-[11px] tabular-nums w-5 text-center ${idx < 3 ? 'text-rose-400' : 'text-neutral-600'}`}>#{idx + 1}</span>
                   <span className="text-[13px] text-neutral-200">{topic}</span>
                 </div>
                 <span

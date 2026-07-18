@@ -565,11 +565,11 @@ export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData
 
           {modalData.arrayItems && (
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{modalData.arrayTitle || 'Target Items'}</div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">{modalData.arrayTitle || 'Target Items'}</div>
               <ul className="space-y-2">
                 {modalData.arrayItems.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-neutral-950/30 px-3 py-2 rounded-lg border border-neutral-800/40">
-                    <span className="text-xs text-neutral-600 mt-0.5 font-mono">[{idx + 1}]</span>
+                    <span className="text-xs text-neutral-600 mt-0.5">[{idx + 1}]</span>
                     <span className="leading-snug">{item}</span>
                   </li>
                 ))}
@@ -579,7 +579,7 @@ export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData
 
           {modalData.studyItems && modalData.studyItems.length > 0 && (
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{modalData.studyTitle || 'Study Log'}</div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">{modalData.studyTitle || 'Study Log'}</div>
               <ul className="space-y-2">
                 {modalData.studyItems.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-indigo-500/[0.03] border border-indigo-500/20 px-3 py-2 rounded-lg">
@@ -592,7 +592,7 @@ export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData
 
           {modalData.testItems && modalData.testItems.length > 0 && (
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">{modalData.testTitle || 'Tests Logged'}</div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">{modalData.testTitle || 'Tests Logged'}</div>
               <ul className="space-y-2">
                 {modalData.testItems.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-amber-500/[0.03] border border-amber-500/20 px-3 py-2 rounded-lg">
@@ -605,7 +605,7 @@ export function GlobalDetailModal({ modalData, onClose }: { modalData: ModalData
 
           {modalData.focusPoints && (
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-bold mb-2">High-Yield Exam Focus Areas</div>
+              <div className="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">High-Yield Exam Focus Areas</div>
               <ul className="space-y-2">
                 {modalData.focusPoints.map((item, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-sm text-neutral-300 bg-indigo-500/[0.03] border border-indigo-500/20 px-3 py-2 rounded-lg">

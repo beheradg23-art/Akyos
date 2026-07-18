@@ -38,10 +38,10 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
       title={isDerived ? 'Auto-synced from the Fuel Matrix meal log — click to go log meals' : undefined}
       aria-pressed={isChecked}
       aria-label={`${item.label}${isDerived ? ' (auto-synced)' : ''}, ${isChecked ? 'completed' : 'not completed'}`}
-      className={`cursor-target relative flex flex-col items-start justify-between overflow-hidden p-3.5 rounded-xl border text-left transition-colors duration-200 group ${
+      className={`cursor-target relative flex flex-col items-start justify-between overflow-hidden p-3.5 rounded-2xl border backdrop-blur-md text-left transition-colors duration-200 group ${
         isChecked
-          ? 'bg-violet-500/[0.08] border-violet-500/30 shadow-[inset_0_0_12px_rgba(167,139,250,0.05)]'
-          : 'bg-neutral-900/40 border-neutral-800 hover:bg-neutral-800/60 hover:border-neutral-700'
+          ? 'bg-violet-500/[0.10] border-violet-400/25 shadow-[inset_0_0_12px_rgba(167,139,250,0.08)]'
+          : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.16]'
       }`}
       style={{
         transform: `scale(${pressed ? 0.955 : 1})`,
@@ -57,11 +57,11 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
         // out (no re-sweep) via useSweepReveal on hover-out.
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 rounded-xl"
+          className="pointer-events-none absolute inset-0 rounded-2xl"
           style={{ animation: sweep.animation, ...SWEEP_REVEAL_STYLE }}
         >
           <div
-            className="absolute inset-0 rounded-xl"
+            className="absolute inset-0 rounded-2xl"
             style={{
               padding: '1.5px',
               WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
@@ -79,7 +79,7 @@ export function TrackerItemButton({ item, isChecked, onToggle, isDerived }: { it
           <Circle className="h-4.5 w-4.5 text-neutral-600 group-hover:text-neutral-400 shrink-0 transition-colors" strokeWidth={1.75} />
         )}
         {isDerived && (
-          <span className="text-[8.5px] uppercase tracking-wider font-bold text-neutral-600 group-hover:text-neutral-400 transition-colors">Auto</span>
+          <span className="text-[8.5px] uppercase tracking-wider font-semibold text-neutral-600 group-hover:text-neutral-400 transition-colors">Auto</span>
         )}
       </div>
       <span className={`text-[11.5px] font-medium leading-snug transition-colors ${isChecked ? 'text-violet-200/90' : 'text-neutral-300 group-hover:text-neutral-200'}`}>
@@ -119,8 +119,21 @@ export function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }:
   const formattedDay = useMemo(() => getDayName(currentDayStr), [currentDayStr]);
 
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 backdrop-blur-sm p-5 lg:sticky lg:top-6">
-      
+    <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] bg-white/[0.035] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55)] p-5 lg:sticky lg:top-6">
+      {/* Same glass sheen as the shared <Card> bento boxes: a soft
+          top-left light wash plus a crisp top-edge hairline, so this
+          widget reads as the same frosted material rather than a
+          separately-styled one-off. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-[28px] bg-gradient-to-br from-white/[0.05] via-transparent to-transparent"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+      />
+
+      <div className="relative">
       {/* Bento Header & Timer */}
       <div className="flex flex-col gap-3 mb-5">
         <div className="flex items-center justify-between">
@@ -128,14 +141,14 @@ export function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }:
           <span className="text-[12px] font-medium text-neutral-500">{done}/{total}</span>
         </div>
         
-        <div className="flex justify-between items-center bg-neutral-950/40 border border-neutral-800/60 rounded-lg p-2">
+        <div className="flex justify-between items-center bg-white/[0.03] border border-white/[0.08] backdrop-blur-sm rounded-2xl p-3">
           <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Current Cycle</span>
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Current Cycle</span>
             <span className="text-[12px] text-neutral-300 font-medium">{formattedDay}</span>
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-bold">Day Ending In</span>
-            <div className="flex items-center gap-1.5 text-violet-400/90 font-mono text-[13px] font-semibold tracking-tight">
+            <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-semibold">Day Ending In</span>
+            <div className="flex items-center gap-1.5 text-violet-400/90 text-[13px] font-semibold tracking-tight tabular-nums">
               <Timer className="h-3.5 w-3.5" />
               {timeLeft}
             </div>
@@ -196,6 +209,7 @@ export function DailyTracker({ currentDayStr, checked, onToggle, setActiveTab }:
             />
           );
         })}
+      </div>
       </div>
     </div>
   );

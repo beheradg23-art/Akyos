@@ -149,7 +149,7 @@ export function TodoTab() {
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <EditableSectionHeading id="todo_list" defaultTitle="To-Do List" defaultIcon={ListChecks} subtitle={`${dayLabel} · resets fresh at midnight`} />
           {items.length > 0 && (
-            <span className="text-[11px] font-mono text-neutral-500 shrink-0">
+            <span className="text-[11px] text-neutral-500 shrink-0">
               {doneCount}/{items.length} done
             </span>
           )}
