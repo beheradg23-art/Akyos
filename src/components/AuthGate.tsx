@@ -152,13 +152,26 @@ const LANDING_WORD_HOLD_MS = 2000; // how long a word sits fully visible before 
 const LANDING_WORD_OUT_MS = 380; // blur/fade/rise out
 const LANDING_WORD_IN_MS = 520; // blur/fade/settle in — slightly slower than the exit for a gentler landing, same asymmetry as the intro's own word-in beat
 
+// "Akyos is" is set in Druk Wide (a bold, wide display grotesk); the
+// rotating word after it is set in Edwardian Script. Neither ships on
+// Google Fonts, so they're pulled from cdnfonts.com the same way Poppins
+// is pulled from Google Fonts elsewhere in this file — with a sane
+// fallback stack after each in case that CDN is ever unreachable, so the
+// headline degrades gracefully instead of breaking.
+const LANDING_FONT_IMPORTS = `
+  @import url('https://fonts.cdnfonts.com/css/druk-wide-bold');
+  @import url('https://fonts.cdnfonts.com/css/edwardian-script-itc');
+`;
+const DRUK_WIDE_STACK = "'Druk Wide Bold', 'Druk Wide', 'Poppins', sans-serif";
+const EDWARDIAN_SCRIPT_STACK = "'Edwardian Script ITC', 'Brush Script MT', cursive";
+
 const LANDING_ODOMETER_KEYFRAMES = `
   @keyframes akyos-odometer-out {
     from { opacity: 1; transform: translateY(0); filter: blur(0px); }
-    to   { opacity: 0; transform: translateY(-0.4em); filter: blur(6px); }
+    to   { opacity: 0; transform: translateY(-0.35em); filter: blur(6px); }
   }
   @keyframes akyos-odometer-in {
-    from { opacity: 0; transform: translateY(0.4em); filter: blur(6px); }
+    from { opacity: 0; transform: translateY(0.35em); filter: blur(6px); }
     to   { opacity: 1; transform: translateY(0); filter: blur(0px); }
   }
 `;
@@ -170,6 +183,16 @@ const LANDING_ODOMETER_KEYFRAMES = `
 // and mount it fresh so it plays the "in" keyframe. Reduced-motion users
 // get the gradient text with no rotation at all — just the first word,
 // static.
+//
+// Rendered inside a flex row with `items-baseline` (see the h1 below) so
+// its own baseline — not its box's bottom edge — lines up with "Akyos
+// is", regardless of the fact that it's a completely different font/size
+// with its own metrics. The wrapper has no overflow-hidden and generous
+// top/bottom padding instead: Edwardian Script's tall ascenders and deep
+// descenders (the tail on a lowercase "g", "y", "p") were getting sliced
+// off by a tightly-clipped box before — this gives the glyphs room to
+// draw in full rather than trading that clipping for a fixed vertical
+// travel distance.
 function AkyosWordRotator() {
   const [index, setIndex] = useState(0);
   const [leaving, setLeaving] = useState(false);
@@ -196,12 +219,20 @@ function AkyosWordRotator() {
   }, [leaving]);
 
   return (
-    <span className="relative inline-block overflow-hidden align-baseline">
+    <span
+      className="relative inline-block"
+      style={{ paddingTop: '0.2em', paddingBottom: '0.3em', marginBottom: '-0.3em' }}
+    >
       <style>{LANDING_ODOMETER_KEYFRAMES}</style>
       <span
         key={index}
-        className="inline-block"
+        className="inline-block whitespace-nowrap"
         style={{
+          fontFamily: EDWARDIAN_SCRIPT_STACK,
+          fontWeight: 400,
+          fontSize: 'clamp(2.6rem, 6vw, 4.4rem)',
+          lineHeight: 1,
+          filter: 'drop-shadow(0 2px 14px rgba(167,139,250,0.35))',
           backgroundImage:
             'linear-gradient(110deg, #a78bfa 0%, #f0abfc 25%, #818cf8 50%, #f0abfc 75%, #a78bfa 100%)',
           backgroundSize: '250% 100%',
@@ -254,6 +285,7 @@ function SignInVisualPanel() {
     <div className="hidden h-full lg:flex lg:w-1/2">
       <div className="relative flex h-full w-full flex-col overflow-hidden bg-zinc-950 px-12 py-10 xl:px-16">
         <style>{LANDING_BG_KEYFRAMES}</style>
+        <style>{LANDING_FONT_IMPORTS}</style>
 
         {/* Premium ambient background: soft brand-color glows drifting
             slowly behind a faint grid, all decorative/inert. */}
@@ -303,11 +335,14 @@ function SignInVisualPanel() {
             </span>
           </div>
 
-          <h1
-            className="text-[clamp(2.1rem,4vw,3.4rem)] font-extrabold leading-[1.08] tracking-tight text-neutral-50"
-            style={{ fontFamily: "'Poppins', sans-serif" }}
-          >
-            Akyos is <AkyosWordRotator />
+          <h1 className="flex flex-wrap items-baseline gap-x-3 text-neutral-50">
+            <span
+              className="text-[clamp(2rem,3.7vw,3.15rem)] font-bold leading-[1.1] tracking-wide"
+              style={{ fontFamily: DRUK_WIDE_STACK }}
+            >
+              Akyos is
+            </span>
+            <AkyosWordRotator />
           </h1>
 
           <p className="mt-5 max-w-sm text-[13.5px] leading-relaxed text-neutral-400">
@@ -319,13 +354,23 @@ function SignInVisualPanel() {
             {LANDING_FEATURES.map(({ icon: Icon, label }, i) => (
               <div
                 key={label}
-                className="flex flex-col items-start gap-2 rounded-xl border border-neutral-800/70 bg-neutral-900/40 p-3 backdrop-blur-sm"
+                className="relative flex flex-col items-start gap-2 overflow-hidden rounded-2xl border border-white/[0.14] bg-white/[0.06] p-3 backdrop-blur-md shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_10px_26px_-12px_rgba(0,0,0,0.7)]"
                 style={{ animation: `akyos-feature-float 5s ease-in-out ${i * 0.35}s infinite` }}
               >
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={liquidFillStyle()}>
+                {/* Glass sheen — a soft diagonal highlight layered over the
+                    frosted background, the same "light hitting glass" cue
+                    real glass-UI panels use, purely decorative. */}
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.14] via-white/[0.02] to-transparent"
+                />
+                <div
+                  className="relative flex h-7 w-7 items-center justify-center rounded-lg shadow-[0_2px_10px_-2px_rgba(124,58,237,0.55)]"
+                  style={liquidFillStyle()}
+                >
                   <Icon className="h-3.5 w-3.5 text-neutral-950" strokeWidth={2.25} />
                 </div>
-                <span className="text-[11.5px] font-medium text-neutral-300">{label}</span>
+                <span className="relative text-[11.5px] font-medium text-neutral-200">{label}</span>
               </div>
             ))}
           </div>
