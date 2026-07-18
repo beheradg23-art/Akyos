@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound } from 'lucide-react';
+import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check } from 'lucide-react';
 import { AkyosMark } from './shared/AkyosMark';
+import LegalPage from './legal/LegalPage';
 import { supabase } from '../lib/supabaseClient';
 import {
   pullFromCloud,
@@ -836,6 +837,15 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [signupNotice, setSignupNotice] = useState('');
+  // Gates the "Sign Up" and "Continue with Google" buttons in signup mode
+  // until the user ticks the Terms/Privacy checkbox — see the consent
+  // block rendered just above the submit button, and the disabled= props
+  // on both buttons below. Deliberately NOT applied in signin mode:
+  // consent is captured once, at the moment an account is created, not
+  // re-demanded on every later login.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [legalOverlay, setLegalOverlay] = useState<'terms' | 'privacy' | null>(null);
+  const signupConsentBlocked = authMode === 'signup' && !agreedToTerms;
   const emailInputRef = useRef<HTMLInputElement>(null);
 
   // --- Google OAuth state ---
@@ -1244,6 +1254,10 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     e.preventDefault();
     setAuthError('');
     setSignupNotice('');
+    if (authMode === 'signup' && !agreedToTerms) {
+      setAuthError('Please agree to the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
     setAuthBusy(true);
     try {
       if (authMode === 'signup') {
@@ -1331,6 +1345,10 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   }, []);
 
   const handleGoogleSignIn = async () => {
+    if (authMode === 'signup' && !agreedToTerms) {
+      setGoogleError('Please agree to the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
     setGoogleError('');
     setGoogleBusy(true);
     try {
@@ -1459,7 +1477,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             onClick={handleGoogleSignIn}
             onMouseEnter={() => setGoogleHovered(true)}
             onMouseLeave={() => setGoogleHovered(false)}
-            disabled={googleBusy}
+            disabled={googleBusy || signupConsentBlocked}
             className="relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             style={authCascadeStyle(2)}
           >
@@ -1552,12 +1570,66 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               style={authCascadeStyle(5)}
             />
 
+            {authMode === 'signup' && (
+              <label
+                className="flex cursor-pointer items-start gap-2.5 pt-1 select-none"
+                style={authCascadeStyle(5.5)}
+              >
+                <span
+                  role="checkbox"
+                  aria-checked={agreedToTerms}
+                  tabIndex={0}
+                  onClick={() => setAgreedToTerms((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      setAgreedToTerms((v) => !v);
+                    }
+                  }}
+                  className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
+                  style={
+                    agreedToTerms
+                      ? { ...liquidFillStyle(), border: '1px solid transparent' }
+                      : { borderColor: 'rgb(64 64 70)', background: 'rgba(39,39,42,0.5)' }
+                  }
+                >
+                  {agreedToTerms && <Check className="h-3 w-3 text-neutral-950" strokeWidth={3} />}
+                </span>
+                <span className="text-[11.5px] leading-snug text-neutral-500">
+                  I agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLegalOverlay('terms');
+                    }}
+                    className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                  >
+                    Terms of Service
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLegalOverlay('privacy');
+                    }}
+                    className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                  >
+                    Privacy Policy
+                  </button>
+                </span>
+              </label>
+            )}
+
             {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
             {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
 
             <button
               type="submit"
-              disabled={authBusy}
+              disabled={authBusy || signupConsentBlocked}
               className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
               style={liquidFillStyle(authCascadeStyle(6))}
             >
@@ -1599,6 +1671,8 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
         </div>
+
+        {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
       </div>
     );
   }
