@@ -26,13 +26,12 @@ import {
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
 import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../lib/liquidFill';
-// Same magnetic cursor + click-ripple used throughout the unlocked app
-// (Primitives.tsx). Both are pure, self-contained exports with no
-// dependency on app state, so they're safe to mount here, before App
-// (and its own <MagneticCursor />) ever exists — see the
-// `magnetic-cursor-active` / `.animate-ripple` rules in index.css, which
-// are global for the same reason.
-import { MagneticCursor, useRipple } from './ui/Primitives';
+// Same magnetic cursor used throughout the unlocked app (Primitives.tsx).
+// Pure, self-contained export with no dependency on app state, so it's
+// safe to mount here, before App (and its own <MagneticCursor />) ever
+// exists — see the `magnetic-cursor-active` rule in index.css, which is
+// global for the same reason.
+import { MagneticCursor } from './ui/Primitives';
 
 const PASSCODE_LENGTH = 6;
 
@@ -156,22 +155,32 @@ function GoogleIcon({ className }: { className?: string }) {
 // near the bottom of this file for the same rationale.
 function AuthBentoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [spawnRipple, rippleNodes] = useRipple();
+  const fineRef = useRef(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+  const [hovering, setHovering] = useState(false);
+  const [spot, setSpot] = useState({ x: 50, y: 50 });
 
-  // Purely decorative (no onClick semantics — the card itself isn't a
-  // button) so this fires on every press inside the box, including on
-  // its own background padding, not just on the real controls nested
-  // inside it. `cursor-target` makes the magnetic cursor ring react to
-  // the box the same way it does to the dashboard's Card.
-  const handleDown = (e: React.MouseEvent | React.TouchEvent) => {
-    spawnRipple(e, ref.current);
+  // Same soft, blurred "spotlight" the dashboard's <Card> bento boxes
+  // use: a radial gradient that tracks the cursor position and only
+  // exists while the pointer is actually inside the box (mounted on
+  // enter/move, unmounted on leave) — not a one-shot click ripple. Skips
+  // touch devices (no continuous hover to track) via the same
+  // `pointer: fine` check Card uses.
+  const handleMove = (e: React.MouseEvent) => {
+    if (!fineRef.current || !ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    setSpot({ x: px * 100, y: py * 100 });
+    setHovering(true);
   };
+
+  const handleLeave = () => setHovering(false);
 
   return (
     <div
       ref={ref}
-      onMouseDown={handleDown}
-      onTouchStart={handleDown}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
       className={`cursor-target relative w-full max-w-sm overflow-hidden rounded-[28px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] px-6 py-8 sm:px-9 sm:py-9 ${className}`}
     >
       <div
@@ -182,8 +191,14 @@ function AuthBentoCard({ children, className = '' }: { children: React.ReactNode
         aria-hidden
         className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
       />
+      {hovering && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 rounded-[28px] transition-opacity duration-300"
+          style={{ background: `radial-gradient(420px circle at ${spot.x}% ${spot.y}%, rgba(255,255,255,0.08), transparent 65%)` }}
+        />
+      )}
       <div className="relative flex flex-col items-center">{children}</div>
-      {rippleNodes}
     </div>
   );
 }
