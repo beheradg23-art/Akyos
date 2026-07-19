@@ -17,6 +17,7 @@ import { AkyosMark } from './shared/AkyosMark';
 import { liquidFillStyle, LIQUID_GRADIENT_KEYFRAMES } from '../lib/liquidFill';
 import { lookupParentalConsentToken, decideParentalConsent } from '../lib/parentalConsent';
 import type { ParentalConsentStatus } from '../lib/parentalConsent';
+import LegalPage from './legal/LegalPage';
 // Same magnetic cursor used throughout the rest of the app/AuthGate — pure,
 // self-contained, safe to mount here since this page renders standalone,
 // before AuthGate/App (and their own <MagneticCursor />) ever exist.
@@ -74,6 +75,13 @@ function ConsentBentoCard({ children }: { children: React.ReactNode }) {
 
 export function ParentalConsentDecisionPage({ token }: { token: string }) {
   const [state, setState] = useState<ViewState>({ phase: 'loading' });
+  // The parent hasn't seen or agreed to anything yet just by clicking the
+  // email link — they need to actually confirm they've read the Terms/
+  // Privacy Policy before their Approve counts as informed consent for a
+  // minor's account. Decline never needed that (declining requires no
+  // agreement to anything), so this only gates the Approve button.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [legalOverlay, setLegalOverlay] = useState<'terms' | 'privacy' | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,11 +159,64 @@ export function ParentalConsentDecisionPage({ token }: { token: string }) {
                 as their parent/guardian contact wants to create an Akyos account and has told us they're under 18.
                 Akyos requires your permission before their account can be used. Nothing has been activated yet.
               </p>
+              <label
+                className="mb-5 flex w-full cursor-pointer items-start gap-2.5 select-none"
+              >
+                <span
+                  role="checkbox"
+                  aria-checked={agreedToTerms}
+                  tabIndex={0}
+                  onClick={() => setAgreedToTerms((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      setAgreedToTerms((v) => !v);
+                    }
+                  }}
+                  className="cursor-target mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
+                  style={
+                    agreedToTerms
+                      ? { ...liquidFillStyle(), border: '1px solid transparent' }
+                      : { borderColor: 'rgb(64 64 70)', background: 'rgba(39,39,42,0.5)' }
+                  }
+                >
+                  {agreedToTerms && <Check className="h-3 w-3 text-neutral-950" strokeWidth={3} />}
+                </span>
+                <span className="text-[12px] leading-snug text-neutral-400">
+                  I've read and agree to the{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLegalOverlay('terms');
+                    }}
+                    className="cursor-target font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                  >
+                    Terms of Service
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLegalOverlay('privacy');
+                    }}
+                    className="cursor-target font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                  >
+                    Privacy Policy
+                  </button>{' '}
+                  on behalf of my child.
+                </span>
+              </label>
+
               <div className="flex w-full flex-col gap-2.5">
                 <button
                   type="button"
+                  disabled={!agreedToTerms}
                   onClick={() => decide('approve')}
-                  className="cursor-target flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950"
+                  className="cursor-target flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
                   style={liquidFillStyle()}
                 >
                   <Check className="h-4 w-4" strokeWidth={2.5} /> Approve
@@ -174,6 +235,8 @@ export function ParentalConsentDecisionPage({ token }: { token: string }) {
             </div>
           </ConsentBentoCard>
         )}
+
+        {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
 
         {state.phase === 'ready' && state.status !== 'pending' && (
           <ConsentBentoCard>
