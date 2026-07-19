@@ -389,28 +389,6 @@ function SignInVisualPanel() {
             }}
           />
 
-          {/* Glyph Matrix: a quiet grid of mutating monospace glyphs,
-              layered over the dot grid for extra depth. Kept faint and
-              masked to the same top-weighted region as the dot grid so it
-              reads as ambient texture, not noise competing with the copy. */}
-          <div
-            className="absolute inset-0 opacity-[0.16]"
-            style={{
-              maskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
-              WebkitMaskImage: 'radial-gradient(ellipse 80% 65% at 50% 38%, #000 40%, transparent 100%)',
-            }}
-          >
-            <GlyphMatrix
-              glyphs="01·•+*/\<>="
-              cellSize={14}
-              mutationRate={0.04}
-              interval={90}
-              fadeBottom={0.7}
-              color="#c4b5fd"
-              className="h-full w-full"
-            />
-          </div>
-
           {/* Guardian render, floating in the empty space to the right of
               the copy — just the slow float/rotate drift, no glow behind
               it, at full brightness/opacity. `akyos-brand-hue` re-hues its
@@ -1700,7 +1678,26 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         <style>{CASCADE_KEYFRAMES}</style>
         <SignInVisualPanel />
 
-        <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
+        <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden px-6 lg:w-1/2">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-[0.14]"
+            style={{
+              maskImage: 'radial-gradient(ellipse 70% 60% at 50% 42%, #000 35%, transparent 100%)',
+              WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 50% 42%, #000 35%, transparent 100%)',
+            }}
+          >
+            <GlyphMatrix
+              glyphs="01·•+*/\<>="
+              cellSize={14}
+              mutationRate={0.04}
+              interval={90}
+              fadeBottom={0.7}
+              color="#a78bfa"
+              className="h-full w-full"
+            />
+          </div>
+
           <AuthBentoCard>
           <div
             className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
