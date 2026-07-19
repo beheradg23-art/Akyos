@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NO_SELECT_CSS } from '../styles/noSelect';
 import { DateField, TimeField } from './ui/Primitives';
+import { PENDING_MINOR_BIRTHDATE_KEY } from '../lib/cloudSync';
 import { AkyosMark } from './shared/AkyosMark';
 import {
   Sparkles, Loader2, RefreshCcw, ArrowRight, ArrowLeft, ClipboardList,
@@ -425,9 +426,23 @@ export default function OnboardingWizard({
   }) => void;
 }) {
   const [stage, setStage] = useState<Stage>('intro');
+  // Set on the age-gate screen in AuthGate (before this wizard ever runs)
+  // whenever the account owner already entered and had their birthdate
+  // checked there — see PENDING_MINOR_BIRTHDATE_KEY in cloudSync.ts. When
+  // present, it's used both as the starting value here AND rendered
+  // read-only below, so someone who went through under-18 parental
+  // consent can't just quietly re-enter an adult birthdate during
+  // onboarding to route around it.
+  const [verifiedBirthdate] = useState<string>(() => {
+    try {
+      return localStorage.getItem(PENDING_MINOR_BIRTHDATE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [answers, setAnswers] = useState<QuestionnaireAnswers>(() => ({
     ...DEFAULT_QUESTIONNAIRE_ANSWERS,
-    birthdate: defaultBirthdate(),
+    birthdate: verifiedBirthdate || defaultBirthdate(),
   }));
   // Index into the person's *selected* domains (in GOAL_DOMAINS' canonical
   // order) while stepping through the branching question screens — one
@@ -779,7 +794,14 @@ export default function OnboardingWizard({
             </div>
             <div className="lg:col-span-1">
               <label className={labelCls}>Birthdate</label>
-              <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
+              {verifiedBirthdate ? (
+                <div className={`${inputCls} flex items-center justify-between gap-2 text-neutral-400`}>
+                  <span>{answers.birthdate}</span>
+                  <span className="flex-none text-[9.5px] font-semibold uppercase tracking-wide text-neutral-600">Verified</span>
+                </div>
+              ) : (
+                <DateField value={answers.birthdate} onChange={(e) => setAnswers((a) => ({ ...a, birthdate: e.target.value }))} className={inputCls} />
+              )}
             </div>
             <div className="lg:col-span-1">
               <label className={labelCls}>Wake time</label>

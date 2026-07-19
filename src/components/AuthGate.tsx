@@ -1,8 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check, Sparkles, BookOpen, ClipboardList, Clock3, ListChecks, Dumbbell, Timer } from 'lucide-react';
+import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check, X, Sparkles, BookOpen, ClipboardList, Clock3, ListChecks, Dumbbell, Timer } from 'lucide-react';
 import { AkyosMark } from './shared/AkyosMark';
 import LegalPage from './legal/LegalPage';
 import { supabase } from '../lib/supabaseClient';
+import { calculateAge } from '../lib/appConfig';
+import {
+  requestParentalConsent,
+  getParentalConsentStatus,
+  isPlausibleEmail as isPlausibleParentEmail,
+  maskEmail,
+} from '../lib/parentalConsent';
 import {
   pullFromCloud,
   pushToCloud,
@@ -20,6 +27,7 @@ import {
   PASSCODE_HASH_KEY,
   PASSCODE_RECOVERY_PENDING_KEY,
   PASSCODE_RECOVERY_GOOGLE_PENDING_KEY,
+  PENDING_MINOR_BIRTHDATE_KEY,
   setPasscodeRecoveryGooglePending,
   consumePasscodeRecoveryGooglePending,
 } from '../lib/cloudSync';
@@ -31,11 +39,16 @@ import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../l
 // safe to mount here, before App (and its own <MagneticCursor />) ever
 // exists — see the `magnetic-cursor-active` rule in index.css, which is
 // global for the same reason.
-import { MagneticCursor } from './ui/Primitives';
+import { MagneticCursor, DateField } from './ui/Primitives';
 import { GlyphMatrix } from './ui/GlyphMatrix';
 import { KineticText } from './ui/kinetic-text';
 
 const PASSCODE_LENGTH = 6;
+// How old someone must be to skip the parental-consent flow entirely.
+const ADULT_AGE_THRESHOLD = 18;
+// How often the child's client re-checks whether the parent has decided
+// yet, while sitting on the "waiting for your parent" screen.
+const CONSENT_POLL_INTERVAL_MS = 6000;
 
 // --- shared "liquid" animated gradient fill ------------------------------
 //
@@ -1068,6 +1081,39 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const [passedConsentGate, setPassedConsentGate] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
 
+  // --- age gate (runs BEFORE the Terms/Privacy consent gate above) ---
+  // Same "fires exactly once per genuinely new account" choke point as
+  // passedConsentGate — see the big comment on the setPasscode stage below.
+  // Under-18 accounts can't clear this until a parent/guardian approves,
+  // so it's kept as its own gate rather than folded into passedConsentGate.
+  const [passedAgeGate, setPassedAgeGate] = useState(false);
+  // 'loading' — resolving whichever of the phases below actually applies
+  //   (cached birthdate? existing consent request already in flight?)
+  //   before showing anything, so a returning-but-still-pending minor
+  //   doesn't flash the birthdate question again.
+  // 'askBirthdate' — the age question itself.
+  // 'collectParentEmail' — under 18: ask for a parent/guardian email.
+  // 'pendingParent' — request sent, waiting on the parent's decision.
+  // 'denied' — the parent declined.
+  const [ageGatePhase, setAgeGatePhase] = useState<
+    'loading' | 'askBirthdate' | 'collectParentEmail' | 'pendingParent' | 'denied'
+  >('loading');
+  const [birthdateInput, setBirthdateInput] = useState('');
+  const [ageGateError, setAgeGateError] = useState('');
+  const [parentEmail, setParentEmail] = useState('');
+  const [parentEmailFocused, setParentEmailFocused] = useState(false);
+  const parentEmailSweep = useSweepReveal(parentEmailFocused);
+  const [consentBusy, setConsentBusy] = useState(false);
+  const [consentError, setConsentError] = useState('');
+  const [consentEmailSent, setConsentEmailSent] = useState(true);
+  // Only ever set when the deploy has no email provider configured yet
+  // (see api/parental-consent.ts) — a same-origin link the child can hand
+  // to their parent directly, so the flow still works end-to-end before
+  // real email delivery is wired up. Never set when emailSent is true.
+  const [consentFallbackLink, setConsentFallbackLink] = useState<string | null>(null);
+  const [consentLinkCopied, setConsentLinkCopied] = useState(false);
+  const [maskedParentEmail, setMaskedParentEmail] = useState('');
+
   // --- Google OAuth state ---
   const [googleBusy, setGoogleBusy] = useState(false);
   // Hover flag for "Continue with Google" — drives the sweep overlay
@@ -1194,6 +1240,155 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       console.error('[AuthGate] passcode fetch failed', e);
     }
     sessionStorage.setItem(SYNCED_FLAG, 'true');
+    window.location.reload();
+  };
+
+  // --- age gate resolution ---------------------------------------------
+  // Runs once the "setPasscode" stage is reached (i.e. this is confirmed
+  // to be a genuinely new account) and figures out which of the phases
+  // above actually applies right now — including resuming a minor's
+  // in-flight parental-consent request if they left and came back (e.g.
+  // closed the app while waiting, or signed in again on another device),
+  // by asking the server for the latest status rather than trusting
+  // anything cached locally.
+  useEffect(() => {
+    if (stage !== 'setPasscode' || passedAgeGate) return;
+    let cancelled = false;
+    (async () => {
+      setAgeGatePhase('loading');
+      let cachedBirthdate = '';
+      try {
+        cachedBirthdate = localStorage.getItem(PENDING_MINOR_BIRTHDATE_KEY) || '';
+      } catch {
+        // ignore — falls through to asking again
+      }
+      const age = cachedBirthdate ? calculateAge(cachedBirthdate) : null;
+      if (cachedBirthdate && age !== null) {
+        setBirthdateInput(cachedBirthdate);
+        if (age >= ADULT_AGE_THRESHOLD) {
+          if (!cancelled) setPassedAgeGate(true);
+          return;
+        }
+      } else {
+        if (!cancelled) setAgeGatePhase('askBirthdate');
+        return;
+      }
+      // Cached birthdate says under 18 — check the server for whatever
+      // consent state already exists (none yet / pending / approved / denied)
+      // rather than assuming this is the first time through.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        if (!cancelled) setAgeGatePhase('askBirthdate');
+        return;
+      }
+      const result = await getParentalConsentStatus(token);
+      if (cancelled) return;
+      if (!result.ok || result.status === 'none') {
+        setAgeGatePhase('collectParentEmail');
+      } else if (result.status === 'pending') {
+        setMaskedParentEmail(result.parentEmailMasked || '');
+        setAgeGatePhase('pendingParent');
+      } else if (result.status === 'approved') {
+        setPassedAgeGate(true);
+      } else if (result.status === 'denied') {
+        setAgeGatePhase('denied');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, passedAgeGate]);
+
+  // Poll for the parent's decision while sitting on the "waiting" screen.
+  useEffect(() => {
+    if (ageGatePhase !== 'pendingParent') return;
+    let cancelled = false;
+    const poll = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token || cancelled) return;
+      const result = await getParentalConsentStatus(token);
+      if (cancelled || !result.ok) return;
+      if (result.status === 'approved') setPassedAgeGate(true);
+      else if (result.status === 'denied') setAgeGatePhase('denied');
+    };
+    const t = setInterval(poll, CONSENT_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [ageGatePhase]);
+
+  const handleBirthdateContinue = () => {
+    setAgeGateError('');
+    const age = calculateAge(birthdateInput);
+    if (!birthdateInput || age === null) {
+      setAgeGateError('Enter a valid date of birth.');
+      return;
+    }
+    try {
+      localStorage.setItem(PENDING_MINOR_BIRTHDATE_KEY, birthdateInput);
+    } catch {
+      // non-fatal — worst case, this screen re-asks next time
+    }
+    if (age >= ADULT_AGE_THRESHOLD) {
+      setPassedAgeGate(true);
+    } else {
+      setAgeGatePhase('collectParentEmail');
+    }
+  };
+
+  const handleSendParentRequest = async () => {
+    setConsentError('');
+    if (!isPlausibleParentEmail(parentEmail)) {
+      setConsentError('Enter a valid parent/guardian email.');
+      return;
+    }
+    setConsentBusy(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setConsentError('Your session expired — please sign in again.');
+        return;
+      }
+      const result = await requestParentalConsent({
+        birthdate: birthdateInput,
+        parentEmail,
+        accessToken: token,
+      });
+      if (!result.ok) {
+        setConsentError(result.error || 'Could not send the request. Please try again.');
+        return;
+      }
+      setConsentEmailSent(result.emailSent);
+      setConsentFallbackLink(result.fallbackLink || null);
+      setMaskedParentEmail(maskEmail(parentEmail));
+      setAgeGatePhase('pendingParent');
+    } finally {
+      setConsentBusy(false);
+    }
+  };
+
+  const handleCopyFallbackLink = async () => {
+    if (!consentFallbackLink) return;
+    try {
+      await navigator.clipboard.writeText(consentFallbackLink);
+      setConsentLinkCopied(true);
+      setTimeout(() => setConsentLinkCopied(false), 2000);
+    } catch {
+      // clipboard access can fail silently (permissions) — the link is
+      // still visible on-screen to copy by hand
+    }
+  };
+
+  const handleAgeGateSignOut = async () => {
+    sessionStorage.removeItem(SYNCED_FLAG);
+    await supabase.auth.signOut();
+    resetLocalAccountState();
+    localStorage.removeItem(LAST_ACTIVE_USER_KEY);
     window.location.reload();
   };
 
@@ -1881,6 +2076,253 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     // cached locally before this stage is ever evaluated), and it fires
     // uniformly for both auth methods instead of needing separate gating
     // logic on the Sign Up button and the Google button.
+    //
+    // The age gate runs first (see passedAgeGate/ageGatePhase state above)
+    // — same "fires exactly once" reasoning applies to it, since it's
+    // resolved by a real birthdate + (for minors) a real parent decision
+    // rather than anything that resets on its own.
+    if (!passedAgeGate) {
+      if (ageGatePhase === 'loading') {
+        return (
+          <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
+              <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+            </div>
+          </div>
+        );
+      }
+
+      if (ageGatePhase === 'askBirthdate') {
+        return (
+          <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <style>{CASCADE_KEYFRAMES}</style>
+            <AuthBentoCard>
+            <div
+              className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+              style={liquidFillStyle(cascadeStyle(0))}
+            >
+              <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+            </div>
+
+            <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+              How old are you?
+            </h1>
+            <p className="mb-7 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
+              We ask everyone this once, right after signing up — it decides whether we need a parent or guardian's
+              permission before you can continue.
+            </p>
+
+            <div className="mb-2 w-full max-w-xs" style={cascadeStyle(3)}>
+              <DateField
+                value={birthdateInput}
+                onChange={(e) => {
+                  setBirthdateInput(e.target.value);
+                  setAgeGateError('');
+                }}
+                placeholder="Date of birth"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+              />
+            </div>
+            <p className={`mb-5 max-w-xs min-h-[16px] text-center text-[12px] font-medium text-rose-400 transition-opacity duration-150 ${ageGateError ? 'opacity-100' : 'opacity-0'}`}>
+              {ageGateError || 'placeholder'}
+            </p>
+
+            <button
+              type="button"
+              disabled={!birthdateInput}
+              onClick={handleBirthdateContinue}
+              className="cursor-target w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
+              style={liquidFillStyle(cascadeStyle(4))}
+            >
+              Continue
+            </button>
+            </AuthBentoCard>
+          </div>
+        );
+      }
+
+      if (ageGatePhase === 'collectParentEmail') {
+        return (
+          <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <style>{CASCADE_KEYFRAMES}</style>
+            <AuthBentoCard>
+            <div
+              className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+              style={liquidFillStyle(cascadeStyle(0))}
+            >
+              <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+            </div>
+
+            <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+              Ask a parent or guardian
+            </h1>
+            <p className="mb-7 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
+              Since you're under 18, we need a parent or guardian's permission before your account can be used.
+              Enter their email — we'll send them a link to approve or decline.
+            </p>
+
+            <div className="relative mb-2 w-full max-w-xs" style={cascadeStyle(3)}>
+              <input
+                type="email"
+                autoComplete="email"
+                value={parentEmail}
+                onChange={(e) => {
+                  setParentEmail(e.target.value);
+                  setConsentError('');
+                }}
+                onFocus={() => setParentEmailFocused(true)}
+                onBlur={() => setParentEmailFocused(false)}
+                placeholder="Parent or guardian's email"
+                className="cursor-target w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+              />
+              {parentEmailSweep.mounted && (
+                // Same focus-gated sweep as the sign-in email field — ring-only
+                // cutout filled with the local liquidFillStyle() brand
+                // gradient, revealed via the --akyos-sweep mask, faded back
+                // out (no re-sweep) via useSweepReveal on blur.
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-xl"
+                  style={{ animation: parentEmailSweep.animation, ...SWEEP_REVEAL_STYLE }}
+                >
+                  <div
+                    className="absolute inset-0 rounded-xl"
+                    style={{
+                      padding: '1.5px',
+                      WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                      WebkitMaskComposite: 'xor',
+                      maskComposite: 'exclude',
+                      ...liquidFillStyle(),
+                    } as React.CSSProperties}
+                  />
+                </div>
+              )}
+            </div>
+            <p className={`mb-5 max-w-xs min-h-[16px] text-center text-[12px] font-medium text-rose-400 transition-opacity duration-150 ${consentError ? 'opacity-100' : 'opacity-0'}`}>
+              {consentError || 'placeholder'}
+            </p>
+
+            <button
+              type="button"
+              disabled={!parentEmail || consentBusy}
+              onClick={handleSendParentRequest}
+              className="cursor-target mb-3 flex w-full max-w-xs items-center justify-center gap-2 rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
+              style={liquidFillStyle(cascadeStyle(4))}
+            >
+              {consentBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {consentBusy ? 'Sending…' : 'Send request'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgeGatePhase('askBirthdate')}
+              className="cursor-target text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+              style={cascadeStyle(5)}
+            >
+              That's not my birthdate
+            </button>
+            </AuthBentoCard>
+          </div>
+        );
+      }
+
+      if (ageGatePhase === 'pendingParent') {
+        return (
+          <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <style>{CASCADE_KEYFRAMES}</style>
+            <AuthBentoCard>
+            <div
+              className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
+              style={liquidFillStyle(cascadeStyle(0))}
+            >
+              <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
+            </div>
+
+            <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+              Waiting for approval
+            </h1>
+            <p className="mb-2 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
+              {consentEmailSent ? (
+                <>We've emailed <span className="font-medium text-neutral-300">{maskedParentEmail || 'your parent'}</span> to ask for permission. This page will update automatically once they respond.</>
+              ) : (
+                <>We couldn't email <span className="font-medium text-neutral-300">{maskedParentEmail || 'your parent'}</span> automatically. Use the link below to send it to them yourself — this page will update automatically once they respond.</>
+              )}
+            </p>
+
+            {!consentEmailSent && consentFallbackLink && (
+              <div className="mb-5 w-full max-w-xs" style={cascadeStyle(3)}>
+                <div className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/80 px-3 py-2.5">
+                  <span className="flex-1 truncate text-[11.5px] text-neutral-400">{consentFallbackLink}</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyFallbackLink}
+                    className="cursor-target flex-none text-[11px] font-semibold text-violet-400 hover:text-violet-300"
+                  >
+                    {consentLinkCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-6 flex items-center gap-2 text-neutral-600" style={cascadeStyle(4)}>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span className="text-[11.5px]">Checking for a response…</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setConsentError('');
+                setAgeGatePhase('collectParentEmail');
+              }}
+              className="cursor-target mb-2 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+              style={cascadeStyle(5)}
+            >
+              Use a different email
+            </button>
+            <button type="button" onClick={handleAgeGateSignOut} className="cursor-target text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400" style={cascadeStyle(6)}>
+              Sign out
+            </button>
+            </AuthBentoCard>
+          </div>
+        );
+      }
+
+      // ageGatePhase === 'denied'
+      return (
+        <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+          <style>{CASCADE_KEYFRAMES}</style>
+          <AuthBentoCard>
+          <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-800/60" style={cascadeStyle(0)}>
+            <X className="h-5 w-5 text-neutral-400" strokeWidth={2} />
+          </div>
+
+          <h1 className="mb-1.5 text-[15px] font-semibold tracking-tight text-neutral-50" style={cascadeStyle(1)}>
+            Permission declined
+          </h1>
+          <p className="mb-7 max-w-xs text-center text-[12.5px] leading-relaxed text-neutral-500" style={cascadeStyle(2)}>
+            Your parent or guardian declined this request, so we can't activate your account. If this was a
+            mistake, you can try again with a different email.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => {
+              setConsentError('');
+              setAgeGatePhase('collectParentEmail');
+            }}
+            className="cursor-target mb-3 w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity"
+            style={liquidFillStyle(cascadeStyle(3))}
+          >
+            Try again
+          </button>
+          <button type="button" onClick={handleAgeGateSignOut} className="cursor-target text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400" style={cascadeStyle(4)}>
+            Sign out
+          </button>
+          </AuthBentoCard>
+        </div>
+      );
+    }
+
     if (!passedConsentGate) {
       return (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">

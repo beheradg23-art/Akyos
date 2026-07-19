@@ -41,6 +41,17 @@ export type CloudSnapshot = Record<string, string | null>;
 // "whose data is currently sitting in this browser" marker.
 export const LAST_ACTIVE_USER_KEY = 'dcc_last_active_user_id';
 
+// The birthdate captured on the age-verification screen (see AuthGate's
+// "setPasscode" stage) — set the moment the person enters it, BEFORE
+// onboarding ever runs, so OnboardingWizard's own Birthdate question can
+// pick it up as a pre-filled, locked value instead of asking a second time
+// (see PENDING_MINOR_BIRTHDATE_KEY usage in OnboardingWizard.tsx). Kept out
+// of SYNC_KEYS the same way PASSCODE_HASH_KEY is: it's a per-device
+// scratch value consumed once by onboarding, not real synced profile data
+// (the real, ongoing source of truth after that is profile.birthdate
+// inside app_config_v1, which IS synced).
+export const PENDING_MINOR_BIRTHDATE_KEY = 'dcc_pending_birthdate';
+
 /** Wipes every account-scoped key from localStorage (all of SYNC_KEYS, plus
  * the passcode hash, which is deliberately kept out of SYNC_KEYS/the cloud
  * snapshot since it's derived per-device). Does NOT touch
@@ -60,6 +71,10 @@ export function resetLocalAccountState(): void {
   // PASSCODE_RECOVERY_PENDING_KEY below for the bug this closes.
   try { localStorage.removeItem(PASSCODE_RECOVERY_GOOGLE_PENDING_KEY); } catch { /* ignore */ }
   try { localStorage.removeItem(PASSCODE_RECOVERY_PENDING_KEY); } catch { /* ignore */ }
+  // Same reasoning: a pending-birthdate scratch value left over from a
+  // different (or abandoned) account's age-gate must not leak into the
+  // next account that signs into this browser.
+  try { localStorage.removeItem(PENDING_MINOR_BIRTHDATE_KEY); } catch { /* ignore */ }
 }
 
 /**

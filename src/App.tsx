@@ -22,6 +22,7 @@ import { AkyosMark } from './components/shared/AkyosMark';
 // sees, so there's nothing to gain from splitting it into its own chunk —
 // it would just add a network round trip before the app can render at all.
 import AuthGate from './components/AuthGate';
+import { ParentalConsentDecisionPage } from './components/ParentalConsentDecisionPage';
 import { useCloudAutoSync } from './lib/cloudSync';
 import { Toaster } from './lib/toast';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -109,6 +110,14 @@ function TabLoadingFallback() {
     </div>
   );
 }
+
+// A link emailed to a parent/guardian (see api/parental-consent.ts) points
+// back at the app's own origin with this query param — read once here,
+// outside of any hook, since the URL doesn't change without a real
+// navigation in this app. Handled as the very first possible render branch
+// below (ahead of AuthGate) so it works regardless of whatever session, if
+// any, already happens to be sitting in this browser.
+const PARENTAL_CONSENT_PARAM = 'parentalConsent';
 
 export default function JEEDashboard() {
   const [unlocked, setUnlocked] = useState(false);
@@ -425,6 +434,15 @@ export default function JEEDashboard() {
     }
     wasCompleteRef.current = overallPct === 100;
   }, [overallPct, currentDateStr, clearedDaysCount]);
+
+  const parentalConsentToken = new URLSearchParams(window.location.search).get(PARENTAL_CONSENT_PARAM);
+  if (parentalConsentToken) {
+    return (
+      <ErrorBoundary label="Parental consent">
+        <ParentalConsentDecisionPage token={parentalConsentToken} />
+      </ErrorBoundary>
+    );
+  }
 
   if (!unlocked) {
     return (
