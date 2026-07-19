@@ -59,11 +59,11 @@ export function FadeColon({ size = 84 }: { size?: number | string }) {
     <div className="flex flex-col items-center justify-center gap-2" style={{ height: size }}>
       <span
         className="block rounded-full bg-purple-400/80 animate-dotBreathe"
-        style={{ ...dotStyle, boxShadow: '0 0 8px rgba(192,132,252,0.8)' }}
+        style={{ ...dotStyle, boxShadow: '0 0 8px rgb(var(--purple-400) / 0.8)' }}
       />
       <span
         className="block rounded-full bg-purple-400/80 animate-dotBreathe"
-        style={{ ...dotStyle, boxShadow: '0 0 8px rgba(192,132,252,0.8)', animationDelay: '0.3s' }}
+        style={{ ...dotStyle, boxShadow: '0 0 8px rgb(var(--purple-400) / 0.8)', animationDelay: '0.3s' }}
       />
     </div>
   );
@@ -584,7 +584,7 @@ export function AshClockTab() {
 
   return (
     <div className="space-y-5 animate-fadeIn">
-      <div className="relative overflow-hidden border border-purple-900/30 bg-gradient-to-br from-[#1a0f2e] via-neutral-950 to-[#150a26] rounded-2xl p-4 sm:p-6 shadow-xl">
+      <div className="relative overflow-hidden border border-purple-900/30 bg-gradient-to-br from-[rgb(var(--clock-tile-bottom))] via-neutral-950 to-[rgb(var(--clock-card-to))] rounded-2xl p-4 sm:p-6 shadow-xl">
         <div className="absolute -top-32 -left-20 w-72 h-72 rounded-full bg-purple-600/10 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-32 -right-20 w-72 h-72 rounded-full bg-fuchsia-600/10 blur-3xl pointer-events-none" />
 

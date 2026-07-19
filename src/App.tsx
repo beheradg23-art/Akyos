@@ -906,8 +906,8 @@ export default function JEEDashboard() {
           height: var(--fade-h);
           border-radius: 10px;
           overflow: hidden;
-          background: linear-gradient(180deg, #2d1a4d 0%, #1a0f2e 100%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgba(147,51,234,0.16);
+          background: linear-gradient(180deg, rgb(var(--clock-tile-top)) 0%, rgb(var(--clock-tile-bottom)) 100%);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 4px 14px rgb(var(--purple-600) / 0.16);
         }
         .fade-num {
           position: absolute;

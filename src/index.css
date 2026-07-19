@@ -102,6 +102,13 @@ html.theme-mono-light #theme-overlay {
   --purple-800: 107 33 168;
   --purple-900: 88 28 135;
   --purple-950: 59 7 100;
+  /* Clock tab digit-tile background + card background — bespoke shades
+     (not exact Tailwind stops) that were previously hardcoded hex inside
+     App.tsx's <style> block and an arbitrary-value Tailwind gradient in
+     AshClockTab.tsx, so neither reacted to the theme at all. */
+  --clock-tile-top: 45 26 77;
+  --clock-tile-bottom: 26 15 46;
+  --clock-card-to: 21 10 38;
 }
 
 /* ---------------------------------------------------------------------
@@ -137,6 +144,7 @@ html.theme-ember {
   --purple-300: 254 228 180; --purple-400: 252 212 132; --purple-500: 247 195 85;
   --purple-600: 234 178 51; --purple-700: 206 155 34; --purple-800: 168 130 33;
   --purple-900: 135 106 28; --purple-950: 100 75 7;
+  --clock-tile-top: 77 54 26; --clock-tile-bottom: 46 31 15; --clock-card-to: 38 26 10;
 }
 
 html.theme-blush {
@@ -154,6 +162,7 @@ html.theme-blush {
   --purple-300: 254 180 206; --purple-400: 252 132 172; --purple-500: 247 85 137;
   --purple-600: 234 51 107; --purple-700: 206 34 85; --purple-800: 168 33 71;
   --purple-900: 135 28 57; --purple-950: 100 7 32;
+  --clock-tile-top: 77 26 49; --clock-tile-bottom: 46 15 30; --clock-card-to: 38 10 22;
 }
 
 html.theme-crimson {
@@ -171,6 +180,7 @@ html.theme-crimson {
   --purple-300: 254 191 180; --purple-400: 252 152 132; --purple-500: 247 114 85;
   --purple-600: 234 86 51; --purple-700: 206 69 34; --purple-800: 168 62 33;
   --purple-900: 135 52 28; --purple-950: 100 28 7;
+  --clock-tile-top: 77 28 26; --clock-tile-bottom: 46 16 15; --clock-card-to: 38 12 10;
 }
 
 html.theme-jade {
@@ -188,4 +198,5 @@ html.theme-jade {
   --purple-300: 180 254 222; --purple-400: 132 252 202; --purple-500: 85 247 181;
   --purple-600: 51 234 162; --purple-700: 34 206 140; --purple-800: 33 168 118;
   --purple-900: 28 135 97; --purple-950: 7 100 67;
+  --clock-tile-top: 26 77 49; --clock-tile-bottom: 15 46 29; --clock-card-to: 10 38 23;
 }
