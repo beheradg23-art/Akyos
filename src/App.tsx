@@ -111,6 +111,101 @@ function TabLoadingFallback() {
   );
 }
 
+const SUPPORT_POP_KEYFRAMES = `
+  @keyframes akyos-support-pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.94); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+`;
+
+// Fixed, corner-anchored footer menu: a plain "/" circle at rest. Hovering
+// (fine-pointer only, see the peer-less pure-CSS approach below) morphs it
+// into a "/support" pill by growing an inner text span from max-width 0 —
+// no JS state needed for that part, it's one continuous CSS transition so
+// the circle-to-pill grow reads as a single morph. Clicking is a separate,
+// JS-driven state: it pops a small card above the button holding the actual
+// contact/bug/instagram/credit links that used to sit in the page footer.
+function SupportMenu() {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: MouseEvent) => {
+      if (wrapRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  const closeAfterClick = () => setOpen(false);
+
+  return (
+    <div ref={wrapRef} className="fixed bottom-5 right-5 z-40">
+      <style>{SUPPORT_POP_KEYFRAMES}</style>
+
+      {open && (
+        <div
+          className="cursor-target absolute bottom-full right-0 mb-3 w-56 origin-bottom-right rounded-2xl border border-neutral-800 bg-neutral-900/95 p-2 shadow-2xl shadow-black/40 backdrop-blur-xl"
+          style={{ animation: 'akyos-support-pop 200ms cubic-bezier(0.16,1,0.3,1)' }}
+        >
+          <a
+            href="https://mail.google.com/mail/?view=cm&fs=1&to=kiwieatspumpkin@gmail.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={closeAfterClick}
+            className="cursor-target block rounded-lg px-3 py-2 text-[12px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+          >
+            Contact Akyos
+          </a>
+          <a
+            href="https://mail.google.com/mail/?view=cm&fs=1&to=kiwieatspumpkin@gmail.com&su=To%20Report%20a%20Bug"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={closeAfterClick}
+            className="cursor-target block rounded-lg px-3 py-2 text-[12px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+          >
+            Report a Bug
+          </a>
+          <a
+            href="https://www.instagram.com/akyos.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={closeAfterClick}
+            className="cursor-target block rounded-lg px-3 py-2 text-[12px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+          >
+            Akyos Instagram
+          </a>
+          <div className="my-1.5 h-px bg-neutral-800" />
+          <a
+            href="https://www.instagram.com/saltlysweet/"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={closeAfterClick}
+            className="cursor-target block rounded-lg px-3 py-2 text-[11px] text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
+          >
+            Built By Ash - With Love and Peace
+          </a>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label="Support and links"
+        className="group cursor-target relative flex h-10 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/90 px-[13px] text-neutral-500 shadow-lg shadow-black/30 backdrop-blur-md transition-all duration-300 ease-out hover:border-neutral-700 hover:pr-4 hover:text-neutral-200"
+      >
+        <span className="text-[15px] font-semibold leading-none">/</span>
+        <span className="max-w-0 overflow-hidden whitespace-nowrap text-[12px] font-medium leading-none opacity-0 transition-all duration-300 ease-out group-hover:ml-[3px] group-hover:max-w-[64px] group-hover:opacity-100">
+          support
+        </span>
+      </button>
+    </div>
+  );
+}
+
 // A link emailed to a parent/guardian (see api/parental-consent.ts) points
 // back at the app's own origin with this query param — read once here,
 // outside of any hook, since the URL doesn't change without a real
@@ -797,45 +892,8 @@ export default function JEEDashboard() {
           </aside>
         </div>
 
-        <footer className="mt-8 pb-2 text-center space-y-1.5">
-          <div className="flex items-center justify-center gap-x-2.5 gap-y-1 flex-wrap text-[11px] text-neutral-600">
-            <a
-              href="https://mail.google.com/mail/?view=cm&fs=1&to=kiwieatspumpkin@gmail.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-neutral-400 transition-colors"
-            >
-              Contact Akyos
-            </a>
-            <span className="text-neutral-800">•</span>
-            <a
-              href="https://mail.google.com/mail/?view=cm&fs=1&to=kiwieatspumpkin@gmail.com&su=To%20Report%20a%20Bug"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-neutral-400 transition-colors"
-            >
-              Report a Bug
-            </a>
-            <span className="text-neutral-800">•</span>
-            <a
-              href="https://www.instagram.com/akyos.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-neutral-400 transition-colors"
-            >
-              Akyos Instagram
-            </a>
-          </div>
-          <p className="text-[11px] text-neutral-600">
-            <a
-              href="https://www.instagram.com/saltlysweet/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-neutral-400 transition-colors"
-            >
-              Built By Ash - With Love and Peace
-            </a>
-          </p>
+        <footer className="mt-8 pb-2 text-center">
+          <SupportMenu />
         </footer>
         </div>
       </div>
