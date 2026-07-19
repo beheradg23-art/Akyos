@@ -138,8 +138,36 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
+// Shared glass "bento box" that every sign-in/sign-up, passcode (set,
+// confirm, unlock, recovery), password-reset, and terms-consent screen sits
+// inside — the same frosted-glass material (translucent tint, heavy blur +
+// saturation, soft ambient shadow, top-lit sheen, and a bright top hairline)
+// as the dashboard's <Card> bento boxes in Primitives.tsx. Kept as a local,
+// self-contained copy here rather than importing that Card, since AuthGate
+// intentionally renders standalone, before the main App tree (and its own
+// keyframe injections) ever mounts — see the SWEEP_REVEAL_KEYFRAMES comment
+// near the bottom of this file for the same rationale.
+function AuthBentoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div
+      className={`relative w-full max-w-sm overflow-hidden rounded-[28px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] px-6 py-8 sm:px-9 sm:py-9 ${className}`}
+    >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.06] via-transparent to-transparent"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+      />
+      <div className="relative flex flex-col items-center">{children}</div>
+    </div>
+  );
+}
+
 // The left-half visual panel for the desktop sign-in layout.
 //
+
 // A proper landing-page-style pitch rather than a blank filler panel: a
 // brand lockup up top, a big "Akyos is ___" headline whose last word
 // rotates through the app's core value props (odometer-style — each word
@@ -1584,11 +1612,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   const renderStage = (): React.ReactNode => {
   if (stage === 'checking' || stage === 'syncing') {
     return (
-      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6 gap-3">
-        <Loader2 className="h-6 w-6 text-violet-400 animate-spin" strokeWidth={2} />
-        <p className="text-[12.5px] text-neutral-500">
-          {stage === 'syncing' ? 'Syncing your data from the cloud…' : 'Loading…'}
-        </p>
+      <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <AuthBentoCard className="gap-3">
+          <Loader2 className="h-6 w-6 text-violet-400 animate-spin" strokeWidth={2} />
+          <p className="mt-3 text-[12.5px] text-neutral-500">
+            {stage === 'syncing' ? 'Syncing your data from the cloud…' : 'Loading…'}
+          </p>
+        </AuthBentoCard>
       </div>
     );
   }
@@ -1600,6 +1630,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         <SignInVisualPanel />
 
         <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
+          <AuthBentoCard>
           <div
             className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
             style={liquidFillStyle(authCascadeStyle(0))}
@@ -1761,6 +1792,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
+          </AuthBentoCard>
         </div>
 
         {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
@@ -1784,6 +1816,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       return (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
           <style>{CASCADE_KEYFRAMES}</style>
+          <AuthBentoCard>
           <div
             className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20"
             style={liquidFillStyle(cascadeStyle(0))}
@@ -1860,6 +1893,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             Continue
           </button>
+          </AuthBentoCard>
 
           {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
         </div>
@@ -1873,6 +1907,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6"
         onClick={() => pcSetupInputRef.current?.focus()}
       >
+        <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
         </div>
@@ -1926,6 +1961,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           {pcSetupError || ' '}
         </p>
         {pcSetupBusy && <p className="text-[12px] text-neutral-500 -mt-2">Saving…</p>}
+        </AuthBentoCard>
       </div>
     );
   }
@@ -1936,6 +1972,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         <SignInVisualPanel />
 
         <div className="flex h-full w-full flex-col items-center justify-center px-6 lg:w-1/2">
+          <AuthBentoCard>
           <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
             <Mail className="h-5 w-5 text-neutral-950" strokeWidth={2} />
           </div>
@@ -2023,6 +2060,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             {cameFromPasscodeRecovery ? 'Back' : 'Back to sign in'}
           </button>
+          </AuthBentoCard>
         </div>
       </div>
     );
@@ -2031,6 +2069,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'resetPassword') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
         </div>
@@ -2072,6 +2111,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             {newPasswordBusy ? 'Saving…' : 'Save New Password'}
           </button>
         </form>
+        </AuthBentoCard>
       </div>
     );
   }
@@ -2079,6 +2119,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'passcodeRecovery') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <KeyRound className="h-5 w-5 text-neutral-950" strokeWidth={2} />
         </div>
@@ -2202,6 +2243,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         >
           Back
         </button>
+        </AuthBentoCard>
       </div>
     );
   }
@@ -2213,6 +2255,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6"
       onClick={() => pcInputRef.current?.focus()}
     >
+      <AuthBentoCard>
       <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
         <Lock className="h-5 w-5 text-neutral-950" strokeWidth={2} />
       </div>
@@ -2285,6 +2328,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       >
         Not you? Sign out
       </button>
+      </AuthBentoCard>
     </div>
   );
   }; // end renderStage

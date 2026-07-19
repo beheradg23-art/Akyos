@@ -159,7 +159,7 @@ export default function LegalPage({
       />
 
       {/* Header */}
-      <div className="relative z-10 flex-none border-b border-neutral-800/80 bg-zinc-950/90 px-5 py-4 backdrop-blur-sm sm:px-8">
+      <div className="relative z-10 flex-none border-b border-white/[0.08] bg-white/[0.045] backdrop-blur-2xl backdrop-saturate-150 px-5 py-4 sm:px-8">
         <button
           type="button"
           onClick={onClose}
