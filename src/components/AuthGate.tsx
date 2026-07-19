@@ -26,6 +26,13 @@ import {
 import PasswordField from './PasswordField';
 import { NO_SELECT_CSS } from '../styles/noSelect';
 import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../lib/liquidFill';
+// Same magnetic cursor + click-ripple used throughout the unlocked app
+// (Primitives.tsx). Both are pure, self-contained exports with no
+// dependency on app state, so they're safe to mount here, before App
+// (and its own <MagneticCursor />) ever exists — see the
+// `magnetic-cursor-active` / `.animate-ripple` rules in index.css, which
+// are global for the same reason.
+import { MagneticCursor, useRipple } from './ui/Primitives';
 
 const PASSCODE_LENGTH = 6;
 
@@ -148,9 +155,24 @@ function GoogleIcon({ className }: { className?: string }) {
 // keyframe injections) ever mounts — see the SWEEP_REVEAL_KEYFRAMES comment
 // near the bottom of this file for the same rationale.
 function AuthBentoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [spawnRipple, rippleNodes] = useRipple();
+
+  // Purely decorative (no onClick semantics — the card itself isn't a
+  // button) so this fires on every press inside the box, including on
+  // its own background padding, not just on the real controls nested
+  // inside it. `cursor-target` makes the magnetic cursor ring react to
+  // the box the same way it does to the dashboard's Card.
+  const handleDown = (e: React.MouseEvent | React.TouchEvent) => {
+    spawnRipple(e, ref.current);
+  };
+
   return (
     <div
-      className={`relative w-full max-w-sm overflow-hidden rounded-[28px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] px-6 py-8 sm:px-9 sm:py-9 ${className}`}
+      ref={ref}
+      onMouseDown={handleDown}
+      onTouchStart={handleDown}
+      className={`cursor-target relative w-full max-w-sm overflow-hidden rounded-[28px] border border-white/[0.08] bg-white/[0.045] backdrop-blur-2xl backdrop-saturate-150 shadow-[0_8px_32px_-12px_rgba(0,0,0,0.6)] px-6 py-8 sm:px-9 sm:py-9 ${className}`}
     >
       <div
         aria-hidden
@@ -161,6 +183,7 @@ function AuthBentoCard({ children, className = '' }: { children: React.ReactNode
         className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
       />
       <div className="relative flex flex-col items-center">{children}</div>
+      {rippleNodes}
     </div>
   );
 }
@@ -1663,7 +1686,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             onMouseEnter={() => setGoogleHovered(true)}
             onMouseLeave={() => setGoogleHovered(false)}
             disabled={googleBusy}
-            className="relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+            className="cursor-target relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             style={authCascadeStyle(2)}
           >
             {googleSweep.mounted && (
@@ -1713,7 +1736,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 onFocus={() => setEmailFocused(true)}
                 onBlur={() => setEmailFocused(false)}
                 placeholder="Email"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                className="cursor-target w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
                 style={authCascadeStyle(4)}
               />
               {emailSweep.mounted && (
@@ -1762,7 +1785,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             <button
               type="submit"
               disabled={authBusy}
-              className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+              className="cursor-target w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
               style={liquidFillStyle(authCascadeStyle(6))}
             >
               {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
@@ -1784,7 +1807,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 setResetSent(false);
                 setStage('forgotPassword');
               }}
-              className="mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
+              className="cursor-target mt-4 text-[12px] font-medium text-neutral-500 hover:text-neutral-300"
               style={authCascadeStyle(7)}
             >
               Forgot password?
@@ -1797,7 +1820,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               setAuthError('');
               setSignupNotice('');
             }}
-            className="mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+            className="cursor-target mt-5 text-[12px] font-medium text-violet-400 hover:text-violet-300"
             style={authCascadeStyle(8)}
           >
             {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
@@ -1857,7 +1880,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                   setAgreedToTerms((v) => !v);
                 }
               }}
-              className="mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
+              className="cursor-target mt-0.5 flex h-[18px] w-[18px] flex-none items-center justify-center rounded-md border transition-all"
               style={
                 agreedToTerms
                   ? { ...liquidFillStyle(), border: '1px solid transparent' }
@@ -1875,7 +1898,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                   e.stopPropagation();
                   setLegalOverlay('terms');
                 }}
-                className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                className="cursor-target font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
               >
                 Terms of Service
               </button>{' '}
@@ -1887,7 +1910,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                   e.stopPropagation();
                   setLegalOverlay('privacy');
                 }}
-                className="font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
+                className="cursor-target font-semibold text-violet-400 underline decoration-violet-400/40 underline-offset-2 transition-colors hover:text-violet-300"
               >
                 Privacy Policy
               </button>
@@ -1898,7 +1921,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             type="button"
             disabled={!agreedToTerms}
             onClick={() => setPassedConsentGate(true)}
-            className="w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
+            className="cursor-target w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
             style={liquidFillStyle(cascadeStyle(4))}
           >
             Continue
@@ -2010,7 +2033,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                   onFocus={() => setResetEmailFocused(true)}
                   onBlur={() => setResetEmailFocused(false)}
                   placeholder="Email"
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+                  className="cursor-target w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
                 />
                 {resetEmailSweep.mounted && (
                   // Same focus-gated sweep as the sign-in email field —
@@ -2042,7 +2065,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               <button
                 type="submit"
                 disabled={resetBusy}
-                className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                className="cursor-target w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
                 style={liquidFillStyle()}
               >
                 {resetBusy ? 'Sending…' : 'Send Reset Link'}
@@ -2066,7 +2089,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               setAuthError('');
               setStage('auth');
             }}
-            className="mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+            className="cursor-target mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
           >
             {cameFromPasscodeRecovery ? 'Back' : 'Back to sign in'}
           </button>
@@ -2115,7 +2138,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           <button
             type="submit"
             disabled={newPasswordBusy}
-            className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+            className="cursor-target w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
             style={liquidFillStyle()}
           >
             {newPasswordBusy ? 'Saving…' : 'Save New Password'}
@@ -2162,7 +2185,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               onMouseEnter={() => setGoogleHovered(true)}
               onMouseLeave={() => setGoogleHovered(false)}
               disabled={googleBusy}
-              className="relative overflow-hidden flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+              className="cursor-target relative overflow-hidden flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             >
               {googleSweep.mounted && (
                 // Same hover-gated sweep border as the sign-in page's own
@@ -2216,7 +2239,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               <button
                 type="submit"
                 disabled={recoveryBusy || !recoveryPassword || !recoveryEmail}
-                className="w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
+                className="cursor-target w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-60"
                 style={liquidFillStyle()}
               >
                 {recoveryBusy ? 'Verifying…' : 'Verify & Reset Passcode'}
@@ -2236,7 +2259,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 setResetSent(false);
                 setStage('forgotPassword');
               }}
-              className="mt-5 text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
+              className="cursor-target mt-5 text-[11.5px] font-medium text-neutral-500 hover:text-neutral-300"
             >
               Forgot your password too? Email me a reset link
             </button>
@@ -2249,7 +2272,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             setRecoveryPassword('');
             setStage('passcode');
           }}
-          className="mt-6 text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400"
+          className="cursor-target mt-6 text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400"
         >
           Back
         </button>
@@ -2318,7 +2341,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           setRecoveryError('');
           setStage('passcodeRecovery');
         }}
-        className="mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
+        className="cursor-target mt-6 text-[12px] font-medium text-violet-400 hover:text-violet-300"
       >
         Forgot passcode?
       </button>
@@ -2334,7 +2357,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           localStorage.removeItem(LAST_ACTIVE_USER_KEY);
           window.location.reload();
         }}
-        className="mt-3 text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400"
+        className="cursor-target mt-3 text-[11.5px] font-medium text-neutral-600 hover:text-neutral-400"
       >
         Not you? Sign out
       </button>
@@ -2345,6 +2368,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
 
   return (
     <>
+      <MagneticCursor />
       <style>{NO_SELECT_CSS}</style>
       <style>{LIQUID_GRADIENT_KEYFRAMES}</style>
       {/* The `akyos-sweep-reveal` keyframes (and the `--akyos-sweep`

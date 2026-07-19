@@ -879,11 +879,6 @@ export default function JEEDashboard() {
           to { opacity: 1; transform: translateX(0); }
         }
         .animate-slideInRight { animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1) both; }
-        @keyframes rippleExpand {
-          from { transform: translate(-50%, -50%) scale(0); opacity: 0.35; }
-          to { transform: translate(-50%, -50%) scale(26); opacity: 0; }
-        }
-        .animate-ripple { animation: rippleExpand 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         @keyframes modalPop {
           0% { opacity: 0; transform: scale(0.92) translateY(8px); }
           60% { opacity: 1; transform: scale(1.015) translateY(0); }
@@ -1013,15 +1008,6 @@ export default function JEEDashboard() {
           50% { opacity: 1; transform: scale(1.2); }
         }
         .animate-dotBreathe { animation: dotBreathe 1.6s ease-in-out infinite; }
-        /* Only hide the native cursor once MagneticCursor has actually
-           mounted and is running (it adds this class itself, and removes
-           it again on unmount or on any runtime error — see Primitives.tsx).
-           Previously this was a blanket "@media (pointer: fine) { * { cursor: none } }"
-           rule, which hid the real cursor unconditionally, including for
-           prefers-reduced-motion users (who never get the custom cursor
-           since MagneticCursor bails out early for them) and in the event
-           the cursor's JS ever failed to run. */
-        html.magnetic-cursor-active * { cursor: none !important; }
       `}</style>
       <Toaster />
     </div>

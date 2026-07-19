@@ -92,10 +92,10 @@ export default function PasswordField({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder={placeholder}
-          className={
+          className={`cursor-target ${
             className ||
             'w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors'
-          }
+          }`}
         />
         {sweep.mounted && (
           // Same animated gradient sweep border as the dashboard's <Card>
@@ -128,7 +128,7 @@ export default function PasswordField({
           tabIndex={-1}
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? 'Hide password' : 'Show password'}
-          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-neutral-500 transition-colors hover:text-neutral-300"
+          className="cursor-target absolute inset-y-0 right-0 flex w-10 items-center justify-center text-neutral-500 transition-colors hover:text-neutral-300"
         >
           {visible ? <EyeOff className="h-4 w-4" strokeWidth={2} /> : <Eye className="h-4 w-4" strokeWidth={2} />}
         </button>
