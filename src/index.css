@@ -6,6 +6,30 @@
   html {
     font-family: 'Poppins', ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
+
+  /* Some browsers (notably Safari/WebKit) paint their own native focus
+     "glow" directly on <input>/<textarea>/<select> as part of the UA's
+     default form-control appearance — this is independent of, and not
+     suppressed by, an app-level `outline-none` Tailwind class, since it
+     isn't an outline at all. It shows up as an untheme-able blue/violet
+     halo around any focused field regardless of what border classes the
+     component uses. Resetting `appearance` and explicitly zeroing the
+     focus outline/shadow here, once, globally, means no individual input
+     component has to fight this per-field, and no focused field can ever
+     show a stray native ring that doesn't match the active theme. */
+  input,
+  textarea,
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus {
+    outline: none;
+    box-shadow: none;
+  }
 }
 
 /* ---------------------------------------------------------------------
