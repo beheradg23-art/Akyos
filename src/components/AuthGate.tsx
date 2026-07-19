@@ -33,6 +33,7 @@ import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../l
 // global for the same reason.
 import { MagneticCursor } from './ui/Primitives';
 import { GlyphMatrix } from './ui/GlyphMatrix';
+import { KineticText } from './ui/kinetic-text';
 
 const PASSCODE_LENGTH = 6;
 
@@ -429,12 +430,12 @@ function SignInVisualPanel() {
           </div>
 
           <h1 className="flex flex-wrap items-baseline gap-x-3 text-neutral-50">
-            <span
-              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] font-semibold leading-[1.3] tracking-[-0.03em]"
+            <KineticText
+              as="span"
+              text="Akyos is"
+              className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] leading-[1.3] tracking-[-0.03em]"
               style={{ fontFamily: POPPINS_SEMIBOLD_STACK, fontWeight: 600 }}
-            >
-              Akyos is
-            </span>
+            />
             <AkyosWordRotator />
           </h1>
 
