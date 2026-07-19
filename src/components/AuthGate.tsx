@@ -31,7 +31,7 @@ import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../l
 // safe to mount here, before App (and its own <MagneticCursor />) ever
 // exists — see the `magnetic-cursor-active` rule in index.css, which is
 // global for the same reason.
-import { MagneticCursor, Magnetic } from './ui/Primitives';
+import { MagneticCursor } from './ui/Primitives';
 
 const PASSCODE_LENGTH = 6;
 
@@ -1695,14 +1695,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             </p>
           )}
 
-          <Magnetic className="mb-4 w-full max-w-xs" range={55}>
           <button
             type="button"
             onClick={handleGoogleSignIn}
             onMouseEnter={() => setGoogleHovered(true)}
             onMouseLeave={() => setGoogleHovered(false)}
             disabled={googleBusy}
-            className="cursor-target relative overflow-hidden flex w-full items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+            className="cursor-target relative overflow-hidden mb-4 flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             style={authCascadeStyle(2)}
           >
             {googleSweep.mounted && (
@@ -1732,7 +1731,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             <GoogleIcon className="h-4 w-4" />
             {googleBusy ? 'Connecting…' : 'Continue with Google'}
           </button>
-          </Magnetic>
           {googleError && <p className="mb-4 max-w-xs text-center text-[12px] text-rose-400">{googleError}</p>}
 
           <div className="mb-5 flex w-full max-w-xs items-center gap-3" style={authCascadeStyle(3)}>
@@ -1799,7 +1797,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             {authError && <p className="text-[12px] text-rose-400">{authError}</p>}
             {signupNotice && <p className="text-[12px] text-violet-400">{signupNotice}</p>}
 
-            <Magnetic className="w-full" range={45}>
             <button
               type="submit"
               disabled={authBusy}
@@ -1808,11 +1805,9 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             >
               {authBusy ? 'Please wait…' : authMode === 'signin' ? 'Sign In' : 'Sign Up'}
             </button>
-            </Magnetic>
           </form>
 
           {authMode === 'signin' && (
-            <Magnetic range={35}>
             <button
               onClick={() => {
                 // This is an ordinary "I forgot my account password" entry,
@@ -1832,10 +1827,8 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             >
               Forgot password?
             </button>
-            </Magnetic>
           )}
 
-          <Magnetic range={35}>
           <button
             onClick={() => {
               setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
@@ -1847,7 +1840,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             {authMode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
-          </Magnetic>
           </AuthBentoCard>
         </div>
 
@@ -1940,17 +1932,15 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             </span>
           </label>
 
-          <Magnetic className="w-full max-w-xs" range={45}>
           <button
             type="button"
             disabled={!agreedToTerms}
             onClick={() => setPassedConsentGate(true)}
-            className="cursor-target w-full rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
+            className="cursor-target w-full max-w-xs rounded-xl py-3 text-[13px] font-semibold text-neutral-950 transition-opacity disabled:opacity-40"
             style={liquidFillStyle(cascadeStyle(4))}
           >
             Continue
           </button>
-          </Magnetic>
           </AuthBentoCard>
 
           {legalOverlay && <LegalPage doc={legalOverlay} onClose={() => setLegalOverlay(null)} />}
@@ -2087,7 +2077,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 )}
               </div>
               {resetError && <p className="text-[12px] text-rose-400">{resetError}</p>}
-              <Magnetic className="w-full" range={45}>
               <button
                 type="submit"
                 disabled={resetBusy}
@@ -2096,13 +2085,11 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               >
                 {resetBusy ? 'Sending…' : 'Send Reset Link'}
               </button>
-              </Magnetic>
             </form>
           ) : (
             <CheckCircle2 className="h-8 w-8 text-violet-400" strokeWidth={2} />
           )}
 
-          <Magnetic range={35}>
           <button
             onClick={() => {
               if (cameFromPasscodeRecovery) {
@@ -2121,7 +2108,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             {cameFromPasscodeRecovery ? 'Back' : 'Back to sign in'}
           </button>
-          </Magnetic>
           </AuthBentoCard>
         </div>
       </div>
@@ -2164,7 +2150,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
           />
           {newPasswordError && <p className="text-[12px] text-rose-400">{newPasswordError}</p>}
-          <Magnetic className="w-full" range={45}>
           <button
             type="submit"
             disabled={newPasswordBusy}
@@ -2173,7 +2158,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
           >
             {newPasswordBusy ? 'Saving…' : 'Save New Password'}
           </button>
-          </Magnetic>
         </form>
         </AuthBentoCard>
       </div>
@@ -2210,14 +2194,13 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 : "This account signs in with Google and doesn't have a separate password. Confirm it's you through Google to reset your passcode."}
             </p>
             {googleError && <p className="mb-4 max-w-xs text-center text-[12px] text-rose-400">{googleError}</p>}
-            <Magnetic className="w-full max-w-xs" range={55}>
             <button
               type="button"
               onClick={handleGoogleVerifyForRecovery}
               onMouseEnter={() => setGoogleHovered(true)}
               onMouseLeave={() => setGoogleHovered(false)}
               disabled={googleBusy}
-              className="cursor-target relative overflow-hidden flex w-full items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
+              className="cursor-target relative overflow-hidden flex w-full max-w-xs items-center justify-center gap-2.5 rounded-xl border border-neutral-800 bg-neutral-900/80 py-3 text-[13px] font-semibold text-neutral-100 transition-colors hover:bg-neutral-900 disabled:opacity-60"
             >
               {googleSweep.mounted && (
                 // Same hover-gated sweep border as the sign-in page's own
@@ -2248,7 +2231,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               <GoogleIcon className="h-4 w-4" />
               {googleBusy ? 'Connecting…' : 'Continue with Google to verify'}
             </button>
-            </Magnetic>
           </>
         ) : (
           <>
@@ -2269,7 +2251,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
                 className="w-full rounded-xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 pr-11 text-[13px] text-neutral-100 placeholder-neutral-600 outline-none transition-colors focus:border-violet-500/50"
               />
               {recoveryError && <p className="text-[12px] text-rose-400">{recoveryError}</p>}
-              <Magnetic className="w-full" range={45}>
               <button
                 type="submit"
                 disabled={recoveryBusy || !recoveryPassword || !recoveryEmail}
@@ -2278,10 +2259,8 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
               >
                 {recoveryBusy ? 'Verifying…' : 'Verify & Reset Passcode'}
               </button>
-              </Magnetic>
             </form>
 
-            <Magnetic range={35}>
             <button
               onClick={() => {
                 // Same recovery email your account password already uses —
@@ -2299,11 +2278,9 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
             >
               Forgot your password too? Email me a reset link
             </button>
-            </Magnetic>
           </>
         )}
 
-        <Magnetic range={35}>
         <button
           onClick={() => {
             setRecoveryError('');
@@ -2314,7 +2291,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         >
           Back
         </button>
-        </Magnetic>
         </AuthBentoCard>
       </div>
     );
@@ -2374,7 +2350,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         {pcLockoutMs > 0 ? `Too many attempts — try again in ${Math.ceil(pcLockoutMs / 1000)}s` : 'Incorrect passcode'}
       </p>
 
-      <Magnetic range={35}>
       <button
         onClick={() => {
           setRecoveryPassword('');
@@ -2385,9 +2360,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       >
         Forgot passcode?
       </button>
-      </Magnetic>
 
-      <Magnetic range={35}>
       <button
         onClick={async () => {
           // PHASE 2 FIX: bring this in line with AccountPage's sign-out —
@@ -2403,7 +2376,6 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       >
         Not you? Sign out
       </button>
-      </Magnetic>
       </AuthBentoCard>
     </div>
   );

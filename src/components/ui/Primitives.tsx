@@ -498,68 +498,6 @@ export function MagneticCursor() {
   );
 }
 
-// Wraps a single child (typically a button or link) and pulls it toward
-// the cursor while the pointer is over it, snapping back to rest on
-// mouse-leave — the classic "magnetic button" micro-interaction. This is
-// a dependency-free reimplementation of the same idea as the popular
-// `motion/react`-based Magnetic component: this project has no
-// `motion`/`framer-motion` dependency, so the spring is approximated
-// with a CSS transition + overshoot easing curve instead of an actual
-// physics spring. Visually near-identical for the small pull distances
-// used here, with zero bundle cost.
-//
-// `range` is measured from the element's own bounding box (not a wider
-// capture zone), since the wrapper only ever sees mouse events that
-// land on itself or its child — there's no cheap way to detect "cursor
-// is nearby but not yet over the element" without a document-wide
-// listener per instance, which isn't worth it for button-sized targets.
-export function Magnetic({
-  children,
-  intensity = 0.35,
-  range = 40,
-  className = '',
-}: {
-  children: React.ReactNode;
-  intensity?: number;
-  range?: number;
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const fineRef = useRef(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: fine)').matches);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-
-  const handleMove = (e: React.MouseEvent) => {
-    if (!fineRef.current || !ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const dx = e.clientX - centerX;
-    const dy = e.clientY - centerY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const effectiveRange = Math.max(range, rect.width / 2, rect.height / 2);
-    const scale = Math.max(0, 1 - dist / effectiveRange);
-    setOffset({ x: dx * intensity * scale, y: dy * intensity * scale });
-  };
-
-  const handleLeave = () => setOffset({ x: 0, y: 0 });
-
-  return (
-    <div
-      ref={ref}
-      onMouseMove={handleMove}
-      onMouseLeave={handleLeave}
-      className={`inline-block ${className}`}
-      style={{
-        transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`,
-        transition: 'transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        willChange: 'transform',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 // ---------- Interactive Modular Overlay Engine ----------
 
 // Shape of the data any tab can hand to setModal() to open the shared
