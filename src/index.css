@@ -92,7 +92,7 @@ html.theme-mono-light #theme-overlay {
 
 /* ---------------------------------------------------------------------
    Color-wash themes (Ember Forge / Blush Riot / Crimson Veil / Jade
-   Frost): each just re-hues the --violet-*/--fuchsia-* variables above
+   Frost): each just re-hues the --violet-* and --fuchsia-* variables above
    (a fixed hue rotation of the default scale, precomputed so every stop
    keeps its original lightness/saturation — only the hue moves).
    Because every `violet-*`/`fuchsia-*` Tailwind class in the app reads
