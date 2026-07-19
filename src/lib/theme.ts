@@ -17,8 +17,8 @@
 //    page scrolls. backdrop-filter on a non-ancestor sibling gets the
 //    same "everything recolors" result with zero layout side effects.
 //
-// 2. The 6 color washes (Lagoon Fizz, Blush Riot, Crimson Veil, Jade
-//    Frost, Golden Hour, Velvet Orchid) are scoped narrower on purpose:
+// 2. The 4 color washes (Lagoon Fizz, Blush Riot, Crimson Veil, Jade
+//    Frost) are scoped narrower on purpose:
 //    they re-hue *only* the app's actual brand accent colors (violet,
 //    fuchsia, purple, and indigo — every one of them used somewhere as
 //    UI chrome: buttons, focus rings, active states, the brand
@@ -44,7 +44,7 @@
 // --purple-*, and --indigo-* variables for the 6 color washes).
 import React from 'react';
 
-export type ThemeMode = 'colorful' | 'mono-dark' | 'mono-light' | 'lagoon-fizz' | 'blush' | 'crimson' | 'jade' | 'golden-hour' | 'velvet-orchid';
+export type ThemeMode = 'colorful' | 'mono-dark' | 'mono-light' | 'lagoon-fizz' | 'blush' | 'crimson' | 'jade';
 
 export const THEME_STORAGE_KEY = 'app_theme_v1';
 
@@ -55,8 +55,6 @@ export const THEME_OPTIONS: { id: ThemeMode; label: string; description: string 
   { id: 'blush', label: 'Blush Riot', description: 'Bold, glam pink & magenta brand accent' },
   { id: 'crimson', label: 'Crimson Veil', description: 'Deep, moody vampiric red brand accent' },
   { id: 'jade', label: 'Jade Frost', description: 'Crisp, clean green brand accent' },
-  { id: 'golden-hour', label: 'Golden Hour', description: 'Warm, sunlit gold & amber brand accent' },
-  { id: 'velvet-orchid', label: 'Velvet Orchid', description: 'Rich, jewel-toned purple-magenta brand accent' },
   { id: 'colorful', label: 'Colorful (Default)', description: "Akyos' full color palette" },
 ];
 
@@ -68,11 +66,9 @@ const THEME_CLASS_MAP: Record<ThemeMode, string | null> = {
   blush: 'theme-blush',
   crimson: 'theme-crimson',
   jade: 'theme-jade',
-  'golden-hour': 'theme-golden-hour',
-  'velvet-orchid': 'theme-velvet-orchid',
 };
 
-const ALL_THEME_MODES: ThemeMode[] = ['colorful', 'mono-dark', 'mono-light', 'lagoon-fizz', 'blush', 'crimson', 'jade', 'golden-hour', 'velvet-orchid'];
+const ALL_THEME_MODES: ThemeMode[] = ['colorful', 'mono-dark', 'mono-light', 'lagoon-fizz', 'blush', 'crimson', 'jade'];
 const ALL_THEME_CLASSES = Object.values(THEME_CLASS_MAP).filter(Boolean) as string[];
 
 export function isThemeMode(v: any): v is ThemeMode {

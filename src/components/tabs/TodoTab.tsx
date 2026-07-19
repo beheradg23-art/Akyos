@@ -164,7 +164,7 @@ export function TodoTab() {
               if (e.key === 'Enter') addItem();
             }}
             placeholder="What do you need to do today?"
-            className="cursor-target flex-1 rounded-xl border border-neutral-800 bg-neutral-950/80 px-3.5 py-2.5 text-[13.5px] text-neutral-200 placeholder:text-neutral-600 outline-none transition-colors focus:border-violet-500/50"
+            className="cursor-target flex-1 rounded-xl border border-neutral-800 bg-neutral-950/80 px-3.5 py-2.5 text-[13.5px] text-neutral-200 placeholder:text-neutral-600 outline-none transition-colors"
           />
           <RippleButton
             onClick={addItem}

@@ -7,7 +7,7 @@ import {
   LayoutGrid, Clock3, Dumbbell, BookOpen, Sparkles, Target, GraduationCap,
   Weight, Droplets, Moon, Sun, Utensils, Flame, ChevronRight, ChevronDown,
   Activity, ClipboardList, Trash2, Plus, Settings, Save, PenLine, RefreshCcw,
-  Check, Heart, Droplet, Leaf, Waves, Sunset, Gem,
+  Check, Heart, Droplet, Leaf, Waves,
 } from 'lucide-react';
 import { ThemeMode, THEME_OPTIONS, useTheme } from '../../lib/theme';
 import {
@@ -1324,8 +1324,6 @@ const THEME_OPTION_ICONS: Record<ThemeMode, React.ComponentType<{ className?: st
   blush: Heart,
   crimson: Droplet,
   jade: Leaf,
-  'golden-hour': Sunset,
-  'velvet-orchid': Gem,
   colorful: Sparkles,
 };
 
