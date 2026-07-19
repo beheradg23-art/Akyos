@@ -21,15 +21,15 @@ export default {
       // index.css, keyed off the same `html.theme-*` class the rest of
       // the theme system already uses.
       //
-      // The two spots that use 'violet'/'fuchsia' as a *user-facing named
-      // color choice* rather than as the brand accent — the countdown
-      // color palette and the subject color palette, both in
-      // appConfig.ts — deliberately do NOT use these Tailwind classes for
-      // their violet/fuchsia entries; they use pinned arbitrary hex
-      // values instead, specifically so a countdown or subject someone
-      // colored "violet" stays violet no matter which Appearance theme is
-      // active, the same way every other named color in those palettes
-      // (amber, emerald, rose, cyan...) already does.
+      // The countdown color palette and the subject color palette (both in
+      // appConfig.ts) also use 'violet'/'fuchsia'/'sky' as *user-facing
+      // named color choices*. Those DO use these same Tailwind classes —
+      // on purpose — so a countdown or subject someone colored "violet"
+      // re-hues along with the rest of the brand accent when the
+      // Appearance theme changes, same as everything else built from
+      // these scales. Only the palettes' non-brand entries (amber,
+      // emerald, rose, cyan...) stay fixed across themes, since those are
+      // genuinely distinct status/identity colors, not the brand accent.
       colors: {
         violet: {
           50: 'rgb(var(--violet-50) / <alpha-value>)',
@@ -77,8 +77,8 @@ export default {
         // pills, calendar selection rings, etc.) turned out to lean on
         // Tailwind's `indigo` scale as often as `violet` — same treatment.
         // (The countdown/subject palettes' "sky" option, which is also
-        // built from `indigo-*` classes, is pinned to raw hex in
-        // appConfig.ts for the same reason violet/fuchsia are.)
+        // built from `indigo-*` classes, uses these plain classes too, so
+        // it re-hues with the theme same as violet/fuchsia.)
         indigo: {
           50: 'rgb(var(--indigo-50) / <alpha-value>)',
           100: 'rgb(var(--indigo-100) / <alpha-value>)',

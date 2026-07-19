@@ -117,6 +117,17 @@ html.theme-mono-light #theme-overlay {
   --clock-tile-top: 45 26 77;
   --clock-tile-bottom: 26 15 46;
   --clock-card-to: 21 10 38;
+  /* Degrees to hue-rotate() any *raster* brand art (the sign-in Guardian
+     render, currently the only one) by, so it re-hues along with the
+     violet/fuchsia/indigo/purple CSS variables above. Those variables
+     work by swapping in different RGB numbers per theme, which only
+     helps things drawn as flat CSS colors (Tailwind classes, gradients,
+     SVG). A PNG's pixels can't be swapped that way — hue-rotate() is the
+     equivalent trick for a raster image, and these four values are the
+     exact same rotation amounts used to derive each theme's CSS-variable
+     numbers above, so the two mechanisms move in lockstep. 0deg here
+     (the default) leaves the colorful theme's art untouched. */
+  --brand-hue-rotate: 0deg;
 }
 
 /* ---------------------------------------------------------------------
@@ -133,12 +144,11 @@ html.theme-mono-light #theme-overlay {
    just as important, it changes only the app's own violet, fuchsia,
    purple, and indigo accent scales. Every other named color in the
    countdown/subject color palettes — amber, emerald, rose, cyan,
-   orange, lime, pink, teal — is untouched, including those palettes'
-   own "violet", "fuchsia", and "sky" entries: those three are
-   deliberately pinned to raw hex in appConfig.ts specifically so a
-   countdown or subject someone colored violet, fuchsia, or sky doesn't
-   shift when the theme does, the same way every other named color there
-   already doesn't.
+   orange, lime, pink, teal — is untouched. Those palettes' own
+   "violet", "fuchsia", and "sky" entries, though, DO shift along with
+   the theme (they're plain classes from these same scales), so a
+   countdown or subject someone colored violet, fuchsia, or sky re-hues
+   the same way every other brand-accent element in the app does.
    ------------------------------------------------------------------- */
 html.theme-ember {
   --violet-50: 255 247 243; --violet-100: 254 240 233; --violet-200: 254 228 214;
@@ -158,6 +168,7 @@ html.theme-ember {
   --purple-600: 234 178 51; --purple-700: 206 155 34; --purple-800: 168 130 33;
   --purple-900: 135 106 28; --purple-950: 100 75 7;
   --clock-tile-top: 77 54 26; --clock-tile-bottom: 46 31 15; --clock-card-to: 38 26 10;
+  --brand-hue-rotate: 130deg;
 }
 
 html.theme-blush {
@@ -178,6 +189,7 @@ html.theme-blush {
   --purple-600: 234 51 107; --purple-700: 206 34 85; --purple-800: 168 33 71;
   --purple-900: 135 28 57; --purple-950: 100 7 32;
   --clock-tile-top: 77 26 49; --clock-tile-bottom: 46 15 30; --clock-card-to: 38 10 22;
+  --brand-hue-rotate: 70deg;
 }
 
 html.theme-crimson {
@@ -198,6 +210,7 @@ html.theme-crimson {
   --purple-600: 234 86 51; --purple-700: 206 69 34; --purple-800: 168 62 33;
   --purple-900: 135 52 28; --purple-950: 100 28 7;
   --clock-tile-top: 77 28 26; --clock-tile-bottom: 46 16 15; --clock-card-to: 38 12 10;
+  --brand-hue-rotate: 100deg;
 }
 
 html.theme-jade {
@@ -218,4 +231,22 @@ html.theme-jade {
   --purple-600: 51 234 162; --purple-700: 34 206 140; --purple-800: 33 168 118;
   --purple-900: 28 135 97; --purple-950: 7 100 67;
   --clock-tile-top: 26 77 49; --clock-tile-bottom: 15 46 29; --clock-card-to: 10 38 23;
+  --brand-hue-rotate: 245deg;
+}
+
+/* Opt-in class for raster brand art (currently just the sign-in Guardian
+   render) so it re-hues with --brand-hue-rotate above. Not applied
+   globally to every <img> — most images in the app are just content
+   (avatars, etc.) that should never shift color with the theme; this is
+   only for the couple of pieces that ARE the brand's violet/fuchsia
+   identity rendered as a PNG rather than CSS. Left out of the two
+   Black & White Minimalism themes on purpose: those already recolor
+   everything (including this image) via the #theme-overlay
+   backdrop-filter above, and stacking a hue-rotate on top of a
+   grayscale/invert would fight with it for no visual benefit. */
+html.theme-ember .akyos-brand-hue,
+html.theme-blush .akyos-brand-hue,
+html.theme-crimson .akyos-brand-hue,
+html.theme-jade .akyos-brand-hue {
+  filter: hue-rotate(var(--brand-hue-rotate));
 }

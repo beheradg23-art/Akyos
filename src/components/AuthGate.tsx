@@ -324,11 +324,16 @@ function SignInVisualPanel() {
 
           {/* Guardian render, floating in the empty space to the right of
               the copy — just the slow float/rotate drift, no glow behind
-              it, at full brightness/opacity. */}
+              it, at full brightness/opacity. `akyos-brand-hue` re-hues its
+              violet/purple lighting along with the rest of the brand
+              accent under the 4 color-wash themes (see index.css) — it's
+              a baked PNG, not CSS, so hue-rotate() is the only way to
+              make it react to the theme the same way everything else
+              already does. */}
           <img
             src="/images/akyos-guardian.png"
             alt=""
-            className="absolute -right-16 bottom-[-36px] w-[420px] max-w-none select-none xl:w-[470px]"
+            className="akyos-brand-hue absolute -right-16 bottom-[-36px] w-[420px] max-w-none select-none xl:w-[470px]"
             style={{
               animation: 'akyos-levitate 7s ease-in-out infinite',
             }}

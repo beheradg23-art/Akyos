@@ -1025,10 +1025,20 @@ export const TABS = [
 // SUBJECT_STYLE map now calls getSubjectStyle(key, subjects) instead, which
 // looks the chosen color up in this fixed palette. Same 'color name' idea
 // generateProfileTargets() already uses for targets[].color.
+//
+// 'sky', 'violet', and 'fuchsia' are deliberately plain `indigo-*`/
+// `violet-*`/`fuchsia-*` classes (not arbitrary-hex `text-[#...]` classes)
+// — those three Tailwind scales are the ones tailwind.config.js points at
+// theme-aware CSS variables (see index.css), so a subject someone colored
+// "violet" now re-hues right along with the rest of the app's brand accent
+// whenever the Appearance theme changes, the same as everything else built
+// from these scales. amber/emerald/rose stay literal on purpose — they're
+// genuinely distinct status colors (due/fresh/overdue elsewhere use these
+// same hues), not brand accent, so they should stay put across themes.
 export const SUBJECT_COLOR_PALETTE: Record<string, { text: string; bg: string; border: string; dot: string }> = {
-  sky:      { text: 'text-[#818cf8]',      bg: 'bg-[#6366f1]/10',      border: 'border-[#6366f1]/30',      dot: 'bg-[#818cf8]' },
-  violet:   { text: 'text-[#a78bfa]',   bg: 'bg-[#8b5cf6]/10',   border: 'border-[#8b5cf6]/30',   dot: 'bg-[#a78bfa]' },
-  fuchsia:  { text: 'text-[#e879f9]',  bg: 'bg-[#d946ef]/10',  border: 'border-[#d946ef]/30',  dot: 'bg-[#e879f9]' },
+  sky:      { text: 'text-indigo-400',   bg: 'bg-indigo-500/10',   border: 'border-indigo-500/30',   dot: 'bg-indigo-400' },
+  violet:   { text: 'text-violet-400',   bg: 'bg-violet-500/10',   border: 'border-violet-500/30',   dot: 'bg-violet-400' },
+  fuchsia:  { text: 'text-fuchsia-400',  bg: 'bg-fuchsia-500/10',  border: 'border-fuchsia-500/30',  dot: 'bg-fuchsia-400' },
   amber:    { text: 'text-amber-400',    bg: 'bg-amber-500/10',    border: 'border-amber-500/30',    dot: 'bg-amber-400' },
   emerald:  { text: 'text-emerald-400',  bg: 'bg-emerald-500/10',  border: 'border-emerald-500/30',  dot: 'bg-emerald-400' },
   rose:     { text: 'text-rose-400',     bg: 'bg-rose-500/10',     border: 'border-rose-500/30',     dot: 'bg-rose-400' },
@@ -1039,12 +1049,19 @@ export function getSubjectStyle(key: string, subjects: { key: string; color: str
   return SUBJECT_COLOR_PALETTE[found?.color || 'sky'];
 }
 
-// Hex counterparts of SUBJECT_COLOR_PALETTE for contexts (raw SVG stroke/fill
-// attributes) where a Tailwind class string doesn't apply.
+// Hex counterparts of SUBJECT_COLOR_PALETTE for contexts (raw SVG
+// stroke/fill attributes) where a Tailwind class string doesn't apply.
+// These read the *same* theme-aware CSS variables as the classes above
+// (`rgb(var(--indigo-400))` etc.) rather than a frozen hex literal, so an
+// inline SVG stroke picks up the live theme too instead of freezing at
+// whatever the colorful default happened to be. sky now correctly points
+// at the indigo variable (matching its text/dot classes above) instead of
+// the previous literal `#38bdf8`, which was real Tailwind `sky` blue — a
+// leftover mismatch from before "sky" was renamed to mean indigo.
 export const SUBJECT_COLOR_HEX: Record<string, string> = {
-  sky: '#38bdf8',
-  violet: '#a78bfa',
-  fuchsia: '#e879f9',
+  sky: 'rgb(var(--indigo-400))',
+  violet: 'rgb(var(--violet-400))',
+  fuchsia: 'rgb(var(--fuchsia-400))',
   amber: '#fbbf24',
   emerald: '#34d399',
   rose: '#fb7185',
@@ -1059,9 +1076,14 @@ export function getSubjectHex(key: string, subjects: { key: string; color: strin
 // wider set — countdowns often sit side by side in one card, so more
 // variants means less chance two active targets look identical.
 export const COUNTDOWN_COLOR_PALETTE: Record<string, { text: string; tileBg: string; tileBorder: string; barBg: string; dot: string }> = {
-  sky:      { text: 'text-[#818cf8]',      tileBg: 'bg-[#6366f1]/[0.03]',      tileBorder: 'border-[#6366f1]/20',      barBg: 'bg-[#6366f1]/60',      dot: 'bg-[#818cf8]' },
-  violet:   { text: 'text-[#a78bfa]',   tileBg: 'bg-[#8b5cf6]/[0.03]',   tileBorder: 'border-[#8b5cf6]/20',   barBg: 'bg-[#8b5cf6]/60',   dot: 'bg-[#a78bfa]' },
-  fuchsia:  { text: 'text-[#e879f9]',  tileBg: 'bg-[#d946ef]/[0.03]',  tileBorder: 'border-[#d946ef]/20',  barBg: 'bg-[#d946ef]/60',  dot: 'bg-[#e879f9]' },
+  // sky/violet/fuchsia use plain theme-aware classes now (see
+  // SUBJECT_COLOR_PALETTE above for why) instead of pinned arbitrary-hex
+  // ones — a countdown colored "violet" re-hues with the rest of the brand
+  // accent when the theme changes. The literal 'indigo' entry further down
+  // already did this; sky/violet/fuchsia were just inconsistent with it.
+  sky:      { text: 'text-indigo-400',   tileBg: 'bg-indigo-500/[0.03]',   tileBorder: 'border-indigo-500/20',   barBg: 'bg-indigo-500/60',   dot: 'bg-indigo-400' },
+  violet:   { text: 'text-violet-400',   tileBg: 'bg-violet-500/[0.03]',   tileBorder: 'border-violet-500/20',   barBg: 'bg-violet-500/60',   dot: 'bg-violet-400' },
+  fuchsia:  { text: 'text-fuchsia-400',  tileBg: 'bg-fuchsia-500/[0.03]',  tileBorder: 'border-fuchsia-500/20',  barBg: 'bg-fuchsia-500/60',  dot: 'bg-fuchsia-400' },
   amber:    { text: 'text-amber-400',    tileBg: 'bg-amber-500/[0.03]',    tileBorder: 'border-amber-500/20',    barBg: 'bg-amber-500/60',    dot: 'bg-amber-400' },
   emerald:  { text: 'text-emerald-400',  tileBg: 'bg-emerald-500/[0.03]',  tileBorder: 'border-emerald-500/20',  barBg: 'bg-emerald-500/60',  dot: 'bg-emerald-400' },
   rose:     { text: 'text-rose-400',     tileBg: 'bg-rose-500/[0.03]',     tileBorder: 'border-rose-500/20',     barBg: 'bg-rose-500/60',     dot: 'bg-rose-400' },

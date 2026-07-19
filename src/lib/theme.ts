@@ -31,11 +31,11 @@
 //    change per theme (see index.css) — so every existing `violet-*`,
 //    `fuchsia-*`, `purple-*`, and `indigo-*` class anywhere in the app
 //    picks up the new hue automatically, with zero component files
-//    touched, while every other color is untouched. (The countdown/
-//    subject palettes' own "violet", "fuchsia", and "sky" — sky being
-//    built from indigo — entries are the one exception: those are
-//    pinned to raw hex in appConfig.ts so a countdown or subject
-//    someone deliberately colored that way doesn't shift either.)
+//    touched, while every other color is untouched. That includes the
+//    countdown/subject palettes' own "violet", "fuchsia", and "sky" —
+//    sky being built from indigo — entries in appConfig.ts: those are
+//    plain classes from these same four scales too, so a countdown or
+//    subject colored "violet" re-hues right along with everything else.
 //
 // This module only toggles a class on <html> — the actual recoloring
 // rules live in index.css, keyed off that same class (applied to

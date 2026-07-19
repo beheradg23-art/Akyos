@@ -77,14 +77,14 @@ export function ScoreTrendChart({ tests, subjects }) {
         </g>
       ))}
       {series.map((s) => (
-        <path key={s.key} d={buildPath(s.key)} fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path key={s.key} d={buildPath(s.key)} fill="none" style={{ stroke: s.color }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       ))}
       {series.map((s) =>
         tests.map((t, i) => {
           const raw = t.scores[s.key];
           if (!raw) return null;
           return (
-            <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" fill={s.color}>
+            <circle key={`${s.key}-${i}`} cx={xFor(i)} cy={yFor(pctFor(t, s.key))} r="3" style={{ fill: s.color }}>
               <title>{`${s.label}: ${raw.score}/${raw.max} (${pctFor(t, s.key).toFixed(1)}%)`}</title>
             </circle>
           );
