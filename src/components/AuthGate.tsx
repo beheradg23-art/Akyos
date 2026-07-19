@@ -34,7 +34,6 @@ import { SWEEP_REVEAL_STYLE, SWEEP_REVEAL_KEYFRAMES, useSweepReveal } from '../l
 import { MagneticCursor } from './ui/Primitives';
 import { GlyphMatrix } from './ui/GlyphMatrix';
 import { KineticText } from './ui/kinetic-text';
-import { MorphingText } from './ui/morphing-text';
 
 const PASSCODE_LENGTH = 6;
 
@@ -219,18 +218,111 @@ function AuthBentoCard({ children, className = '' }: { children: React.ReactNode
 // feel. Confined entirely to the left half — the right half (sign-in
 // form) is untouched.
 const LANDING_ROTATE_WORDS = ['Focus.', 'Discipline.', 'Structure.', 'Clarity.', 'Momentum.', 'Consistency.', 'Progress.', 'Control.'];
-// The last word of "Akyos is ___" morphs via <MorphingText> (see the h1
-// below) instead of the old odometer fade/blur swap. "Akyos is" itself is
-// set in Poppins SemiBold; the morphing word is set in Edwardian Script
-// (pulled from cdnfonts.com, since it doesn't ship on Google Fonts) — with
-// a sane fallback stack in case that CDN is ever unreachable, so the
-// headline degrades gracefully instead of breaking.
+const LANDING_WORD_HOLD_MS = 2000; // how long a word sits fully visible before rotating out
+const LANDING_WORD_OUT_MS = 380; // blur/fade/rise out
+const LANDING_WORD_IN_MS = 520; // blur/fade/settle in — slightly slower than the exit for a gentler landing, same asymmetry as the intro's own word-in beat
+
+// "Akyos is" is set in Poppins SemiBold; the rotating word after it is set
+// in Edwardian Script (pulled from cdnfonts.com, since it doesn't ship on
+// Google Fonts) — with a sane fallback stack in case that CDN is ever
+// unreachable, so the headline degrades gracefully instead of breaking.
 const LANDING_FONT_IMPORTS = `
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;900&display=swap');
   @import url('https://fonts.cdnfonts.com/css/edwardian-script-itc');
 `;
 const POPPINS_SEMIBOLD_STACK = "'Poppins', sans-serif";
 const EDWARDIAN_SCRIPT_STACK = "'Edwardian Script ITC', 'Brush Script MT', cursive";
+
+const LANDING_ODOMETER_KEYFRAMES = `
+  @keyframes akyos-odometer-out {
+    from { opacity: 1; transform: translateY(0); filter: blur(0px); }
+    to   { opacity: 0; transform: translateY(-0.35em); filter: blur(6px); }
+  }
+  @keyframes akyos-odometer-in {
+    from { opacity: 0; transform: translateY(0.35em); filter: blur(6px); }
+    to   { opacity: 1; transform: translateY(0); filter: blur(0px); }
+  }
+`;
+
+// The last word of "Akyos is ___", cycling on its own clock. Each cycle:
+// sit fully visible (LANDING_WORD_HOLD_MS) -> play the "out" keyframe on
+// the CURRENT word (same key, so the animation just restarts in place
+// rather than remounting) -> once that's done, advance to the next word
+// and mount it fresh so it plays the "in" keyframe. Reduced-motion users
+// get the gradient text with no rotation at all — just the first word,
+// static.
+//
+// Rendered inside a flex row with `items-baseline` (see the h1 below) so
+// its own baseline — not its box's bottom edge — lines up with "Akyos
+// is", regardless of the fact that it's a completely different font/size
+// with its own metrics. The wrapper has no overflow-hidden and generous
+// top/bottom padding instead: Edwardian Script's tall ascenders and deep
+// descenders (the tail on a lowercase "g", "y", "p") were getting sliced
+// off by a tightly-clipped box before — this gives the glyphs room to
+// draw in full rather than trading that clipping for a fixed vertical
+// travel distance.
+function AkyosWordRotator() {
+  const [index, setIndex] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(mq.matches);
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const t = setTimeout(() => setLeaving(true), LANDING_WORD_HOLD_MS);
+    return () => clearTimeout(t);
+  }, [index, reduceMotion]);
+
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => {
+      setIndex((i) => (i + 1) % LANDING_ROTATE_WORDS.length);
+      setLeaving(false);
+    }, LANDING_WORD_OUT_MS);
+    return () => clearTimeout(t);
+  }, [leaving]);
+
+  return (
+    <span
+      className="relative inline-block"
+      style={{ paddingTop: '0.15em', paddingBottom: '0.55em', paddingRight: '0.15em', marginBottom: '-0.5em' }}
+    >
+      <style>{LANDING_ODOMETER_KEYFRAMES}</style>
+      <span
+        key={index}
+        className="inline-block whitespace-nowrap"
+        style={{
+          fontFamily: EDWARDIAN_SCRIPT_STACK,
+          fontWeight: 400,
+          fontSize: 'clamp(2.6rem, 6vw, 4.4rem)',
+          // A tight line-height (this used to be 1) crops a script font's
+          // tall descenders — the tail on a "y" or "g" — right where the
+          // background-clip:text gradient trick draws its clip region.
+          // A generous line-height gives the full glyph, descender
+          // included, room to actually render.
+          lineHeight: 1.6,
+          filter: 'drop-shadow(0 2px 14px rgba(167,139,250,0.35))',
+          backgroundImage:
+            'linear-gradient(110deg, rgb(var(--violet-400)) 0%, rgb(var(--fuchsia-300)) 25%, rgb(var(--indigo-400)) 50%, rgb(var(--fuchsia-300)) 75%, rgb(var(--violet-400)) 100%)',
+          backgroundSize: '250% 100%',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          color: 'transparent',
+          animation: reduceMotion
+            ? 'akyos-liquid-gradient 3s ease-in-out infinite'
+            : `${leaving ? 'akyos-odometer-out' : 'akyos-odometer-in'} ${leaving ? LANDING_WORD_OUT_MS : LANDING_WORD_IN_MS}ms cubic-bezier(0.16,1,0.3,1) both, akyos-liquid-gradient 3s ease-in-out infinite`,
+        }}
+      >
+        {LANDING_ROTATE_WORDS[index]}
+      </span>
+    </span>
+  );
+}
 
 // Slow, subtle drift for the background glow blobs — big, soft, and slow
 // enough to read as ambient rather than distracting.
@@ -344,25 +436,7 @@ function SignInVisualPanel() {
               className="pb-[0.18em] text-[clamp(2rem,3.7vw,3.15rem)] leading-[1.3] tracking-[-0.03em]"
               style={{ fontFamily: POPPINS_SEMIBOLD_STACK, fontWeight: 600 }}
             />
-            <MorphingText
-              texts={LANDING_ROTATE_WORDS}
-              className="!mx-0 !h-[3.4rem] !w-[clamp(11rem,30vw,17rem)] !max-w-none md:!h-[4.6rem]"
-              style={{ alignSelf: 'center' }}
-              textClassName="text-left"
-              textStyle={{
-                fontFamily: EDWARDIAN_SCRIPT_STACK,
-                fontWeight: 400,
-                fontSize: 'clamp(2.6rem, 6vw, 4.4rem)',
-                lineHeight: 1.6,
-                backgroundImage:
-                  'linear-gradient(110deg, rgb(var(--violet-400)) 0%, rgb(var(--fuchsia-300)) 25%, rgb(var(--indigo-400)) 50%, rgb(var(--fuchsia-300)) 75%, rgb(var(--violet-400)) 100%)',
-                backgroundSize: '250% 100%',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                color: 'transparent',
-              }}
-            />
+            <AkyosWordRotator />
           </h1>
 
           <p className="mt-5 max-w-sm text-[13.5px] leading-relaxed text-neutral-400">
