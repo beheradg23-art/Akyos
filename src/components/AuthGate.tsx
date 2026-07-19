@@ -1224,6 +1224,16 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       return () => clearTimeout(t);
     }
     if (stage === 'setPasscode') {
+      // The digit boxes (and pcSetupInputRef) don't exist yet while the
+      // terms/privacy consent gate is still up — that's a separate view
+      // within this same 'setPasscode' stage (see renderStage below), so
+      // focusing here before it's cleared is a no-op on a ref that's still
+      // null. Gating on passedConsentGate too, and listing it as a
+      // dependency, means this effect re-fires the moment the person hits
+      // "Continue" and the actual digit boxes mount — otherwise `stage`
+      // itself never changes between the two views, so without this the
+      // effect only ever got its one shot while the input didn't exist yet.
+      if (!passedConsentGate) return;
       const t = setTimeout(() => pcSetupInputRef.current?.focus(), 50);
       return () => clearTimeout(t);
     }
@@ -1237,7 +1247,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       const t = setTimeout(() => emailInputRef.current?.focus(), focusDelay);
       return () => clearTimeout(t);
     }
-  }, [stage, showOnePercentIntro]);
+  }, [stage, showOnePercentIntro, passedConsentGate]);
 
   // --- returning-user passcode check ---
   useEffect(() => {
