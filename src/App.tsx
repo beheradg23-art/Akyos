@@ -179,27 +179,25 @@ function SupportLinks() {
 
 function SupportMenu() {
   return (
-    <MorphingPopover
-      className="fixed bottom-5 right-5 z-40"
-      variants={SUPPORT_VARIANTS}
-      transition={{ type: 'spring', bounce: 0.08, duration: 0.35 }}
-    >
-      <MorphingPopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label="Support and links"
-          className="group cursor-target relative flex h-10 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/90 px-[13px] text-neutral-500 shadow-lg shadow-black/30 backdrop-blur-md transition-colors duration-300 hover:border-neutral-700 hover:pr-4 hover:text-neutral-200"
-        >
-          <span className="text-[15px] font-semibold leading-none">/</span>
-          <span className="max-w-0 overflow-hidden whitespace-nowrap text-[12px] font-medium leading-none opacity-0 transition-all duration-300 ease-out group-hover:ml-[3px] group-hover:max-w-[64px] group-hover:opacity-100">
-            support
-          </span>
-        </button>
-      </MorphingPopoverTrigger>
-      <MorphingPopoverContent className="bottom-full right-0 mb-3 w-56 text-left">
-        <SupportLinks />
-      </MorphingPopoverContent>
-    </MorphingPopover>
+    <div className="fixed bottom-5 right-5 z-40">
+      <MorphingPopover variants={SUPPORT_VARIANTS} transition={{ type: 'spring', bounce: 0.08, duration: 0.35 }}>
+        <MorphingPopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Support and links"
+            className="group cursor-target relative flex h-10 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900/90 px-[13px] text-neutral-500 shadow-lg shadow-black/30 backdrop-blur-md transition-colors duration-300 hover:border-neutral-700 hover:pr-4 hover:text-neutral-200"
+          >
+            <span className="text-[15px] font-semibold leading-none">/</span>
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-[12px] font-medium leading-none opacity-0 transition-all duration-300 ease-out group-hover:ml-[3px] group-hover:max-w-[64px] group-hover:opacity-100">
+              support
+            </span>
+          </button>
+        </MorphingPopoverTrigger>
+        <MorphingPopoverContent className="bottom-full right-0 mb-3 w-56 text-left">
+          <SupportLinks />
+        </MorphingPopoverContent>
+      </MorphingPopover>
+    </div>
   );
 }
 
