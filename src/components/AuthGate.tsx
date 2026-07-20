@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Lock, Mail, Loader2, ShieldCheck, CheckCircle2, KeyRound, Check, X, Sparkles, BookOpen, ClipboardList, Clock3, ListChecks, Dumbbell, Timer } from 'lucide-react';
 import { AkyosMark } from './shared/AkyosMark';
+import { GlyphMatrixBackground } from './shared/GlyphMatrixBackground';
 import LegalPage from './legal/LegalPage';
 import { supabase } from '../lib/supabaseClient';
 import { calculateAge } from '../lib/appConfig';
@@ -1858,6 +1859,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'checking' || stage === 'syncing') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <GlyphMatrixBackground />
         <AuthBentoCard className="gap-3">
           <Loader2 className="h-6 w-6 text-violet-400 animate-spin" strokeWidth={2} />
           <p className="mt-3 text-[12.5px] text-neutral-500">
@@ -2085,6 +2087,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (ageGatePhase === 'loading') {
         return (
           <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <GlyphMatrixBackground />
             <div className="flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
               <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
             </div>
@@ -2095,6 +2098,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (ageGatePhase === 'askBirthdate') {
         return (
           <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <GlyphMatrixBackground />
             <style>{CASCADE_KEYFRAMES}</style>
             <AuthBentoCard>
             <div
@@ -2144,6 +2148,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (ageGatePhase === 'collectParentEmail') {
         return (
           <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <GlyphMatrixBackground />
             <style>{CASCADE_KEYFRAMES}</style>
             <AuthBentoCard>
             <div
@@ -2228,6 +2233,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       if (ageGatePhase === 'pendingParent') {
         return (
           <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+            <GlyphMatrixBackground />
             <style>{CASCADE_KEYFRAMES}</style>
             <AuthBentoCard>
             <div
@@ -2290,6 +2296,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       // ageGatePhase === 'denied'
       return (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+          <GlyphMatrixBackground />
           <style>{CASCADE_KEYFRAMES}</style>
           <AuthBentoCard>
           <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-800/60" style={cascadeStyle(0)}>
@@ -2326,6 +2333,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
     if (!passedConsentGate) {
       return (
         <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+          <GlyphMatrixBackground />
           <style>{CASCADE_KEYFRAMES}</style>
           <AuthBentoCard>
           <div
@@ -2418,6 +2426,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
         className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6"
         onClick={() => pcSetupInputRef.current?.focus()}
       >
+        <GlyphMatrixBackground />
         <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
@@ -2580,6 +2589,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'resetPassword') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <GlyphMatrixBackground />
         <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <ShieldCheck className="h-5 w-5 text-neutral-950" strokeWidth={2} />
@@ -2630,6 +2640,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
   if (stage === 'passcodeRecovery') {
     return (
       <div className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6">
+        <GlyphMatrixBackground />
         <AuthBentoCard>
         <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
           <KeyRound className="h-5 w-5 text-neutral-950" strokeWidth={2} />
@@ -2766,6 +2777,7 @@ export default function AuthGate({ onUnlock }: { onUnlock: () => void }) {
       className="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-zinc-950 px-6"
       onClick={() => pcInputRef.current?.focus()}
     >
+      <GlyphMatrixBackground />
       <AuthBentoCard>
       <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl shadow-lg shadow-violet-500/20" style={liquidFillStyle()}>
         <Lock className="h-5 w-5 text-neutral-950" strokeWidth={2} />
